@@ -55,11 +55,23 @@ defmodule Adbc do
 
   ### DuckDB
 
-  The DuckDB driver provides access to in-memory DuckDB databases.
+  The DuckDB driver provides access to DuckDB databases. See their
+  [documentation](https://duckdb.org/docs/stable/clients/adbc) for more details.
 
   #### Examples
 
+  For in memory;
+
       {Adbc.Database, driver: :duckdb}
+
+  To use an existing file:
+
+      {Adbc.Database, driver: :duckdb, path: "duck.duckdb"}
+
+  Note if you are pointing to your own build of duckdb you will need to set the entrypoint like so:
+
+      {Adbc.Database, driver: "/usr/local/lib/libduckdb.so", entrypoint: "duckdb_adbc_init"}
+
 
   ### PostgreSQL
 
