@@ -72,7 +72,6 @@ defmodule Adbc do
 
       {Adbc.Database, driver: "/usr/local/lib/libduckdb.so", entrypoint: "duckdb_adbc_init"}
 
-
   ### PostgreSQL
 
   The PostgreSQL driver provides access to any database that supports
