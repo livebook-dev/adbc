@@ -117,6 +117,17 @@ defmodule Adbc do
 
   The first two are the most recommended formats. The schema, database and parameters are optional.
   See [Account identifiers](https://docs.snowflake.com/en/user-guide/admin-account-identifier) for more information.
+
+  For more secure PKCS8 key pair authentication currently recommended by Snowflake, use the `:auth_jwt` option instead of `:password`.
+
+      {Adbc.Database, driver: :snowflake,
+      uri:
+        "<user>@<account>.<region>.snowflakecomputing.com/<database>?warehouse=<warehouse>&role=<role>&authenticator=SNOWFLAKE_JWT",
+      "adbc.snowflake.sql.auth_type": "auth_jwt",
+      "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_value":
+        File.read!(System.get_env("SNOWFLAKE_ENCRYPTED_KEY_FILE")),
+      "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_password":
+        System.get_env("SNOWFLAKE_KEY_PASSWORD")}
   """
 
   @doc """
