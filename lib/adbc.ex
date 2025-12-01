@@ -106,9 +106,24 @@ defmodule Adbc do
 
   #### Examples
 
+  Snowflake recommends PKCS8 key pair authentication, using `auth_jwt` as shown below:
+
+      {Adbc.Database, driver: :snowflake,
+       uri:
+        "<user>@<account>.<region>.snowflakecomputing.com/<database>?warehouse=<warehouse>&role=<role>&authenticator=SNOWFLAKE_JWT",
+       "adbc.snowflake.sql.auth_type": "auth_jwt",
+       "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_value":
+         File.read!(System.fetch_env!("SNOWFLAKE_ENCRYPTED_KEY_FILE")),
+       "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_password":
+         System.fetch_env!("SNOWFLAKE_KEY_PASSWORD")}
+
+  See [Account identifiers](https://docs.snowflake.com/en/user-guide/admin-account-identifier) for more information.
+
+  For backwards compatibility, you may also use username+password as shown below:
+
       {Adbc.Database, driver: :snowflake, uri: "..."}
 
-  The Snowflake URI should be of one of the following formats:
+  where Snowflake URI should be of one of the following formats:
 
       user[:password]@account/database/schema[?param1=value1&paramN=valueN]
       user[:password]@account/database[?param1=value1&paramN=valueN]
@@ -116,18 +131,6 @@ defmodule Adbc do
       host:port/database/schema?account=user_account[&param1=value1&paramN=valueN]
 
   The first two are the most recommended formats. The schema, database and parameters are optional.
-  See [Account identifiers](https://docs.snowflake.com/en/user-guide/admin-account-identifier) for more information.
-
-  For more secure PKCS8 key pair authentication currently recommended by Snowflake, use the `:auth_jwt` option instead of `:password`.
-
-      {Adbc.Database, driver: :snowflake,
-      uri:
-        "<user>@<account>.<region>.snowflakecomputing.com/<database>?warehouse=<warehouse>&role=<role>&authenticator=SNOWFLAKE_JWT",
-      "adbc.snowflake.sql.auth_type": "auth_jwt",
-      "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_value":
-        File.read!(System.get_env("SNOWFLAKE_ENCRYPTED_KEY_FILE")),
-      "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_password":
-        System.get_env("SNOWFLAKE_KEY_PASSWORD")}
   """
 
   @doc """
