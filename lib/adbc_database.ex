@@ -2,7 +2,7 @@ defmodule Adbc.Database do
   @moduledoc """
   Documentation for `Adbc.Database`.
 
-  Databases are modelled as processes. They required
+  Databases are modelled as processes. They require
   a driver to be started.
   """
 
