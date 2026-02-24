@@ -365,7 +365,7 @@ defmodule Adbc.Connection do
           "query_pointer/5 callback should be 1-arity (receiving %Adbc.StreamResult{}), 2-arity is deprecated"
         )
 
-        {:ok, fun.(Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref), rows_affected)}
+        {:ok, fun.(pointer, rows_affected)}
       else
         stream_result = %Adbc.StreamResult{
           conn: conn,

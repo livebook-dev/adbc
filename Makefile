@@ -2,6 +2,8 @@ ifndef MIX_APP_PATH
 	MIX_APP_PATH=$(shell pwd)
 endif
 
+
+
 PRIV_DIR = $(MIX_APP_PATH)/priv
 NIF_SO = $(PRIV_DIR)/adbc_nif.so
 NIF_SO_REL = $(NIF_SO:$(shell pwd)/%=%)
