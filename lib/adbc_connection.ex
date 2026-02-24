@@ -428,31 +428,35 @@ defmodule Adbc.Connection do
         when (is_binary(query) or is_reference(query)) and is_list(params) and
                is_list(statement_options) do
       fun = fn stream_result ->
-        {result, %{}} =
+        {_, globals} =
           Pythonx.eval(
             """
             try:
               import pyarrow
               reader = pyarrow.RecordBatchReader._import_from_c(pointer)
-              result = reader.read_all()
+              pyarrow_available = True
+              table = reader.read_all()
             except ImportError:
-              result = None
-
-            result
+              pyarrow_available = False
+              table = None
             """,
             %{"pointer" => stream_result.pointer}
           )
 
-        result
+        {Pythonx.decode(globals["pyarrow_available"]), globals["table"]}
       end
 
       case query_pointer(conn, query, params, fun, statement_options) do
-        {:ok, nil} ->
-          raise """
-          Adbc.Connection.py_query/4 requires pyarrow package to be available in your pythonx installation. Add it to your dependency list:
+        {:ok, {pyarrow_available, py_table}} ->
+          if not pyarrow_available do
+            raise """
+            Adbc.Connection.py_query/4 requires pyarrow package to be available in your pythonx installation. Add it to your dependency list:
 
-              pyarrow==23.0.0
-          """
+                pyarrow==23.0.0
+            """
+          end
+
+          {:ok, py_table}
 
         other ->
           other
