@@ -386,6 +386,90 @@ defmodule Adbc.Connection do
     end)
   end
 
+  @doc ~S'''
+  Runs the given `query` with `params` and `statement_options`.
+
+  This function requires `pythonx` to be installed, with the `pyarrow`
+  package available in the installation.
+
+  The return value is an ok-tuple with `Pythonx.Object` - an instance
+  of [`pyarrow.Table`](https://arrow.apache.org/docs/python/generated/pyarrow.Table.html).
+
+  The table object can then be used to efficiently create a polars dataframe:
+
+      {:ok, py_table} = Adbc.Connection.py_query(conn, "SELECT * FROM ...", [])
+
+      Pythonx.eval(
+        """
+        import polars
+        df = polars.from_arrow(py_table)
+
+        # ...
+        """,
+        %{"py_table" => py_table}
+      )
+
+  or a pandas dataframe:
+
+      {:ok, py_table} = Adbc.Connection.py_query(conn, "SELECT * FROM ...", [])
+
+      Pythonx.eval(
+        """
+        df = py_table.to_pandas()
+
+        # ...
+        """,
+        %{"py_table" => py_table}
+      )
+
+  '''
+  if Code.ensure_loaded?(Pythonx) do
+    def py_query(conn, query, params \\ [], statement_options \\ [])
+        when (is_binary(query) or is_reference(query)) and is_list(params) and
+               is_list(statement_options) do
+      fun = fn stream_result ->
+        {result, %{}} =
+          Pythonx.eval(
+            """
+            try:
+              import pyarrow
+              reader = pyarrow.RecordBatchReader._import_from_c(pointer)
+              result = reader.read_all()
+            except ImportError:
+              result = None
+
+            result
+            """,
+            %{"pointer" => stream_result.pointer}
+          )
+
+        result
+      end
+
+      case query_pointer(conn, query, params, fun, statement_options) do
+        {:ok, nil} ->
+          raise """
+          Adbc.Connection.py_query/4 requires pyarrow package to be available in your pythonx installation. Add it to your dependency list:
+
+              pyarrow==23.0.0
+          """
+
+        other ->
+          other
+      end
+    end
+  else
+    def py_query(_conn, query, params \\ [], statement_options \\ [])
+        when (is_binary(query) or is_reference(query)) and is_list(params) and
+               is_list(statement_options) do
+      raise """
+      Adbc.Connection.py_query/4 requires pythonx to be available, add it to your mix.exs:
+
+          {:pythonx, "~> 0.4.0"}
+      """
+    end
+  end
+
   @doc """
   Get metadata about the database/driver.
 

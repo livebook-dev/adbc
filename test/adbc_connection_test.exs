@@ -630,6 +630,25 @@ defmodule Adbc.ConnectionTest do
     end
   end
 
+  describe "py_query" do
+    test "select", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      assert {:ok, py_table = %Pythonx.Object{}} =
+               Connection.py_query(conn, "SELECT 123 as num, true as bool")
+
+      {py_list, %{}} =
+        Pythonx.eval(
+          """
+          py_table.to_pylist()
+          """,
+          %{"py_table" => py_table}
+        )
+
+      assert Pythonx.decode(py_list) == [%{"num" => 123, "bool" => 1}]
+    end
+  end
+
   describe "lock" do
     test "serializes access", %{db: db} do
       conn = start_supervised!({Connection, database: db})
