@@ -1377,15 +1377,11 @@ defmodule Adbc.Column do
   @spec materialize(t()) ::
           t() | {:error, String.t()}
   def materialize(%Adbc.Column{data: data_ref} = self)
-      when is_reference(data_ref) or is_list(data_ref) do
-    if is_list(data_ref) do
-      if Enum.all?(data_ref, &is_reference/1) do
-        do_materialize(self)
-      else
-        self
-      end
-    else
+      when is_list(data_ref) do
+    if Enum.all?(data_ref, &is_reference/1) do
       do_materialize(self)
+    else
+      self
     end
   end
 

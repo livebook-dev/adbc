@@ -575,26 +575,24 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
     using record_type = NifRes<struct ArrowArrayStreamRecord>;
     record_type * res = nullptr;
 
+    if (!enif_is_list(env, argv[0])) {
+        return enif_make_badarg(env);
+    }
+
     std::vector<ERL_NIF_TERM> data_ref;
-    if (enif_is_ref(env, argv[0])) {
-        data_ref.emplace_back(argv[0]);
-    } else if (enif_is_list(env, argv[0])) {
-        unsigned int length;
-        ERL_NIF_TERM list = argv[0];
-        if (!enif_get_list_length(env, list, &length)) {
+    unsigned int length;
+    ERL_NIF_TERM list = argv[0];
+    if (!enif_get_list_length(env, list, &length)) {
+        return enif_make_badarg(env);
+    }
+
+    ERL_NIF_TERM head, tail;
+    while (enif_get_list_cell(env, list, &head, &tail)) {
+        if (!enif_is_ref(env, head)) {
             return enif_make_badarg(env);
         }
-
-        ERL_NIF_TERM head, tail;
-        while (enif_get_list_cell(env, list, &head, &tail)) {
-            if (!enif_is_ref(env, head)) {
-                return enif_make_badarg(env);
-            }
-            data_ref.emplace_back(head);
-            list = tail;
-        }
-    } else {
-        return enif_make_badarg(env);
+        data_ref.emplace_back(head);
+        list = tail;
     }
 
     std::vector<ERL_NIF_TERM> materialized;
