@@ -94,4 +94,35 @@ defmodule Adbc.ResultTest do
              "time_series" => [[[1], [2, 3], [3, 4], [4]], [[3, 4], [4], [5, 6], [6]]]
            } == Result.to_map(result())
   end
+
+  describe "from_py" do
+    test "with invalid object" do
+      assert_raise ArgumentError, fn ->
+        {py_list, %{}} = Pythonx.eval("[]", %{})
+
+        Result.from_py(py_list)
+      end
+    end
+
+    test "with object implementing arrow stream" do
+      {py_table, %{}} =
+        Pythonx.eval(
+          """
+          import pyarrow
+          n_legs = pyarrow.array([2, 4, 5, 100])
+          animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
+          names = ["n_legs", "animals"]
+          pyarrow.Table.from_arrays([n_legs, animals], names=names)
+          """,
+          %{}
+        )
+
+      {:ok, result} = Result.from_py(py_table)
+
+      assert %{
+               "n_legs" => [2, 4, 5, 100],
+               "animals" => ["Flamingo", "Horse", "Brittle stars", "Centipede"]
+             } == Result.to_map(result)
+    end
+  end
 end
