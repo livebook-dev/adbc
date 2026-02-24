@@ -309,12 +309,6 @@ defmodule Adbc.ConnectionTest do
              } = Adbc.Result.materialize(results)
     end
 
-    test "fails on invalid query", %{db: db} do
-      conn = start_supervised!({Connection, database: db})
-      assert {:error, %Adbc.Error{} = error} = Connection.query(conn, "NOT VALID SQL")
-      assert Exception.message(error) =~ "[SQLite] Failed to prepare query"
-    end
-
     test "select with prepared query", %{db: db} do
       conn = start_supervised!({Connection, database: db})
       assert {:ok, ref} = Connection.prepare(conn, "SELECT 123 + ? as num")
@@ -399,6 +393,12 @@ defmodule Adbc.ConnectionTest do
                  }
                ]
              } = Adbc.Result.materialize(results)
+    end
+
+    test "fails on invalid query", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      assert {:error, %Adbc.Error{} = error} = Connection.query(conn, "NOT VALID SQL")
+      assert Exception.message(error) =~ "[SQLite] Failed to prepare query"
     end
   end
 

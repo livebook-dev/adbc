@@ -7,7 +7,6 @@ defmodule Adbc.Connection do
   """
 
   @type t :: GenServer.server()
-  @type result_set :: Adbc.Result.t()
 
   use GenServer
   import Adbc.Helper, only: [error_to_exception: 1]
@@ -153,9 +152,13 @@ defmodule Adbc.Connection do
 
   @doc """
   Runs the given `query` with `params` and `statement_options`.
+
+  It returns an ok-tuple with `Adbc.Result` or an error-tuple.
+  You often want to call `Adbc.Result.materialize/1` or
+  `Adbc.Result.to_map/1` on the results to consume it.
   """
   @spec query(t(), binary | reference, [term], Keyword.t()) ::
-          {:ok, result_set} | {:error, Exception.t()}
+          {:ok, Adbc.Result.t()} | {:error, Exception.t()}
   def query(conn, query, params \\ [], statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and
              is_list(statement_options) do
@@ -164,8 +167,12 @@ defmodule Adbc.Connection do
 
   @doc """
   Same as `query/4` but raises an exception on error.
+
+  It returns an `Adbc.Result` struct. You often want to call
+  `Adbc.Result.materialize/1` or `Adbc.Result.to_map/1` on the
+  results to consume it.
   """
-  @spec query!(t(), binary | reference, [term], Keyword.t()) :: result_set
+  @spec query!(t(), binary | reference, [term], Keyword.t()) :: Adbc.Result.t()
   def query!(conn, query, params \\ [], statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and
              is_list(statement_options) do
@@ -345,10 +352,10 @@ defmodule Adbc.Connection do
 
   @doc """
   Runs the given `query` with `params` and
-  pass the Adbc.StreamResult to the given function.
+  pass the `Adbc.StreamResult` to the given function.
 
-  The StreamResult holds a pointer to a valid ArrowStream through
-  the duration of the function. A StreamResult can only be consumed once.
+  The `Adbc.StreamResult` holds a pointer to a valid ArrowStream through
+  the duration of the function. A `Adbc.StreamResult` can only be consumed once.
 
   The callback function should accept a single argument of type
   `Adbc.StreamResult.t()`. For backwards compatibility, 2-arity
@@ -406,7 +413,7 @@ defmodule Adbc.Connection do
   unrecognized codes (the row will be omitted from the result).
   """
   @spec get_info(t(), list(non_neg_integer())) ::
-          {:ok, result_set} | {:error, Exception.t()}
+          {:ok, Adbc.Result.t()} | {:error, Exception.t()}
   def get_info(conn, info_codes \\ []) when is_list(info_codes) do
     stream(conn, {:adbc_connection_get_info, [info_codes]}, &stream_results/3)
   end
@@ -497,7 +504,7 @@ defmodule Adbc.Connection do
           table_name: String.t(),
           table_type: [String.t()],
           column_name: String.t()
-        ) :: {:ok, result_set} | {:error, Exception.t()}
+        ) :: {:ok, Adbc.Result.t()} | {:error, Exception.t()}
   def get_objects(conn, depth, opts \\ [])
       when is_integer(depth) and depth >= 0 do
     opts = Keyword.validate!(opts, [:catalog, :db_schema, :table_name, :table_type, :column_name])
@@ -542,7 +549,7 @@ defmodule Adbc.Connection do
 
   """
   @spec get_table_types(t) ::
-          {:ok, result_set} | {:error, Exception.t()}
+          {:ok, Adbc.Result.t()} | {:error, Exception.t()}
   def get_table_types(conn) do
     stream(conn, {:adbc_connection_get_table_types, []}, &stream_results/3)
   end
