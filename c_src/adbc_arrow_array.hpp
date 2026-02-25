@@ -14,8 +14,6 @@
 
 static int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, uint64_t level, std::vector<ERL_NIF_TERM> &out_terms, ERL_NIF_TERM &value_type, ERL_NIF_TERM &metadata, ERL_NIF_TERM &error, bool skip_dictionary_check = false);
 static int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, int64_t level, std::vector<ERL_NIF_TERM> &out_terms, ERL_NIF_TERM &value_type, ERL_NIF_TERM &metadata, ERL_NIF_TERM &error, bool skip_dictionary_check = false);
-static int get_arrow_array_children_as_list(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error);
-static int get_arrow_array_children_as_list(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error);
 static int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error);
 static int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error);
 static ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, uint64_t level);
@@ -173,58 +171,6 @@ template <typename M> static ERL_NIF_TERM fixed_size_binary_from_buffer(
     const uint8_t* value_buffer,
     const M& value_to_nif) {
     return fixed_size_binary_from_buffer(env, 0, length, element_bytes, validity_bitmap, value_buffer, value_to_nif);
-}
-
-int get_arrow_array_children_as_list(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error) {
-    if (schema->n_children > 0 && schema->children == nullptr) {
-        error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == nullptr, however, schema->n_children > 0");
-        return 1;
-    }
-    if (values->n_children > 0 && values->children == nullptr) {
-        error =  erlang::nif::error(env, "invalid ArrowArray, values->children == nullptr, however, values->n_children > 0");
-        return 1;
-    }
-    if (values->n_children != schema->n_children) {
-        error =  erlang::nif::error(env, "invalid ArrowArray or ArrowSchema, values->n_children != schema->n_children");
-        return 1;
-    }
-
-    constexpr int64_t bitmap_buffer_index = 0;
-    const uint8_t * bitmap_buffer = (const uint8_t *)values->buffers[bitmap_buffer_index];
-    children.resize(values->n_children);
-    for (int64_t child_i = 0; child_i < values->n_children; child_i++) {
-        if (bitmap_buffer && ((schema->flags & ARROW_FLAG_NULLABLE) || (values->null_count > 0))) {
-            uint8_t vbyte = bitmap_buffer[child_i / 8];
-            if (!(vbyte & (1 << (child_i % 8)))) {
-                children[child_i] = kAtomNil;
-                continue;
-            }
-        }
-        struct ArrowSchema * child_schema = schema->children[child_i];
-        struct ArrowArray * child_values = values->children[child_i];
-        std::vector<ERL_NIF_TERM> childrens;
-        ERL_NIF_TERM child_type;
-        ERL_NIF_TERM child_metadata;
-        if (arrow_array_to_nif_term(env, child_schema, child_values, offset, count, level + 1, childrens, child_type, child_metadata, error) == 1) {
-            return 1;
-        }
-
-        if (childrens.size() == 1) {
-            children[child_i] = childrens[0];
-        } else {
-            bool nullable = (child_schema->flags & ARROW_FLAG_NULLABLE) || (child_values->null_count > 0);
-            if (enif_is_identical(childrens[1], kAtomNil)) {
-                children[child_i] = kAtomNil;
-            } else {
-                children[child_i] = make_adbc_column(env, schema, values, childrens[0], child_type, nullable, child_metadata, childrens[1]);
-            }
-        }
-    }
-    return 0;
-}
-
-int get_arrow_array_children_as_list(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error) {
-    return get_arrow_array_children_as_list(env, schema, values, 0, -1, level, children, error);
 }
 
 int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error) {
