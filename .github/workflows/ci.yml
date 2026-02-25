@@ -70,7 +70,7 @@ jobs:
 
   macos:
     if: contains(github.event.pull_request.labels.*.name, 'skip ci') != true
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       MIX_ENV: test
       OTP_VERSION: "26.2"

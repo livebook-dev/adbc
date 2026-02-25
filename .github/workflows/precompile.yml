@@ -51,7 +51,7 @@ jobs:
             cache/adbc*.sha256
 
   macos:
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       MIX_ENV: prod
       OTP_VERSION: "26.2"
