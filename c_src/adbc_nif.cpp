@@ -476,6 +476,31 @@ static ERL_NIF_TERM adbc_arrow_array_stream_get_pointer(ErlNifEnv *env, int argc
     return enif_make_uint64(env, reinterpret_cast<uint64_t>(&res->val));
 }
 
+static ERL_NIF_TERM adbc_arrow_array_stream_from_pointer(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct ArrowArrayStream>;
+    ERL_NIF_TERM error{};
+
+    ErlNifUInt64 pointer = 0;
+    if (!enif_get_uint64(env, argv[0], &pointer)) {
+        return enif_make_badarg(env);
+    }
+
+    auto array_stream = res_type::allocate_resource(env, error);
+    if (array_stream == nullptr) {
+        return error;
+    }
+
+    // We want to take full ownership of the stream, so we copy it
+    // into our resource-managed memory and we disable the release
+    // on the source, so that we are the ones responsible for
+    // releasing the stream.
+    auto source = reinterpret_cast<struct ArrowArrayStream *>(pointer);
+    memcpy(&array_stream->val, source, sizeof(struct ArrowArrayStream));
+    source->release = nullptr;
+
+    return erlang::nif::ok(env, array_stream->make_resource(env));
+}
+
 static ERL_NIF_TERM adbc_arrow_array_stream_next(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     using res_type = NifRes<struct ArrowArrayStream>;
     ERL_NIF_TERM error{};
@@ -1037,6 +1062,7 @@ static ErlNifFunc nif_functions[] = {
     {"adbc_statement_bind_stream", 2, adbc_statement_bind_stream, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_arrow_array_stream_get_pointer", 1, adbc_arrow_array_stream_get_pointer, 0},
+    {"adbc_arrow_array_stream_from_pointer", 1, adbc_arrow_array_stream_from_pointer, 0},
     {"adbc_arrow_array_stream_next", 1, adbc_arrow_array_stream_next, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_arrow_array_stream_release", 1, adbc_arrow_array_stream_release, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
