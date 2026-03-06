@@ -124,5 +124,36 @@ defmodule Adbc.ResultTest do
                "animals" => ["Flamingo", "Horse", "Brittle stars", "Centipede"]
              } == Result.to_map(result)
     end
+
+    # Note: an integration text for view types, since those types are
+    # not emitted by duckdb/postgres, so we test it via Python.
+    test "with utf8_view (vu) and binary_view (vz) columns" do
+      {py_table, %{}} =
+        Pythonx.eval(
+          """
+          import pyarrow
+          # string_view: mix of short (<=12 bytes, stored inline) and long strings
+          strings = pyarrow.array(["hi", None, "Brittle stars", "Centipede"], type=pyarrow.string_view())
+          # binary_view: same layout, raw bytes
+          blobs = pyarrow.array([b"ab", b"cd", None, b"a longer blob!!"], type=pyarrow.binary_view())
+          pyarrow.Table.from_arrays([strings, blobs], names=["strings", "blobs"])
+          """,
+          %{}
+        )
+
+      {:ok, result} = Result.from_py(py_table)
+
+      assert %Adbc.Result{
+               data: [
+                 %Adbc.Column{name: "strings", type: :string_view},
+                 %Adbc.Column{name: "blobs", type: :binary_view}
+               ]
+             } = result
+
+      assert %{
+               "strings" => ["hi", nil, "Brittle stars", "Centipede"],
+               "blobs" => ["ab", "cd", nil, "a longer blob!!"]
+             } == Result.to_map(result)
+    end
   end
 end

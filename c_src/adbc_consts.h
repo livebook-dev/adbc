@@ -98,8 +98,10 @@ static ERL_NIF_TERM kAdbcColumnTypeF32;
 static ERL_NIF_TERM kAdbcColumnTypeF64;
 static ERL_NIF_TERM kAdbcColumnTypeBinary;
 static ERL_NIF_TERM kAdbcColumnTypeLargeBinary;
+static ERL_NIF_TERM kAdbcColumnTypeBinaryView;
 static ERL_NIF_TERM kAdbcColumnTypeString;
 static ERL_NIF_TERM kAdbcColumnTypeLargeString;
+static ERL_NIF_TERM kAdbcColumnTypeStringView;
 #define kAdbcColumnTypeDecimal(bitwidth, precision, scale) enif_make_tuple4(env, kAtomDecimal, enif_make_int(env, bitwidth), enif_make_int(env, precision), enif_make_int(env, scale))
 #define kAdbcColumnTypeFixedSizeBinary(nbytes) enif_make_tuple2(env, kAtomFixedSizeBinary, enif_make_int64(env, nbytes))
 static ERL_NIF_TERM kAdbcColumnTypeDate32;

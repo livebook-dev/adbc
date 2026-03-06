@@ -100,8 +100,10 @@ defmodule Adbc.Column do
           | {:fixed_size_list, s32()}
           | :binary
           | :large_binary
+          | :binary_view
           | :string
           | :large_string
+          | :string_view
           | decimal
           | {:fixed_size_binary, non_neg_integer()}
           | {:struct, t()}

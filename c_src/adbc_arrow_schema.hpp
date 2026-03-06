@@ -282,6 +282,11 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
 
             type_term = enif_make_tuple2(env, kAdbcColumnTypeLargeList, elem_schema);
             children_term = make_adbc_column(env, schema, type_term, metadata);
+        } else if (strncmp("vu", format, 2) == 0 || strncmp("vz", format, 2) == 0) {
+            // NANOARROW_TYPE_STRING_VIEW
+            // NANOARROW_TYPE_BINARY_VIEW
+            // type_term and children_term already set via primitiveFormatMapping above
+            format_processed = iter != primitiveFormatMapping.end();
         } else {
             format_processed = false;
         }
