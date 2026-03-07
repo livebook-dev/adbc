@@ -75,7 +75,7 @@ defmodule Adbc.MixProject do
     [
       # compilation
       {:cc_precompiler, "~> 0.1.8 or ~> 0.2", runtime: false},
-      {:elixir_make, "~> 0.8", runtime: false},
+      {:elixir_make, "~> 0.9", runtime: false},
 
       # runtime
       {:decimal, "~> 2.1"},
