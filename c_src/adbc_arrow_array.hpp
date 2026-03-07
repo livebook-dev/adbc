@@ -97,29 +97,16 @@ template <typename M, typename OffsetT> static ERL_NIF_TERM strings_from_buffer(
     const M& value_to_nif) {
     OffsetT offset = offsets_buffer[element_offset];
     std::vector<ERL_NIF_TERM> values(element_count);
-    if (validity_bitmap == nullptr) {
-        for (int64_t i = element_offset; i < element_offset + element_count; i++) {
-            OffsetT end_index = offsets_buffer[i + 1];
-            size_t nbytes = end_index - offset;
-            if (nbytes == 0) {
-                values[i - element_offset] = kAtomNil;
-            } else {
-                values[i - element_offset] = value_to_nif(env, value_buffer, offset, nbytes);
-            }
-            offset = end_index;
+    for (int64_t i = element_offset; i < element_offset + element_count; i++) {
+        bool is_valid = (validity_bitmap == nullptr) || (validity_bitmap[i / 8] & (1 << (i % 8)));
+        OffsetT end_index = offsets_buffer[i + 1];
+        size_t nbytes = end_index - offset;
+        if (is_valid && nbytes > 0) {
+            values[i - element_offset] = value_to_nif(env, value_buffer, offset, nbytes);
+        } else {
+            values[i - element_offset] = kAtomNil;
         }
-    } else {
-        for (int64_t i = element_offset; i < element_offset + element_count; i++) {
-            uint8_t vbyte = validity_bitmap[i / 8];
-            OffsetT end_index = offsets_buffer[i + 1];
-            size_t nbytes = end_index - offset;
-            if (nbytes > 0 && vbyte & (1 << (i % 8))) {
-                values[i - element_offset] = value_to_nif(env, value_buffer, offset, nbytes);
-            } else {
-                values[i - element_offset] = kAtomNil;
-            }
-            offset = end_index;
-        }
+        offset = end_index;
     }
 
     return enif_make_list_from_array(env, values.data(), (unsigned)values.size());
@@ -133,6 +120,47 @@ template <typename M, typename OffsetT> static ERL_NIF_TERM strings_from_buffer(
     const uint8_t* value_buffer,
     const M& value_to_nif) {
     return strings_from_buffer(env, 0, length, validity_bitmap, offsets_buffer, value_buffer, value_to_nif);
+}
+
+static ERL_NIF_TERM string_views_from_buffer(
+    ErlNifEnv *env,
+    int64_t element_offset,
+    int64_t element_count,
+    const uint8_t * validity_bitmap,
+    const uint8_t * views_buffer,
+    int64_t n_data_buffers,
+    const uint8_t * const * data_buffers) {
+
+    std::vector<ERL_NIF_TERM> values(element_count);
+
+    for (int64_t i = element_offset; i < element_offset + element_count; i++) {
+        bool is_valid = (validity_bitmap == nullptr) || (validity_bitmap[i / 8] & (1 << (i % 8)));
+
+        if (!is_valid) {
+            values[i - element_offset] = kAtomNil;
+            continue;
+        }
+
+        // Each view is a 16-byte struct
+        const uint8_t* view = views_buffer + i * 16;
+        int32_t length;
+        memcpy(&length, view, 4);
+
+        if (length == 0) {
+            values[i - element_offset] = kAtomNil;
+        } else if (length <= 12) {
+            // Short string: data is stored inline in bytes [4..4+length)
+            values[i - element_offset] = erlang::nif::make_binary(env, (const char*)(view + 4), (size_t)length);
+        } else {
+            // Long string: bytes [8..12) = buf_index, bytes [12..16) = offset into buffer
+            int32_t buf_index, buf_offset;
+            memcpy(&buf_index, view + 8, 4);
+            memcpy(&buf_offset, view + 12, 4);
+            values[i - element_offset] = erlang::nif::make_binary(env, (const char*)(data_buffers[buf_index] + buf_offset), (size_t)length);
+        }
+    }
+
+    return enif_make_list_from_array(env, values.data(), (unsigned)values.size());
 }
 
 template <typename M>
@@ -1119,6 +1147,31 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
             // NANOARROW_TYPE_LARGE_LIST
             term_type = kAdbcColumnTypeLargeList;
             children_term = get_arrow_array_list_children(env, schema, values, offset, count, level, NANOARROW_TYPE_LARGE_LIST);
+        } else if (strncmp("vu", format, 2) == 0 || strncmp("vz", format, 2) == 0) {
+            // NANOARROW_TYPE_STRING_VIEW
+            // NANOARROW_TYPE_BINARY_VIEW
+            if (format[1] == 'u') {
+                term_type = kAdbcColumnTypeStringView;
+            } else {
+                term_type = kAdbcColumnTypeBinaryView;
+            }
+            if (count == -1) count = values->length;
+            if (count > values->length) count = values->length - offset;
+            // Buffer layout: validity bitmap (0), views buffer (1), data buffers (2..n_buffers-1)
+            if (values->n_buffers < 2) {
+                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=vu or format=vz), values->n_buffers < 2");
+                return 1;
+            }
+            int64_t n_data_buffers = values->n_buffers - 2;
+            current_term = string_views_from_buffer(
+                env,
+                offset,
+                count,
+                (const uint8_t*)values->buffers[bitmap_buffer_index],
+                (const uint8_t*)values->buffers[1],
+                n_data_buffers,
+                (const uint8_t* const*)(values->buffers + 2)
+            );
         } else {
             format_processed = false;
         }

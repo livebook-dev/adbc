@@ -974,8 +974,10 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAdbcColumnTypeF64 = erlang::nif::atom(env, "f64");
     kAdbcColumnTypeBinary = erlang::nif::atom(env, "binary");
     kAdbcColumnTypeLargeBinary = erlang::nif::atom(env, "large_binary");
+    kAdbcColumnTypeBinaryView = erlang::nif::atom(env, "binary_view");
     kAdbcColumnTypeString = erlang::nif::atom(env, "string");
     kAdbcColumnTypeLargeString = erlang::nif::atom(env, "large_string");
+    kAdbcColumnTypeStringView = erlang::nif::atom(env, "string_view");
     kAdbcColumnTypeDate32 = erlang::nif::atom(env, "date32");
     kAdbcColumnTypeDate64 = erlang::nif::atom(env, "date64");
     kAdbcColumnTypeList = erlang::nif::atom(env, "list");
@@ -1005,10 +1007,10 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
         {"g", {kAdbcColumnTypeF64}},
         {"z", {kAdbcColumnTypeBinary}},
         {"Z", {kAdbcColumnTypeLargeBinary}},
-        // {"vz", kAdbcColumnTypeBinaryView}, // not implemented yet
+        {"vz", {kAdbcColumnTypeBinaryView}},
         {"u", {kAdbcColumnTypeString}},
         {"U", {kAdbcColumnTypeLargeString}},
-        // {"vu", kAdbcColumnTypeStringView}, // not implemented yet
+        {"vu", {kAdbcColumnTypeStringView}},
         {"tdD", {kAdbcColumnTypeDate32}},
         {"tdm", {kAdbcColumnTypeDate64}},
         // we cannot call enif_make_tuple2 here and reuse the tuple later
