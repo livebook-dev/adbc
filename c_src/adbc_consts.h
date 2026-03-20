@@ -141,5 +141,6 @@ constexpr int kErrorBufferGetMetadataKey = 8;
 constexpr int kErrorBufferGetMetadataValue = 9;
 constexpr int kErrorExpectedCalendarISO = 10;
 constexpr int kErrorInternalError = 11;
+constexpr int kErrorNilInNonNullableColumn = 12;
 
 #endif  // ADBC_CONSTS_H

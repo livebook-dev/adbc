@@ -1008,6 +1008,36 @@ defmodule Adbc.ConnectionTest do
       assert map["name"] == ["Alice", "Bob", "Charlie"]
     end
 
+    test "nullable columns and nil values", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      # Nullable columns with nil values work fine
+      columns = [
+        Adbc.Column.s64([1, nil, 3], name: "id", nullable: true),
+        Adbc.Column.string(["Alice", nil, "Charlie"], name: "name", nullable: true)
+      ]
+
+      assert {:ok, 3} = Connection.bulk_insert(conn, columns, table: "nullable_test")
+
+      {:ok, result} = Connection.query(conn, "SELECT * FROM nullable_test ORDER BY id")
+      result = Adbc.Result.materialize(result)
+      map = Adbc.Result.to_map(result)
+
+      assert map["id"] == [nil, 1, 3]
+      assert map["name"] == [nil, "Alice", "Charlie"]
+
+      # Non-nullable columns with nil values return a clear error
+      bad_columns = [
+        Adbc.Column.s64([1, nil, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      assert {:error, %ArgumentError{} = error} =
+               Connection.bulk_insert(conn, bad_columns, table: "bad_table")
+
+      assert error.message =~ "nullable"
+    end
+
     test "stream-based bulk insert raises on same connection", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 

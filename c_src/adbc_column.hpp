@@ -1421,6 +1421,11 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
 
     if (ret == kErrorBufferUnknownType) {
         enif_snprintf(error_out->message, sizeof(error_out->message), "unsupport type `%T` (arrow_type=%d) found in adbc_column_to_adbc_field:%d", column->type_term, column_type.arrow_type, __LINE__);
+    } else if (ret == kErrorBufferIsNotAMap && !nullable) {
+        enif_snprintf(error_out->message, sizeof(error_out->message),
+            "found nil data in non-nullable column \"%T\". Set `nullable: true` when building the column to allow nil values",
+            column->name_term);
+        ret = kErrorNilInNonNullableColumn;
     }
     return ret;
 }
@@ -1522,6 +1527,7 @@ int adbc_column_to_arrow_type_struct(ErlNifEnv *env, ERL_NIF_TERM values, struct
             case kErrorBufferGetMetadataKey:
             case kErrorBufferGetMetadataValue:
             case kErrorInternalError:
+            case kErrorNilInNonNullableColumn:
                 // error message is already set
                 return 1;
             case kErrorExpectedCalendarISO:
