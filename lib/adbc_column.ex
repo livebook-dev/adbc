@@ -897,6 +897,7 @@ defmodule Adbc.Column do
 
   @doc """
   A column that contains date represented as 32-bit signed integers in UTC.
+
   ## Arguments
 
   * `data`: a list, each element of which can be one of the following:
@@ -923,6 +924,7 @@ defmodule Adbc.Column do
 
   @doc """
   A column that contains date represented as 64-bit signed integers in UTC.
+
   ## Arguments
 
   * `data`: a list, each element of which can be one of the following:
@@ -949,6 +951,7 @@ defmodule Adbc.Column do
 
   @doc """
   A column that contains time represented as signed integers in UTC.
+
   ## Arguments
 
   * `data`:
@@ -958,7 +961,8 @@ defmodule Adbc.Column do
       Note that when using `:seconds` or `:milliseconds` as the unit,
       the time value is limited to the range of 32-bit signed integers.
 
-      For `:microseconds` and `:nanoseconds`, the time value is limited to the range of 64-bit signed integers.
+      For `:microseconds` and `:nanoseconds`, the time value is limited
+      to the range of 64-bit signed integers.
 
   * `unit`: specify the unit of the time value, one of the following:
     * `:seconds`
@@ -977,40 +981,22 @@ defmodule Adbc.Column do
   @spec time([Time.t() | nil] | [s64() | nil], time_unit(), Keyword.t()) :: t()
   def time(data, unit, opts \\ [])
 
-  def time(data, :seconds, opts) when is_list(data) and is_list(opts) do
+  def time(data, unit, opts)
+      when is_list(data) and is_list(opts) and unit in [:seconds, :milliseconds] do
     %Adbc.Column{
       name: opts[:name],
-      type: {:time32, :seconds},
+      type: {:time32, unit},
       nullable: opts[:nullable] || false,
       metadata: opts[:metadata] || nil,
       data: data
     }
   end
 
-  def time(data, :milliseconds, opts) when is_list(data) and is_list(opts) do
+  def time(data, unit, opts)
+      when is_list(data) and is_list(opts) and unit in [:microseconds, :nanoseconds] do
     %Adbc.Column{
       name: opts[:name],
-      type: {:time32, :milliseconds},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def time(data, :microseconds, opts) when is_list(data) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:time64, :microseconds},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def time(data, :nanoseconds, opts) when is_list(data) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:time64, :nanoseconds},
+      type: {:time64, unit},
       nullable: opts[:nullable] || false,
       metadata: opts[:metadata] || nil,
       data: data
@@ -1045,45 +1031,11 @@ defmodule Adbc.Column do
   @spec timestamp([NaiveDateTime.t() | nil] | [s64() | nil], time_unit(), String.t(), Keyword.t()) ::
           t()
   def timestamp(data, unit, timezone, opts \\ [])
-
-  def timestamp(data, :seconds, timezone, opts)
-      when is_list(data) and is_binary(timezone) and is_list(opts) do
+      when is_list(data) and is_binary(timezone) and is_list(opts) and
+             unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       name: opts[:name],
-      type: {:timestamp, :seconds, timezone},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def timestamp(data, :milliseconds, timezone, opts)
-      when is_list(data) and is_binary(timezone) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:timestamp, :milliseconds, timezone},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def timestamp(data, :microseconds, timezone, opts)
-      when is_list(data) and is_binary(timezone) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:timestamp, :microseconds, timezone},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def timestamp(data, :nanoseconds, timezone, opts)
-      when is_list(data) and is_binary(timezone) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:timestamp, :nanoseconds, timezone},
+      type: {:timestamp, unit, timezone},
       nullable: opts[:nullable] || false,
       metadata: opts[:metadata] || nil,
       data: data
@@ -1113,41 +1065,11 @@ defmodule Adbc.Column do
   """
   @spec duration([s64() | nil], time_unit(), Keyword.t()) :: t()
   def duration(data, unit, opts \\ [])
-
-  def duration(data, :seconds, opts) when is_list(data) and is_list(opts) do
+      when is_list(data) and is_list(opts) and
+             unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       name: opts[:name],
-      type: {:duration, :seconds},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def duration(data, :milliseconds, opts) when is_list(data) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:duration, :milliseconds},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def duration(data, :microseconds, opts) when is_list(data) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:duration, :microseconds},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def duration(data, :nanoseconds, opts) when is_list(data) and is_list(opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:duration, :nanoseconds},
+      type: {:duration, unit},
       nullable: opts[:nullable] || false,
       metadata: opts[:metadata] || nil,
       data: data
@@ -1191,31 +1113,11 @@ defmodule Adbc.Column do
         ) ::
           t()
   def interval(data, interval_unit, opts \\ [])
-
-  def interval(data, :month, opts) do
+      when is_list(data) and is_list(opts) and
+             interval_unit in [:month, :day_time, :month_day_nano] do
     %Adbc.Column{
       name: opts[:name],
-      type: {:interval, :month},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def interval(data, :day_time, opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:interval, :day_time},
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata] || nil,
-      data: data
-    }
-  end
-
-  def interval(data, :month_day_nano, opts) do
-    %Adbc.Column{
-      name: opts[:name],
-      type: {:interval, :month_day_nano},
+      type: {:interval, interval_unit},
       nullable: opts[:nullable] || false,
       metadata: opts[:metadata] || nil,
       data: data
@@ -1391,18 +1293,12 @@ defmodule Adbc.Column do
 
   defp do_materialize(%Adbc.Column{data: data_ref, type: type} = self) do
     with {:ok, results} <- Adbc.Nif.adbc_column_materialize(data_ref) do
-      materialized =
-        Enum.reduce(results, [], fn result, acc ->
-          acc ++ result
-        end)
+      materialized = Enum.concat(results)
 
       type =
         case type do
-          {:list, _} ->
-            :list
-
-          _ ->
-            type
+          {:list, _} -> :list
+          _ -> type
         end
 
       handle_decimal(%{self | data: materialized, type: type})
