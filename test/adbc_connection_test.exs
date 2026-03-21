@@ -1038,6 +1038,31 @@ defmodule Adbc.ConnectionTest do
       assert error.message =~ "nullable"
     end
 
+    test "bulk inserts a Pythonx.Object implementing arrow stream", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      {py_table, %{}} =
+        Pythonx.eval(
+          """
+          import pyarrow
+          n_legs = pyarrow.array([2, 4, 5, 100])
+          animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
+          names = ["n_legs", "animals"]
+          pyarrow.Table.from_arrays([n_legs, animals], names=names)
+          """,
+          %{}
+        )
+
+      assert {:ok, 4} = Connection.bulk_insert(conn, py_table, table: "py_animals")
+
+      {:ok, verify} =
+        Connection.query(conn, "SELECT * FROM py_animals ORDER BY n_legs")
+
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      assert map["n_legs"] == [2, 4, 5, 100]
+      assert map["animals"] == ["Flamingo", "Horse", "Brittle stars", "Centipede"]
+    end
+
     test "stream-based bulk insert raises on same connection", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 

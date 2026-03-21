@@ -11,6 +11,11 @@ defmodule Adbc.Connection do
   use GenServer
   import Adbc.Helper, only: [error_to_exception: 1]
 
+  python_object =
+    if Code.ensure_loaded?(Pythonx),
+      do: quote(do: Pythonx.Object.t()),
+      else: quote(do: none())
+
   @doc """
   Starts a connection process.
 
@@ -260,7 +265,7 @@ defmodule Adbc.Connection do
       end)
 
   """
-  @spec bulk_insert(t(), [Adbc.Column.t()] | Adbc.StreamResult.t(), Keyword.t()) ::
+  @spec bulk_insert(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object), Keyword.t()) ::
           {:ok, non_neg_integer()} | {:error, Exception.t()}
   def bulk_insert(conn, columns_or_stream, opts \\ [])
 
@@ -270,7 +275,21 @@ defmodule Adbc.Connection do
     end
 
     statement_options = build_ingest_options(opts)
-    command(conn, {:bulk_insert, stream, statement_options})
+    command(conn, {:bulk_insert_stream, stream.ref, nil, statement_options})
+  end
+
+  if Code.ensure_loaded?(Pythonx) do
+    def bulk_insert(conn, %Pythonx.Object{} = py_object, opts) when is_list(opts) do
+      statement_options = build_ingest_options(opts)
+
+      case Adbc.Helper.from_py(py_object) do
+        {:ok, stream_ref, capsule} ->
+          command(conn, {:bulk_insert_stream, stream_ref, capsule, statement_options})
+
+        {:error, error} ->
+          {:error, error}
+      end
+    end
   end
 
   def bulk_insert(conn, columns, opts) when is_list(columns) and is_list(opts) do
@@ -281,7 +300,7 @@ defmodule Adbc.Connection do
   @doc """
   Same as `bulk_insert/3` but raises an exception on error.
   """
-  @spec bulk_insert!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t(), Keyword.t()) ::
+  @spec bulk_insert!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object), Keyword.t()) ::
           non_neg_integer()
   def bulk_insert!(conn, columns_or_stream, opts \\ []) do
     case bulk_insert(conn, columns_or_stream, opts) do
@@ -317,7 +336,7 @@ defmodule Adbc.Connection do
       #=> 3
 
   """
-  @spec ingest(t(), [Adbc.Column.t()] | Adbc.StreamResult.t()) ::
+  @spec ingest(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) ::
           {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
   def ingest(conn, %Adbc.StreamResult{} = stream) do
     if stream.conn == GenServer.whereis(conn) do
@@ -343,7 +362,7 @@ defmodule Adbc.Connection do
   @doc """
   Same as `ingest/2` but raises an exception on error.
   """
-  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t()) :: Adbc.IngestResult.t()
+  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) :: Adbc.IngestResult.t()
   def ingest!(conn, columns_or_stream) do
     case ingest(conn, columns_or_stream) do
       {:ok, result} -> result
@@ -840,12 +859,13 @@ defmodule Adbc.Connection do
     end
   end
 
-  defp handle_command({:bulk_insert, %Adbc.StreamResult{ref: stream_ref}, options}, state) do
+  defp handle_command({:bulk_insert_stream, stream_ref, capsule, options}, state) do
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
            :ok <- init_statement_options(stmt, options),
            :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        Adbc.Helper.noop(capsule)
         {:ok, rows_affected}
       end
 
