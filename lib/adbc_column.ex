@@ -125,29 +125,6 @@ defmodule Adbc.Column do
           | :run_end_encoded
           | :dictionary
 
-  @spec get_metadata(t(), String.t(), String.t() | nil) :: String.t() | nil
-  def get_metadata(%Adbc.Column{metadata: metadata}, key, default \\ nil)
-      when is_binary(key) or is_atom(key) do
-    metadata[to_string(key)] || default
-  end
-
-  @spec put_metadata(t(), String.t(), String.t()) :: t()
-  def put_metadata(buffer = %Adbc.Column{metadata: metadata}, key, value)
-      when (is_binary(key) or is_atom(key)) and (is_binary(value) or is_atom(value)) do
-    %{buffer | metadata: Map.put(metadata, to_string(key), to_string(value))}
-  end
-
-  @spec delete_metadata(t(), String.t()) :: t()
-  def delete_metadata(buffer = %Adbc.Column{metadata: metadata}, key)
-      when is_binary(key) or is_atom(key) do
-    %{buffer | metadata: Map.delete(metadata, to_string(key))}
-  end
-
-  @spec delete_all_metadata(t()) :: t()
-  def delete_all_metadata(buffer = %Adbc.Column{}) do
-    %{buffer | metadata: %{}}
-  end
-
   @doc """
   Creates a column by inferring the type from the data.
 
