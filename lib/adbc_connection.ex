@@ -294,7 +294,7 @@ defmodule Adbc.Connection do
 
   def bulk_insert(conn, columns, opts) when is_list(columns) and is_list(opts) do
     statement_options = build_ingest_options(opts)
-    command(conn, {:bulk_insert, columns, statement_options})
+    command(conn, {:bulk_insert, maybe_name_columns(columns), statement_options})
   end
 
   @doc """
@@ -356,7 +356,7 @@ defmodule Adbc.Connection do
   end
 
   def ingest(conn, columns) when is_list(columns) do
-    command(conn, {:ingest, columns})
+    command(conn, {:ingest, maybe_name_columns(columns)})
   end
 
   @doc """
@@ -428,6 +428,15 @@ defmodule Adbc.Connection do
       end
 
     statement_options
+  end
+
+  defp maybe_name_columns(columns) do
+    columns
+    |> Enum.with_index(1)
+    |> Enum.map(fn
+      {%Adbc.Column{name: nil} = col, i} -> %{col | name: "col#{i}"}
+      {col, _i} -> col
+    end)
   end
 
   @doc """

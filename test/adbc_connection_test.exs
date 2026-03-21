@@ -1104,6 +1104,25 @@ defmodule Adbc.ConnectionTest do
       assert map["id"] == [10, 20, 30]
       assert map["code"] == ["X", "Y", "Z"]
     end
+
+    test "auto-names unnamed columns", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [
+        Adbc.Column.s64([1, 2], name: "id"),
+        Adbc.Column.string(["Alice", "Bob"]),
+        Adbc.Column.s32([25, 30], name: "age")
+      ]
+
+      assert {:ok, 2} = Connection.bulk_insert(conn, columns, table: "mixed")
+
+      {:ok, result} = Connection.query(conn, "SELECT * FROM mixed ORDER BY id")
+      map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      assert map["id"] == [1, 2]
+      assert map["col2"] == ["Alice", "Bob"]
+      assert map["age"] == [25, 30]
+    end
   end
 
   describe "ingest" do
@@ -1254,6 +1273,25 @@ defmodule Adbc.ConnectionTest do
 
       assert %Adbc.IngestResult{} = result = Connection.ingest!(conn, columns)
       assert result.num_rows == 2
+    end
+
+    test "auto-names unnamed columns", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [
+        Adbc.Column.s64([1, 2], name: "id"),
+        Adbc.Column.string(["Alice", "Bob"]),
+        Adbc.Column.s32([25, 30], name: "age")
+      ]
+
+      assert {:ok, %Adbc.IngestResult{} = result} = Connection.ingest(conn, columns)
+
+      {:ok, verify} = Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      assert map["id"] == [1, 2]
+      assert map["col2"] == ["Alice", "Bob"]
+      assert map["age"] == [25, 30]
     end
   end
 end
