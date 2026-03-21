@@ -246,20 +246,21 @@ int get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct Arro
     tail = list;
     while (enif_get_list_cell(env, tail, &head, &tail)) {
         double val;
-        if (!erlang::nif::get(env, head, &val)) {
-            if (nullable && enif_is_identical(head, kAtomNil)) {
-                NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-            } else if (enif_is_identical(head, kAtomInfinity)) {
-                NANOARROW_RETURN_NOT_OK(callback(write_array, std::numeric_limits<double>::infinity()));
-            } else if (enif_is_identical(head, kAtomNegInfinity)) {
-                NANOARROW_RETURN_NOT_OK(callback(write_array, -std::numeric_limits<double>::infinity()));
-            } else if (enif_is_identical(head, kAtomNaN)) {
-                NANOARROW_RETURN_NOT_OK(callback(write_array, std::numeric_limits<double>::quiet_NaN()));
-            } else {
-                return 1;
-            }
-        } else {
+        ErlNifSInt64 i64;
+        if (erlang::nif::get(env, head, &val)) {
             NANOARROW_RETURN_NOT_OK(callback(write_array, val));
+        } else if (enif_get_int64(env, head, &i64)) {
+            NANOARROW_RETURN_NOT_OK(callback(write_array, static_cast<double>(i64)));
+        } else if (nullable && enif_is_identical(head, kAtomNil)) {
+            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
+        } else if (enif_is_identical(head, kAtomInfinity)) {
+            NANOARROW_RETURN_NOT_OK(callback(write_array, std::numeric_limits<double>::infinity()));
+        } else if (enif_is_identical(head, kAtomNegInfinity)) {
+            NANOARROW_RETURN_NOT_OK(callback(write_array, -std::numeric_limits<double>::infinity()));
+        } else if (enif_is_identical(head, kAtomNaN)) {
+            NANOARROW_RETURN_NOT_OK(callback(write_array, std::numeric_limits<double>::quiet_NaN()));
+        } else {
+            return 1;
         }
     }
     return 0;

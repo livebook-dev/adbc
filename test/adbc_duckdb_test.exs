@@ -177,8 +177,7 @@ defmodule Adbc.DuckDBTest do
   end
 
   @tag :unix
-  @describetag driver: :duckdb
-  test "array handling", %{conn: conn} do
+  test "arrays", %{conn: conn} do
     # Create a table with array column containing empty arrays
     {:ok, _} =
       Connection.query(conn, """
@@ -263,5 +262,26 @@ defmodule Adbc.DuckDBTest do
                }
              ]
            } = Adbc.Result.materialize(results)
+  end
+
+  test "floats", %{conn: conn} do
+    columns = [
+      Adbc.Column.f32([1, 2.5, :nan, :infinity, :neg_infinity, nil],
+        name: "f32_col",
+        nullable: true
+      ),
+      Adbc.Column.f64([10, 20.5, :nan, :infinity, :neg_infinity, nil],
+        name: "f64_col",
+        nullable: true
+      )
+    ]
+
+    assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "floats")
+
+    {:ok, result} = Connection.query(conn, "SELECT * FROM floats")
+    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+    assert map["f32_col"] == [1.0, 2.5, :nan, :infinity, :neg_infinity, nil]
+    assert map["f64_col"] == [10.0, 20.5, :nan, :infinity, :neg_infinity, nil]
   end
 end

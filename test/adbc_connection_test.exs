@@ -1123,6 +1123,35 @@ defmodule Adbc.ConnectionTest do
       assert map["col2"] == ["Alice", "Bob"]
       assert map["age"] == [25, 30]
     end
+
+    test "float columns with integers, nan, infinity, and nil", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [
+        Adbc.Column.f16([1, 2.5, :nan, :infinity, :neg_infinity, nil],
+          name: "f16_col",
+          nullable: true
+        ),
+        Adbc.Column.f32([1, 2.5, :nan, :infinity, :neg_infinity, nil],
+          name: "f32_col",
+          nullable: true
+        ),
+        Adbc.Column.f64([10, 20.5, :nan, :infinity, :neg_infinity, nil],
+          name: "f64_col",
+          nullable: true
+        )
+      ]
+
+      assert {:ok, 6} = Connection.bulk_insert(conn, columns, table: "floats")
+
+      {:ok, result} = Connection.query(conn, "SELECT * FROM floats")
+      map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      # SQLite converts NaN to nil, so we check the rest
+      assert map["f16_col"] == [1.0, 2.5, nil, :infinity, :neg_infinity, nil]
+      assert map["f32_col"] == [1.0, 2.5, nil, :infinity, :neg_infinity, nil]
+      assert map["f64_col"] == [10.0, 20.5, nil, :infinity, :neg_infinity, nil]
+    end
   end
 
   describe "ingest" do

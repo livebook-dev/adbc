@@ -477,7 +477,7 @@ defmodule Adbc.Column do
 
   ## Arguments
 
-  * `data`: A list of 32-bit single-precision float values (will be converted to 16-bit floats in C)
+  * `data`: A list of float values (will be converted to 16-bit floats in C). Integer values are automatically cast to floats.
   * `opts`: A keyword list of options
 
   ## Options
@@ -498,7 +498,7 @@ defmodule Adbc.Column do
       }
 
   """
-  @spec f16([float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
+  @spec f16([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f16(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       name: opts[:name],
@@ -514,7 +514,7 @@ defmodule Adbc.Column do
 
   ## Arguments
 
-  * `data`: A list of 32-bit single-precision float values
+  * `data`: A list of 32-bit single-precision float values. Integer values are automatically cast to floats.
   * `opts`: A keyword list of options
 
   ## Options
@@ -535,7 +535,7 @@ defmodule Adbc.Column do
       }
 
   """
-  @spec f32([float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
+  @spec f32([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f32(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       name: opts[:name],
@@ -551,7 +551,7 @@ defmodule Adbc.Column do
 
   ## Arguments
 
-  * `data`: A list of 64-bit double-precision float values
+  * `data`: A list of 64-bit double-precision float values. Integer values are automatically cast to floats.
   * `opts`: A keyword list of options
 
   ## Options
@@ -572,7 +572,7 @@ defmodule Adbc.Column do
       }
 
   """
-  @spec f64([float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
+  @spec f64([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f64(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       name: opts[:name],
