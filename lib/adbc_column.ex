@@ -729,7 +729,7 @@ defmodule Adbc.Column do
 
     %Adbc.Column{
       field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: preprocess_decimal(bitwidth, precision, scale, data, [])
+      data: preprocess_decimal(data, bitwidth, precision, scale)
     }
   end
 
@@ -760,7 +760,7 @@ defmodule Adbc.Column do
 
     %Adbc.Column{
       field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: preprocess_decimal(bitwidth, precision, scale, data, [])
+      data: preprocess_decimal(data, bitwidth, precision, scale)
     }
   end
 
@@ -770,50 +770,56 @@ defmodule Adbc.Column do
   defp coef_length(0, length), do: length
   defp coef_length(coef, length), do: coef_length(Kernel.div(coef, 10), length + 1)
 
-  defp preprocess_decimal(_bitwidth, _precision, _scale, [], acc), do: Enum.reverse(acc)
+  defp preprocess_decimal([], _bitwidth, _precision, _scale), do: []
 
-  defp preprocess_decimal(bitwidth, precision, scale, [nil | rest], acc) do
-    preprocess_decimal(bitwidth, precision, scale, rest, [nil | acc])
+  defp preprocess_decimal([nil | rest], bitwidth, precision, scale) do
+    [nil | preprocess_decimal(rest, bitwidth, precision, scale)]
   end
 
-  defp preprocess_decimal(bitwidth, precision, scale, [integer | rest], acc)
+  defp preprocess_decimal([integer | rest], bitwidth, precision, scale)
        when is_integer(integer) do
     if coef_length(integer) > precision do
-      raise Adbc.Error,
+      raise ArgumentError,
             "`#{Integer.to_string(integer)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
     else
       coef = integer * Integer.pow(10, scale)
-      acc = [<<coef::signed-integer-little-size(bitwidth)>> | acc]
-      preprocess_decimal(bitwidth, precision, scale, rest, acc)
+
+      [
+        <<coef::signed-integer-little-size(bitwidth)>>
+        | preprocess_decimal(rest, bitwidth, precision, scale)
+      ]
     end
   end
 
   defp preprocess_decimal(
+         [%Decimal{exp: exp} = decimal | _rest],
          bitwidth,
          _precision,
-         scale,
-         [%Decimal{exp: exp} = decimal | _rest],
-         _acc
+         scale
        )
        when -exp > scale do
-    raise Adbc.Error,
+    raise ArgumentError,
           "`#{Decimal.to_string(decimal)}` with exponent `#{exp}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number with scale value `#{scale}`"
   end
 
-  defp preprocess_decimal(bitwidth, precision, scale, [%Decimal{exp: exp} = decimal | rest], acc)
+  defp preprocess_decimal([%Decimal{exp: exp} = decimal | rest], bitwidth, precision, scale)
        when -exp <= scale do
-    if Decimal.inf?(decimal) or Decimal.nan?(decimal) do
-      raise Adbc.Error,
-            "`#{Decimal.to_string(decimal)}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number"
-    else
-      if coef_length(decimal.coef) > precision do
-        raise Adbc.Error,
+    cond do
+      Decimal.inf?(decimal) or Decimal.nan?(decimal) ->
+        raise ArgumentError,
+              "`#{Decimal.to_string(decimal)}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number"
+
+      coef_length(decimal.coef) > precision ->
+        raise ArgumentError,
               "`#{Decimal.to_string(decimal)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
-      else
+
+      true ->
         coef = decimal.coef * decimal.sign * Integer.pow(10, exp + scale)
-        acc = [<<coef::signed-integer-little-size(bitwidth)>> | acc]
-        preprocess_decimal(bitwidth, precision, scale, rest, acc)
-      end
+
+        [
+          <<coef::signed-integer-little-size(bitwidth)>>
+          | preprocess_decimal(rest, bitwidth, precision, scale)
+        ]
     end
   end
 
