@@ -102,6 +102,7 @@ defmodule Adbc.DuckDBTest do
     assert values == ["foo", "bar", "foo", "baz", "bar"]
   end
 
+  @tag :unix
   test "floats", %{conn: conn} do
     columns = [
       Adbc.Column.f32([1, 2.5, :nan, :infinity, :neg_infinity, nil],
@@ -123,6 +124,7 @@ defmodule Adbc.DuckDBTest do
     assert map["f64_col"] == [10.0, 20.5, :nan, :infinity, :neg_infinity, nil]
   end
 
+  @tag :unix
   test "integers", %{conn: conn} do
     columns = [
       Adbc.Column.s8([1, -1, nil], name: "s8_col", nullable: true),
@@ -142,6 +144,7 @@ defmodule Adbc.DuckDBTest do
     assert map["s64_col"] == [10000, -10000, nil]
   end
 
+  @tag :unix
   test "strings and binary", %{conn: conn} do
     columns = [
       Adbc.Column.string(["hello", "world", nil], name: "str_col", nullable: true),
@@ -157,6 +160,7 @@ defmodule Adbc.DuckDBTest do
     assert map["bin_col"] == [<<1, 2, 3>>, <<4, 5>>, nil]
   end
 
+  @tag :unix
   test "temporal types with mixed struct and integer values", %{conn: conn} do
     # Each temporal type accepts both Elixir structs and raw integers.
     # We insert one struct value, one equivalent integer value, and nil,
