@@ -91,7 +91,10 @@ defmodule Adbc.MixProject do
     [
       main: "Adbc.Database",
       source_ref: "v#{@version}",
-      source_url: @github_url
+      source_url: @github_url,
+      groups_for_docs: [
+        "Column types": &(&1[:type] == :column_type)
+      ]
     ]
   end
 

@@ -1,9 +1,18 @@
 defmodule Adbc.Column do
   @moduledoc """
-  Documentation for `Adbc.Column`.
+  Represents columns in the table.
 
-  `Adbc.Column` corresponds to a column in the table. It contains the column's name, type, and
-  data. The data is a list of values of the column's data type.
+  It contains the column's name, type, and data.
+  The data is a list of values of the column's data type.
+
+  You can create new columns using `new/2`, which will infer
+  a base type if none is given, and detect if the columns are
+  nullable or not.
+
+  The other functions in this module, such as `s8`, `boolean`,
+  etc, are meant to be low-level functions which expect all
+  relevant data to be given. For example, they won't automatically
+  detect nullable, you must explicitly provide said value as argument.
   """
   @enforce_keys [:name, :type, :nullable]
   defstruct [:name, :type, :nullable, :metadata, :data, :length, :offset]
@@ -140,6 +149,220 @@ defmodule Adbc.Column do
   end
 
   @doc """
+  Creates a column by inferring the type from the data.
+
+  This is a higher-level API that traverses the data element by element,
+  inferring the most appropriate type. Nullable is automatically set to
+  `true` if any `nil` values are found.
+
+  ## Type inference rules
+
+    * `true` / `false` → `:boolean`
+    * integers → `:s64`
+    * floats, `:nan`, `:infinity`, `:neg_infinity` → `:f64`
+      (integers in the same column are promoted to `:f64`)
+    * binaries → `:string`
+    * `%Date{}` → `:date32` (integers also supported)
+    * `%Time{}` → `{:time64, :microseconds}` (integers representing microseconds also supported)
+    * `%NaiveDateTime{}` → `{:timestamp, :microseconds, "UTC"}` (integers representing microseconds also supported)
+    * lists → `:list` (each element is a plain Elixir list or `nil`;
+      inner type is recursively inferred)
+
+  If `nil` values are present, then the column is appropriately marked as nullable.
+  If there are no values, the default type of `:string` is assumed.
+
+  If a `:type` is given, the type inference is skipped and only
+  nullable detection is performed. This is useful for types that
+  cannot be inferred, such as unsigned integers, smaller integer
+  sizes, decimal, duration, interval, and composite types.
+
+  ## Options
+
+    * `:name` - The name of the column
+    * `:type` - Explicitly set the column type, skipping type inference
+
+  ## Examples
+
+      iex> Adbc.Column.new([1, 2, 3], name: "ids")
+      %Adbc.Column{
+        name: "ids",
+        type: :s64,
+        nullable: false,
+        metadata: nil,
+        data: [1, 2, 3]
+      }
+
+      iex> Adbc.Column.new([1, nil, 3.0])
+      %Adbc.Column{
+        name: nil,
+        type: :f64,
+        nullable: true,
+        metadata: nil,
+        data: [1, nil, 3.0]
+      }
+
+      iex> Adbc.Column.new([1, 2, 3], type: :u32)
+      %Adbc.Column{
+        name: nil,
+        type: :u32,
+        nullable: false,
+        metadata: nil,
+        data: [1, 2, 3]
+      }
+
+  """
+  @spec new(list(), Keyword.t()) :: t()
+  def new(data, opts \\ []) when is_list(data) and is_list(opts) do
+    {type, nullable} =
+      case opts[:type] do
+        nil -> infer_type(data, nil, false)
+        type -> {type, Enum.member?(data, nil)}
+      end
+
+    %Adbc.Column{
+      name: opts[:name],
+      type: type,
+      nullable: nullable,
+      metadata: nil,
+      data: data
+    }
+  end
+
+  @float_atoms [:nan, :infinity, :neg_infinity]
+
+  defp infer_type([], nil, nullable), do: {:string, nullable}
+  defp infer_type([], type, nullable), do: {type, nullable}
+
+  defp infer_type([nil | rest], type, _nullable) do
+    infer_type(rest, type, true)
+  end
+
+  defp infer_type([value | rest], type, nullable) when is_boolean(value) do
+    case type do
+      nil ->
+        infer_type(rest, :boolean, nullable)
+
+      :boolean ->
+        infer_type(rest, :boolean, nullable)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got boolean but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([value | rest], type, nullable) when is_integer(value) do
+    case type do
+      nil ->
+        infer_type(rest, :s64, nullable)
+
+      :s64 ->
+        infer_type(rest, :s64, nullable)
+
+      :f64 ->
+        infer_type(rest, :f64, nullable)
+
+      :date32 ->
+        infer_type(rest, :date32, nullable)
+
+      {:time64, _} = t ->
+        infer_type(rest, t, nullable)
+
+      {:timestamp, _, _} = t ->
+        infer_type(rest, t, nullable)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got integer but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([value | rest], type, nullable) when is_float(value) or value in @float_atoms do
+    case type do
+      nil ->
+        infer_type(rest, :f64, nullable)
+
+      :s64 ->
+        infer_type(rest, :f64, nullable)
+
+      :f64 ->
+        infer_type(rest, :f64, nullable)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got float but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([value | rest], type, nullable) when is_binary(value) do
+    case type do
+      nil ->
+        infer_type(rest, :string, nullable)
+
+      :string ->
+        infer_type(rest, :string, nullable)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got string but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([%Date{} | rest], type, nullable) do
+    case type do
+      nil ->
+        infer_type(rest, :date32, nullable)
+
+      :date32 ->
+        infer_type(rest, :date32, nullable)
+
+      :s64 ->
+        infer_type(rest, :date32, nullable)
+
+      _ ->
+        raise ArgumentError, "mixed types in column: got Date but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([%Time{} | rest], type, nullable) do
+    case type do
+      nil ->
+        infer_type(rest, {:time64, :microseconds}, nullable)
+
+      {:time64, _} = t ->
+        infer_type(rest, t, nullable)
+
+      :s64 ->
+        infer_type(rest, {:time64, :microseconds}, nullable)
+
+      _ ->
+        raise ArgumentError, "mixed types in column: got Time but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([%NaiveDateTime{} | rest], type, nullable) do
+    case type do
+      nil ->
+        infer_type(rest, {:timestamp, :microseconds, "UTC"}, nullable)
+
+      {:timestamp, _, _} = t ->
+        infer_type(rest, t, nullable)
+
+      :s64 ->
+        infer_type(rest, {:timestamp, :microseconds, "UTC"}, nullable)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got NaiveDateTime but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([value | _rest], _type, _nullable) do
+    raise ArgumentError, "cannot infer type for value in column: #{inspect(value)}"
+  end
+
+  @doc type: :column_type
+  @doc """
   A column that contains booleans.
 
   ## Arguments
@@ -176,6 +399,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains unsigned 8-bit integers.
 
@@ -213,6 +437,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains unsigned 16-bit integers.
 
@@ -250,6 +475,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains un32-bit signed integers.
 
@@ -287,6 +513,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains un64-bit signed integers.
 
@@ -324,6 +551,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains signed 8-bit integers.
 
@@ -361,6 +589,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains signed 16-bit integers.
 
@@ -398,6 +627,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 32-bit signed integers.
 
@@ -435,6 +665,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 64-bit signed integers.
 
@@ -472,6 +703,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 16-bit half-precision floats.
 
@@ -509,6 +741,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 32-bit single-precision floats.
 
@@ -546,6 +779,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 64-bit double-precision floats.
 
@@ -583,6 +817,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 128-bit decimals.
 
@@ -616,6 +851,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains 256-bit decimals.
 
@@ -702,6 +938,7 @@ defmodule Adbc.Column do
     end
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains UTF-8 encoded strings.
 
@@ -739,6 +976,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains UTF-8 encoded large strings.
 
@@ -778,6 +1016,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains binary values.
 
@@ -815,6 +1054,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains large binary values.
 
@@ -854,6 +1094,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains fixed size binaries.
 
@@ -895,6 +1136,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains date represented as 32-bit signed integers in UTC.
 
@@ -922,6 +1164,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains date represented as 64-bit signed integers in UTC.
 
@@ -949,6 +1192,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains time represented as signed integers in UTC.
 
@@ -1003,6 +1247,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains timestamps represented as signed integers in the given timezone.
 
@@ -1042,6 +1287,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains durations represented as 64-bit signed integers.
 
@@ -1076,6 +1322,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that contains durations represented as signed integers.
 
@@ -1124,6 +1371,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   A column that each row is a list of some type or nil.
 
@@ -1154,6 +1402,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   Similar to `list/2`, but for large lists.
 
@@ -1184,6 +1433,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   Similar to `list/2`, but the length of the list is the same.
 
@@ -1217,6 +1467,7 @@ defmodule Adbc.Column do
     }
   end
 
+  @doc type: :column_type
   @doc """
   Construct an array using dictionary encoding.
 

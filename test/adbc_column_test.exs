@@ -2,6 +2,163 @@ defmodule Adbc.ColumnTest do
   use ExUnit.Case, async: true
   doctest Adbc.Column
 
+  describe "new/2" do
+    test "empty list defaults to string" do
+      assert %Adbc.Column{type: :string, nullable: false, data: []} = Adbc.Column.new([])
+    end
+
+    test "booleans" do
+      col = Adbc.Column.new([true, false, true])
+      assert col.type == :boolean
+      assert col.nullable == false
+      assert col.data == [true, false, true]
+    end
+
+    test "integers infer as s64" do
+      col = Adbc.Column.new([1, 2, 3])
+      assert col.type == :s64
+      assert col.nullable == false
+    end
+
+    test "floats infer as f64" do
+      col = Adbc.Column.new([1.0, 2.5, 3.0])
+      assert col.type == :f64
+      assert col.nullable == false
+    end
+
+    test "integers promoted to f64 when mixed with floats" do
+      col = Adbc.Column.new([1, 2.5, 3])
+      assert col.type == :f64
+      assert col.nullable == false
+      assert col.data == [1, 2.5, 3]
+    end
+
+    test "nan, infinity, neg_infinity infer as f64" do
+      col = Adbc.Column.new([:nan, :infinity, :neg_infinity])
+      assert col.type == :f64
+      assert col.nullable == false
+    end
+
+    test "integers promoted to f64 when mixed with nan" do
+      col = Adbc.Column.new([1, :nan, 3])
+      assert col.type == :f64
+    end
+
+    test "nil sets nullable" do
+      col = Adbc.Column.new([1, nil, 3])
+      assert col.type == :s64
+      assert col.nullable == true
+      assert col.data == [1, nil, 3]
+    end
+
+    test "only nils defaults to string" do
+      col = Adbc.Column.new([nil, nil])
+      assert col.type == :string
+      assert col.nullable == true
+    end
+
+    test "strings" do
+      col = Adbc.Column.new(["hello", "world"])
+      assert col.type == :string
+      assert col.nullable == false
+    end
+
+    test "dates infer as date32" do
+      col = Adbc.Column.new([~D[2024-01-01], ~D[2024-12-31]])
+      assert col.type == :date32
+      assert col.nullable == false
+    end
+
+    test "dates mixed with integers" do
+      col = Adbc.Column.new([100, ~D[2024-01-01], nil])
+      assert col.type == :date32
+      assert col.nullable == true
+    end
+
+    test "times infer as time64 microseconds" do
+      col = Adbc.Column.new([~T[12:00:00], ~T[13:30:00]])
+      assert col.type == {:time64, :microseconds}
+      assert col.nullable == false
+    end
+
+    test "times mixed with integers" do
+      col = Adbc.Column.new([1000, ~T[12:00:00]])
+      assert col.type == {:time64, :microseconds}
+    end
+
+    test "naive datetimes infer as timestamp microseconds UTC" do
+      col = Adbc.Column.new([~N[2024-01-01 12:00:00], ~N[2024-12-31 23:59:59]])
+      assert col.type == {:timestamp, :microseconds, "UTC"}
+      assert col.nullable == false
+    end
+
+    test "naive datetimes mixed with integers" do
+      col = Adbc.Column.new([1000, ~N[2024-01-01 12:00:00], nil])
+      assert col.type == {:timestamp, :microseconds, "UTC"}
+      assert col.nullable == true
+    end
+
+    test "accepts name option" do
+      col = Adbc.Column.new([1, 2, 3], name: "my_col")
+      assert col.name == "my_col"
+    end
+
+    test "raises on mixed incompatible types" do
+      assert_raise ArgumentError, ~r/mixed types/, fn ->
+        Adbc.Column.new([true, 1])
+      end
+
+      assert_raise ArgumentError, ~r/mixed types/, fn ->
+        Adbc.Column.new(["hello", 1])
+      end
+
+      assert_raise ArgumentError, ~r/mixed types/, fn ->
+        Adbc.Column.new([~D[2024-01-01], 1.0])
+      end
+
+      assert_raise ArgumentError, ~r/mixed types/, fn ->
+        Adbc.Column.new([true, "hello"])
+      end
+    end
+
+    test "raises on unsupported values" do
+      assert_raise ArgumentError, ~r"cannot infer type for value in column", fn ->
+        Adbc.Column.new([{:tuple, 1}])
+      end
+    end
+
+    test "explicit type skips inference and detects nullable" do
+      col = Adbc.Column.new([1, 2, 3], type: :u32)
+      assert col.type == :u32
+      assert col.nullable == false
+
+      col = Adbc.Column.new([1, nil, 3], type: :s16)
+      assert col.type == :s16
+      assert col.nullable == true
+    end
+
+    test "explicit type works for types that cannot be inferred" do
+      col = Adbc.Column.new([100, 200], type: :u64)
+      assert col.type == :u64
+
+      col = Adbc.Column.new([1.0, 2.0], type: :f32)
+      assert col.type == :f32
+
+      col = Adbc.Column.new([1000, 2000], type: {:duration, :microseconds})
+      assert col.type == {:duration, :microseconds}
+    end
+
+    test "unsupported types raise" do
+      assert_raise ArgumentError, ~r"cannot infer type", fn ->
+        Adbc.Column.new([Decimal.new("1.23")])
+      end
+
+      assert_raise ArgumentError, ~r"cannot infer type", fn ->
+        Adbc.Column.new([[1, 2]])
+      end
+    end
+  end
+
   describe "decimals" do
     test "integers" do
       value = 42
