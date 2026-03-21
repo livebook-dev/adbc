@@ -71,4 +71,6 @@ defmodule Adbc.Nif do
   def adbc_arrow_array_stream_release(_arrow_array_stream), do: :erlang.nif_error(:not_loaded)
 
   def adbc_column_materialize(_data_ref), do: :erlang.nif_error(:not_loaded)
+
+  def adbc_delete_on_gc_new(_pid, _table_name), do: :erlang.nif_error(:not_loaded)
 end

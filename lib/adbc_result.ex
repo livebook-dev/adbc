@@ -25,6 +25,35 @@ defmodule Adbc.StreamResult do
         }
 end
 
+defmodule Adbc.IngestResult do
+  @moduledoc """
+  Represents the result of an `Adbc.Connection.ingest/2` operation.
+
+  The data is stored in a temporary table that is automatically
+  dropped when this struct is garbage collected.
+
+  It contains:
+
+    * `:ref` - internal reference that controls the table lifetime (do not use directly)
+    * `:table` - the name of the temporary table
+    * `:num_rows` - the number of rows ingested
+
+  > ### Garbage collection {: .warning}
+  >
+  > You must always hold a whole reference to the struct,
+  > and not individual fields. For example, if you only
+  > keep a reference to `result.table`, then the struct will
+  > be GCed, and so would be the table.
+  """
+  defstruct [:ref, :table, :num_rows]
+
+  @type t :: %__MODULE__{
+          ref: reference(),
+          table: String.t(),
+          num_rows: non_neg_integer()
+        }
+end
+
 defmodule Adbc.Result do
   @moduledoc """
   A struct returned as result from queries.

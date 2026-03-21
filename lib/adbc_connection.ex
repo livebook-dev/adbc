@@ -290,6 +290,43 @@ defmodule Adbc.Connection do
     end
   end
 
+  @doc """
+  Ingests columns into a temporary table that is automatically dropped
+  when the returned result is garbage collected.
+
+  Returns `{:ok, %Adbc.IngestResult{}}` on success.
+
+  ## Examples
+
+      columns = [
+        Adbc.Column.s64([1, 2, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      {:ok, result} = Adbc.Connection.ingest(conn, columns)
+      result.table
+      #=> "adbc_ingest_0"
+      result.num_rows
+      #=> 3
+
+  """
+  @spec ingest(t(), [Adbc.Column.t()]) ::
+          {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
+  def ingest(conn, columns) when is_list(columns) do
+    command(conn, {:ingest, columns})
+  end
+
+  @doc """
+  Same as `ingest/2` but raises an exception on error.
+  """
+  @spec ingest!(t(), [Adbc.Column.t()]) :: Adbc.IngestResult.t()
+  def ingest!(conn, columns) when is_list(columns) do
+    case ingest(conn, columns) do
+      {:ok, result} -> result
+      {:error, reason} -> raise reason
+    end
+  end
+
   defp build_ingest_options(opts) do
     unless opts[:table] do
       raise ArgumentError, ":table option must be specified"
@@ -697,7 +734,7 @@ defmodule Adbc.Connection do
     case GenServer.call(db, {:initialize_connection, conn}, :infinity) do
       {:ok, driver} ->
         Process.put(:adbc_driver, driver)
-        {:ok, %{conn: conn, lock: :none, queue: :queue.new()}}
+        {:ok, %{conn: conn, lock: :none, queue: :queue.new(), ingest_counter: 0}}
 
       {:error, reason} ->
         {:stop, error_to_exception(reason)}
@@ -735,6 +772,11 @@ defmodule Adbc.Connection do
     {:noreply, maybe_dequeue(%{state | lock: :none})}
   end
 
+  def handle_info({:delete_on_gc, table_name}, state) do
+    state = update_in(state.queue, &:queue.in({:command, {:delete_on_gc, table_name}, nil}, &1))
+    {:noreply, maybe_dequeue(state)}
+  end
+
   ## Queue helpers
 
   defp maybe_dequeue(%{lock: :none, queue: queue} = state) do
@@ -743,9 +785,9 @@ defmodule Adbc.Connection do
         %{state | queue: queue}
 
       {{:value, {:command, command, from}}, queue} ->
-        result = handle_command(command, state.conn)
-        GenServer.reply(from, result)
-        maybe_dequeue(%{state | queue: queue})
+        {result, state} = handle_command(command, %{state | queue: queue})
+        if from, do: GenServer.reply(from, result)
+        maybe_dequeue(state)
 
       {{:value, {:stream, command, from}}, queue} ->
         {pid, _} = from
@@ -765,29 +807,70 @@ defmodule Adbc.Connection do
 
   defp maybe_dequeue(state), do: state
 
-  defp handle_command({:prepare, query}, conn) do
-    with {:ok, stmt} <- create_statement(conn, query),
+  defp handle_command({:prepare, query}, state) do
+    with {:ok, stmt} <- create_statement(state.conn, query),
          :ok <- Adbc.Nif.adbc_statement_prepare(stmt) do
-      {:ok, stmt}
+      {{:ok, stmt}, state}
+    else
+      error -> {error, state}
     end
   end
 
-  defp handle_command({:bulk_insert, %Adbc.StreamResult{ref: stream_ref}, options}, conn) do
-    with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(conn),
-         :ok <- init_statement_options(stmt, options),
-         :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
-         {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
-      {:ok, rows_affected}
-    end
+  defp handle_command({:bulk_insert, %Adbc.StreamResult{ref: stream_ref}, options}, state) do
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- init_statement_options(stmt, options),
+           :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        {:ok, rows_affected}
+      end
+
+    {result, state}
   end
 
-  defp handle_command({:bulk_insert, columns, options}, conn) do
-    with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(conn),
-         :ok <- init_statement_options(stmt, options),
-         :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
-         {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
-      {:ok, rows_affected}
-    end
+  defp handle_command({:bulk_insert, columns, options}, state) do
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- init_statement_options(stmt, options),
+           :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        {:ok, rows_affected}
+      end
+
+    {result, state}
+  end
+
+  defp handle_command({:ingest, columns}, state) do
+    counter = state.ingest_counter
+    table_name = "adbc_ingest_#{counter}"
+    state = %{state | ingest_counter: counter + 1}
+
+    options = [
+      {"adbc.ingest.target_table", table_name},
+      {"adbc.ingest.temporary", "true"}
+    ]
+
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- init_statement_options(stmt, options),
+           :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt),
+           {:ok, ref} <- Adbc.Nif.adbc_delete_on_gc_new(self(), table_name) do
+        {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
+      end
+
+    {result, state}
+  end
+
+  defp handle_command({:delete_on_gc, table_name}, state) do
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- Adbc.Nif.adbc_statement_set_sql_query(stmt, "DROP TABLE IF EXISTS #{table_name}"),
+           {:ok, _rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        :ok
+      end
+
+    {result, state}
   end
 
   defp handle_stream({:query, query_or_prepared, params, statement_options}, conn) do

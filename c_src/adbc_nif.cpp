@@ -17,6 +17,7 @@ template<> ErlNifResourceType * NifRes<struct AdbcStatement>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct AdbcError>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStream>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStreamRecord>::type = nullptr;
+template<> ErlNifResourceType * NifRes<struct AdbcDeleteOnGC>::type = nullptr;
 
 static ERL_NIF_TERM nif_error_from_adbc_error(ErlNifEnv *env, struct AdbcError * adbc_error) {
     char const* message = (adbc_error->message == nullptr) ? "unknown error" : adbc_error->message;
@@ -856,6 +857,34 @@ static ERL_NIF_TERM adbc_statement_bind_stream(ErlNifEnv *env, int argc, const E
     return erlang::nif::ok(env);
 }
 
+static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct AdbcDeleteOnGC>;
+
+    ERL_NIF_TERM error{};
+
+    ErlNifPid pid;
+    if (!enif_get_local_pid(env, argv[0], &pid)) {
+        return enif_make_badarg(env);
+    }
+
+    std::string table_name;
+    if (!erlang::nif::get(env, argv[1], table_name)) {
+        return enif_make_badarg(env);
+    }
+
+    res_type *res = res_type::allocate_resource(env, error);
+    if (res == nullptr) {
+        return error;
+    }
+
+    res->val.pid = pid;
+    new (&res->val.table_name) std::string(std::move(table_name));
+
+    ERL_NIF_TERM ref = res->make_resource(env);
+    enif_release_resource(res);
+    return erlang::nif::ok(env, ref);
+}
+
 static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     ErlNifResourceType *rt;
 
@@ -897,6 +926,13 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     {
         using res_type = NifRes<struct ArrowArrayStreamRecord>;
         rt = enif_open_resource_type(env, "Elixir.Adbc.Nif", "NifResArrowArrayStreamRecord", destruct_arrow_array_stream_record, ERL_NIF_RT_CREATE, NULL);
+        if (!rt) return -1;
+        res_type::type = rt;
+    }
+
+    {
+        using res_type = NifRes<struct AdbcDeleteOnGC>;
+        rt = enif_open_resource_type(env, "Elixir.Adbc.Nif", "NifResAdbcDeleteOnGC", destruct_adbc_delete_on_gc, ERL_NIF_RT_CREATE, NULL);
         if (!rt) return -1;
         res_type::type = rt;
     }
@@ -1067,6 +1103,8 @@ static ErlNifFunc nif_functions[] = {
     {"adbc_arrow_array_stream_release", 1, adbc_arrow_array_stream_release, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_column_materialize", 1, adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+
+    {"adbc_delete_on_gc_new", 2, adbc_delete_on_gc_new, 0},
 };
 
 ERL_NIF_INIT(Elixir.Adbc.Nif, nif_functions, on_load, on_reload, on_upgrade, NULL);

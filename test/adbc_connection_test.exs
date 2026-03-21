@@ -1080,4 +1080,85 @@ defmodule Adbc.ConnectionTest do
       assert map["code"] == ["X", "Y", "Z"]
     end
   end
+
+  describe "ingest" do
+    test "ingests into a temporary table and returns IngestResult", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [
+        Adbc.Column.s64([1, 2, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      assert {:ok, %Adbc.IngestResult{} = result} = Connection.ingest(conn, columns)
+      assert result.table == "adbc_ingest_0"
+      assert result.num_rows == 3
+      assert is_reference(result.ref)
+
+      # Verify the data is queryable
+      {:ok, query_result} =
+        Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
+
+      query_result = Adbc.Result.materialize(query_result)
+      map = Adbc.Result.to_map(query_result)
+
+      assert map["id"] == [1, 2, 3]
+      assert map["name"] == ["Alice", "Bob", "Charlie"]
+    end
+
+    test "increments table counter", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [Adbc.Column.s64([1], name: "id")]
+
+      assert {:ok, result1} = Connection.ingest(conn, columns)
+      assert result1.table == "adbc_ingest_0"
+
+      assert {:ok, result2} = Connection.ingest(conn, columns)
+      assert result2.table == "adbc_ingest_1"
+    end
+
+    test "drops table when result is garbage collected", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      conn_pid = GenServer.whereis(conn)
+
+      columns = [
+        Adbc.Column.s64([1, 2, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      assert {:ok, result} = Connection.ingest(conn, columns)
+      table_name = result.table
+
+      # Verify the table exists
+      assert {:ok, _} = Connection.query(conn, "SELECT * FROM #{table_name}")
+
+      # Trace messages received by the connection process
+      :erlang.trace(conn_pid, true, [:receive, tracer: self()])
+
+      # Use result one last time so it is not referenced after this point
+      Enum.each([result], fn _ -> :ok end)
+      :erlang.garbage_collect(self())
+
+      # Wait for the connection to receive the :delete_on_gc message
+      assert_receive {:trace, ^conn_pid, :receive, {:delete_on_gc, ^table_name}}
+
+      :erlang.trace(conn_pid, false, [:receive])
+
+      # Ensure the delete command has been processed by making a synchronous call
+      assert {:error, %Adbc.Error{} = error} =
+               Connection.query(conn, "SELECT * FROM #{table_name}")
+
+      assert error.message =~ table_name
+    end
+
+    test "ingest! returns result or raises", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [Adbc.Column.s64([1, 2], name: "id")]
+
+      assert %Adbc.IngestResult{} = result = Connection.ingest!(conn, columns)
+      assert result.num_rows == 2
+    end
+  end
 end
