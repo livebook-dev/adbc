@@ -1038,6 +1038,31 @@ defmodule Adbc.ConnectionTest do
       assert error.message =~ "nullable"
     end
 
+    test "bulk inserts a Pythonx.Object implementing arrow stream", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      {py_table, %{}} =
+        Pythonx.eval(
+          """
+          import pyarrow
+          n_legs = pyarrow.array([2, 4, 5, 100])
+          animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
+          names = ["n_legs", "animals"]
+          pyarrow.Table.from_arrays([n_legs, animals], names=names)
+          """,
+          %{}
+        )
+
+      assert {:ok, 4} = Connection.bulk_insert(conn, py_table, table: "py_animals")
+
+      {:ok, verify} =
+        Connection.query(conn, "SELECT * FROM py_animals ORDER BY n_legs")
+
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      assert map["n_legs"] == [2, 4, 5, 100]
+      assert map["animals"] == ["Flamingo", "Horse", "Brittle stars", "Centipede"]
+    end
+
     test "stream-based bulk insert raises on same connection", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
@@ -1078,6 +1103,157 @@ defmodule Adbc.ConnectionTest do
 
       assert map["id"] == [10, 20, 30]
       assert map["code"] == ["X", "Y", "Z"]
+    end
+  end
+
+  describe "ingest" do
+    test "ingests into a temporary table and returns IngestResult", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [
+        Adbc.Column.s64([1, 2, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      assert {:ok, %Adbc.IngestResult{} = result} = Connection.ingest(conn, columns)
+      assert result.table == "adbc_ingest_0"
+      assert result.num_rows == 3
+      assert is_reference(result.ref)
+
+      # Verify the data is queryable
+      {:ok, query_result} =
+        Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
+
+      query_result = Adbc.Result.materialize(query_result)
+      map = Adbc.Result.to_map(query_result)
+
+      assert map["id"] == [1, 2, 3]
+      assert map["name"] == ["Alice", "Bob", "Charlie"]
+    end
+
+    test "increments table counter", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [Adbc.Column.s64([1], name: "id")]
+
+      assert {:ok, result1} = Connection.ingest(conn, columns)
+      assert result1.table == "adbc_ingest_0"
+
+      assert {:ok, result2} = Connection.ingest(conn, columns)
+      assert result2.table == "adbc_ingest_1"
+    end
+
+    test "drops table when result is garbage collected", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      conn_pid = GenServer.whereis(conn)
+
+      columns = [
+        Adbc.Column.s64([1, 2, 3], name: "id"),
+        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+      ]
+
+      assert {:ok, result} = Connection.ingest(conn, columns)
+      table_name = result.table
+
+      # Verify the table exists
+      assert {:ok, _} = Connection.query(conn, "SELECT * FROM #{table_name}")
+
+      # Trace messages received by the connection process
+      :erlang.trace(conn_pid, true, [:receive, tracer: self()])
+
+      # Use result one last time so it is not referenced after this point
+      Enum.each([result], fn _ -> :ok end)
+      :erlang.garbage_collect(self())
+
+      # Wait for the connection to receive the :delete_on_gc message
+      assert_receive {:trace, ^conn_pid, :receive, {:delete_on_gc, ^table_name}}
+
+      :erlang.trace(conn_pid, false, [:receive])
+
+      # Ensure the delete command has been processed by making a synchronous call
+      assert {:error, %Adbc.Error{} = error} =
+               Connection.query(conn, "SELECT * FROM #{table_name}")
+
+      assert error.message =~ table_name
+    end
+
+    test "stream-based ingest across different connections", %{db: db} do
+      source_conn = start_supervised!({Connection, database: db})
+      dest_conn = start_supervised!({Connection, database: db}, id: :ingest_dest_conn)
+
+      # Create initial data in source
+      columns = [
+        Adbc.Column.s64([10, 20, 30], name: "id"),
+        Adbc.Column.string(["X", "Y", "Z"], name: "code")
+      ]
+
+      Connection.bulk_insert!(source_conn, columns, table: "ingest_source")
+
+      # Transfer data via stream-based ingest
+      {:ok, result} =
+        Connection.query_pointer(source_conn, "SELECT * FROM ingest_source", fn stream ->
+          Connection.ingest(dest_conn, stream)
+        end)
+
+      assert {:ok, %Adbc.IngestResult{} = ingest_result} = result
+      assert ingest_result.num_rows == 3
+      assert ingest_result.table =~ "adbc_ingest_"
+
+      # Verify the data in destination
+      {:ok, verify} =
+        Connection.query(dest_conn, "SELECT * FROM #{ingest_result.table} ORDER BY id")
+
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      assert map["id"] == [10, 20, 30]
+      assert map["code"] == ["X", "Y", "Z"]
+    end
+
+    test "stream-based ingest raises on same connection", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      assert_raise ArgumentError,
+                   "cannot use ingest to transfer results over the same connection",
+                   fn ->
+                     Connection.query_pointer(conn, "SELECT 1, 2, 3", fn stream ->
+                       Connection.ingest(conn, stream)
+                     end)
+                   end
+    end
+
+    test "ingests a Pythonx.Object implementing arrow stream", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      {py_table, %{}} =
+        Pythonx.eval(
+          """
+          import pyarrow
+          n_legs = pyarrow.array([2, 4, 5, 100])
+          animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
+          names = ["n_legs", "animals"]
+          pyarrow.Table.from_arrays([n_legs, animals], names=names)
+          """,
+          %{}
+        )
+
+      assert {:ok, %Adbc.IngestResult{} = result} = Connection.ingest(conn, py_table)
+      assert result.num_rows == 4
+      assert result.table =~ "adbc_ingest_"
+
+      {:ok, verify} =
+        Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY n_legs")
+
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      assert map["n_legs"] == [2, 4, 5, 100]
+      assert map["animals"] == ["Flamingo", "Horse", "Brittle stars", "Centipede"]
+    end
+
+    test "ingest! returns result or raises", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      columns = [Adbc.Column.s64([1, 2], name: "id")]
+
+      assert %Adbc.IngestResult{} = result = Connection.ingest!(conn, columns)
+      assert result.num_rows == 2
     end
   end
 end
