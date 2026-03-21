@@ -86,7 +86,7 @@ defmodule Adbc.Result do
   Returns a map of columns as a result.
   """
   def to_map(result = %Adbc.Result{}) do
-    Map.new(result.data, fn %Adbc.Column{name: name} = column ->
+    Map.new(result.data, fn %Adbc.Column{field: %{name: name}} = column ->
       {name, column |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
     end)
   end
@@ -140,7 +140,7 @@ defimpl Table.Reader, for: Adbc.Result do
         |> Adbc.Column.to_list()
       end)
 
-    names = Enum.map(result.data, & &1.name)
+    names = Enum.map(result.data, & &1.field.name)
     {:columns, %{columns: names, count: result.num_rows}, data}
   end
 end

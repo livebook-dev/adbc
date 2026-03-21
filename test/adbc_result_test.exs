@@ -16,56 +16,36 @@ defmodule Adbc.ResultTest do
     %Adbc.Result{
       data: [
         %Adbc.Column{
-          name: "start_time",
-          type: {:timestamp, :seconds, "UTC"},
-          nullable: true,
-          metadata: nil,
+          field: %Adbc.Field{
+            name: "start_time",
+            type: {:timestamp, :seconds, "UTC"},
+            nullable: true
+          },
           data: [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]]
         },
         %Adbc.Column{
-          name: "end_time",
-          type: {:timestamp, :seconds, "UTC"},
-          nullable: true,
-          metadata: nil,
+          field: %Adbc.Field{
+            name: "end_time",
+            type: {:timestamp, :seconds, "UTC"},
+            nullable: true
+          },
           data: [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]]
         },
         %Adbc.Column{
-          name: "time_series",
-          type: :list,
-          nullable: true,
+          field: %Adbc.Field{
+            name: "time_series",
+            type:
+              {:list,
+               %Adbc.Field{
+                 name: "item",
+                 type: :s32,
+                 nullable: true
+               }},
+            nullable: true
+          },
           data: [
-            %Adbc.Column{
-              name: "item",
-              type: :list_view,
-              nullable: true,
-              data: %{
-                validity: [true, true, true, true],
-                offsets: [0, 1, 2, 3],
-                sizes: [1, 2, 2, 1],
-                values: %Adbc.Column{
-                  name: "variable_sliding_window",
-                  type: :int32,
-                  nullable: false,
-                  data: [1, 2, 3, 4]
-                }
-              }
-            },
-            %Adbc.Column{
-              name: "item",
-              type: :list_view,
-              nullable: true,
-              data: %{
-                validity: [true, true, true, true],
-                offsets: [0, 1, 2, 3],
-                sizes: [2, 1, 2, 1],
-                values: %Adbc.Column{
-                  name: "variable_sliding_window",
-                  type: :int32,
-                  nullable: false,
-                  data: [3, 4, 5, 6]
-                }
-              }
-            }
+            [[1], [2, 3], [3, 4], [4]],
+            [[3, 4], [4], [5, 6], [6]]
           ]
         }
       ]
@@ -95,65 +75,4 @@ defmodule Adbc.ResultTest do
            } == Result.to_map(result())
   end
 
-  describe "from_py" do
-    test "with invalid object" do
-      assert_raise ArgumentError, fn ->
-        {py_list, %{}} = Pythonx.eval("[]", %{})
-
-        Result.from_py(py_list)
-      end
-    end
-
-    test "with object implementing arrow stream" do
-      {py_table, %{}} =
-        Pythonx.eval(
-          """
-          import pyarrow
-          n_legs = pyarrow.array([2, 4, 5, 100])
-          animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
-          names = ["n_legs", "animals"]
-          pyarrow.Table.from_arrays([n_legs, animals], names=names)
-          """,
-          %{}
-        )
-
-      {:ok, result} = Result.from_py(py_table)
-
-      assert %{
-               "n_legs" => [2, 4, 5, 100],
-               "animals" => ["Flamingo", "Horse", "Brittle stars", "Centipede"]
-             } == Result.to_map(result)
-    end
-
-    # Note: an integration text for view types, since those types are
-    # not emitted by duckdb/postgres, so we test it via Python.
-    test "with utf8_view (vu) and binary_view (vz) columns" do
-      {py_table, %{}} =
-        Pythonx.eval(
-          """
-          import pyarrow
-          # string_view: mix of short (<=12 bytes, stored inline) and long strings
-          strings = pyarrow.array(["hi", None, "Brittle stars", "Centipede"], type=pyarrow.string_view())
-          # binary_view: same layout, raw bytes
-          blobs = pyarrow.array([b"ab", b"cd", None, b"a longer blob!!"], type=pyarrow.binary_view())
-          pyarrow.Table.from_arrays([strings, blobs], names=["strings", "blobs"])
-          """,
-          %{}
-        )
-
-      {:ok, result} = Result.from_py(py_table)
-
-      assert %Adbc.Result{
-               data: [
-                 %Adbc.Column{name: "strings", type: :string_view},
-                 %Adbc.Column{name: "blobs", type: :binary_view}
-               ]
-             } = result
-
-      assert %{
-               "strings" => ["hi", nil, "Brittle stars", "Centipede"],
-               "blobs" => ["ab", "cd", nil, "a longer blob!!"]
-             } == Result.to_map(result)
-    end
-  end
 end

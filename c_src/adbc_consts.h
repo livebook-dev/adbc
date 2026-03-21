@@ -75,6 +75,8 @@ static ERL_NIF_TERM kAtomSecondKey;
 static ERL_NIF_TERM kAtomMicrosecondKey;
 
 static ERL_NIF_TERM kAtomAdbcColumnModule;
+static ERL_NIF_TERM kAtomAdbcFieldModule;
+static ERL_NIF_TERM kAtomFieldKey;
 static ERL_NIF_TERM kAtomNameKey;
 static ERL_NIF_TERM kAtomTypeKey;
 static ERL_NIF_TERM kAtomNullableKey;

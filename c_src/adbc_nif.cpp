@@ -986,6 +986,8 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomMicrosecondKey = erlang::nif::atom(env, "microsecond");
 
     kAtomAdbcColumnModule = erlang::nif::atom(env, "Elixir.Adbc.Column");
+    kAtomAdbcFieldModule = erlang::nif::atom(env, "Elixir.Adbc.Field");
+    kAtomFieldKey = erlang::nif::atom(env, "field");
     kAtomNameKey = erlang::nif::atom(env, "name");
     kAtomTypeKey = erlang::nif::atom(env, "type");
     kAtomNullableKey = erlang::nif::atom(env, "nullable");

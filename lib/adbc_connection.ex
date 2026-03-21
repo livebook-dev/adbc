@@ -434,7 +434,8 @@ defmodule Adbc.Connection do
     columns
     |> Enum.with_index(1)
     |> Enum.map(fn
-      {%Adbc.Column{name: nil} = col, i} -> %{col | name: "col#{i}"}
+      {%Adbc.Column{field: %{name: nil} = field} = col, i} ->
+        %{col | field: %{field | name: "col#{i}"}}
       {col, _i} -> col
     end)
   end
