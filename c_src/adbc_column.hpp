@@ -990,8 +990,6 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
         return kErrorBufferUnknownType;
     }
 
-    bool inner_nullable = enif_is_identical(inner_nullable_term, kAtomTrue);
-
     unsigned n_items = 0;
     if (!enif_get_list_length(env, list, &n_items)) {
         return 1;

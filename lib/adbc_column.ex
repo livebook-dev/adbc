@@ -782,7 +782,7 @@ defmodule Adbc.Column do
       raise Adbc.Error,
             "`#{Integer.to_string(integer)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
     else
-      coef = trunc(integer * :math.pow(10, scale))
+      coef = integer * Integer.pow(10, scale)
       acc = [<<coef::signed-integer-little-size(bitwidth)>> | acc]
       preprocess_decimal(bitwidth, precision, scale, rest, acc)
     end
@@ -810,7 +810,7 @@ defmodule Adbc.Column do
         raise Adbc.Error,
               "`#{Decimal.to_string(decimal)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
       else
-        coef = trunc(decimal.coef * decimal.sign * :math.pow(10, exp + scale))
+        coef = decimal.coef * decimal.sign * Integer.pow(10, exp + scale)
         acc = [<<coef::signed-integer-little-size(bitwidth)>> | acc]
         preprocess_decimal(bitwidth, precision, scale, rest, acc)
       end

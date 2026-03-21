@@ -668,7 +668,6 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env, struct ArrowSchema * sche
     const uint8_t * bitmap_buffer = (const uint8_t *)values->buffers[bitmap_buffer_index];
     const void * offsets_ptr = (const void *)values->buffers[offsets_buffer_index];
     const void * sizes_ptr = (const void *)values->buffers[sizes_buffer_index];
-    bool items_nullable = (schema->flags & ARROW_FLAG_NULLABLE) || (values->null_count > 0);
     if (offsets_ptr == nullptr) return erlang::nif::error(env, "invalid ArrowArray (list view), offsets == nullptr");
     if (sizes_ptr == nullptr) return erlang::nif::error(env, "invalid ArrowArray (list view), sizes == nullptr");
 
