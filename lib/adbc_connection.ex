@@ -324,7 +324,16 @@ defmodule Adbc.Connection do
       raise ArgumentError, "cannot use ingest to transfer results over the same connection"
     end
 
-    command(conn, {:ingest, stream})
+    command(conn, {:ingest_stream, stream.ref, nil})
+  end
+
+  if Code.ensure_loaded?(Pythonx) do
+    def ingest(conn, %Pythonx.Object{} = py_object) do
+      case Adbc.Helper.from_py(py_object) do
+        {:ok, stream_ref, capsule} -> command(conn, {:ingest_stream, stream_ref, capsule})
+        {:error, error} -> {:error, error}
+      end
+    end
   end
 
   def ingest(conn, columns) when is_list(columns) do
@@ -855,7 +864,7 @@ defmodule Adbc.Connection do
     {result, state}
   end
 
-  defp handle_command({:ingest, %Adbc.StreamResult{ref: stream_ref}}, state) do
+  defp handle_command({:ingest_stream, stream_ref, capsule}, state) do
     {table_name, options, state} = next_ingest_opts(state)
 
     result =
@@ -863,6 +872,7 @@ defmodule Adbc.Connection do
            :ok <- init_statement_options(stmt, options),
            :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        Adbc.Helper.noop(capsule)
         ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
       end
