@@ -296,6 +296,13 @@ defmodule Adbc.Connection do
 
   Returns `{:ok, %Adbc.IngestResult{}}` on success.
 
+  > ### Garbage collection {: .warning}
+  >
+  > You must always hold a whole reference to the struct,
+  > and not individual fields. For example, if you only
+  > keep a reference to `result.table`, then the struct will
+  > be GCed, and so would be the table.
+
   ## Examples
 
       columns = [
@@ -310,8 +317,16 @@ defmodule Adbc.Connection do
       #=> 3
 
   """
-  @spec ingest(t(), [Adbc.Column.t()]) ::
+  @spec ingest(t(), [Adbc.Column.t()] | Adbc.StreamResult.t()) ::
           {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
+  def ingest(conn, %Adbc.StreamResult{} = stream) do
+    if stream.conn == GenServer.whereis(conn) do
+      raise ArgumentError, "cannot use ingest to transfer results over the same connection"
+    end
+
+    command(conn, {:ingest, stream})
+  end
+
   def ingest(conn, columns) when is_list(columns) do
     command(conn, {:ingest, columns})
   end
@@ -319,9 +334,9 @@ defmodule Adbc.Connection do
   @doc """
   Same as `ingest/2` but raises an exception on error.
   """
-  @spec ingest!(t(), [Adbc.Column.t()]) :: Adbc.IngestResult.t()
-  def ingest!(conn, columns) when is_list(columns) do
-    case ingest(conn, columns) do
+  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t()) :: Adbc.IngestResult.t()
+  def ingest!(conn, columns_or_stream) do
+    case ingest(conn, columns_or_stream) do
       {:ok, result} -> result
       {:error, reason} -> raise reason
     end
@@ -840,22 +855,30 @@ defmodule Adbc.Connection do
     {result, state}
   end
 
-  defp handle_command({:ingest, columns}, state) do
-    counter = state.ingest_counter
-    table_name = "adbc_ingest_#{counter}"
-    state = %{state | ingest_counter: counter + 1}
+  defp handle_command({:ingest, %Adbc.StreamResult{ref: stream_ref}}, state) do
+    {table_name, options, state} = next_ingest_opts(state)
 
-    options = [
-      {"adbc.ingest.target_table", table_name},
-      {"adbc.ingest.temporary", "true"}
-    ]
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- init_statement_options(stmt, options),
+           :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
+        {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
+      end
+
+    {result, state}
+  end
+
+  defp handle_command({:ingest, columns}, state) do
+    {table_name, options, state} = next_ingest_opts(state)
 
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
            :ok <- init_statement_options(stmt, options),
            :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
-           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt),
-           {:ok, ref} <- Adbc.Nif.adbc_delete_on_gc_new(self(), table_name) do
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
       end
 
@@ -865,12 +888,25 @@ defmodule Adbc.Connection do
   defp handle_command({:delete_on_gc, table_name}, state) do
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
-           :ok <- Adbc.Nif.adbc_statement_set_sql_query(stmt, "DROP TABLE IF EXISTS #{table_name}"),
+           :ok <-
+             Adbc.Nif.adbc_statement_set_sql_query(stmt, "DROP TABLE IF EXISTS #{table_name}"),
            {:ok, _rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         :ok
       end
 
     {result, state}
+  end
+
+  defp next_ingest_opts(state) do
+    counter = state.ingest_counter
+    table_name = "adbc_ingest_#{counter}"
+
+    options = [
+      {"adbc.ingest.target_table", table_name},
+      {"adbc.ingest.temporary", "true"}
+    ]
+
+    {table_name, options, %{state | ingest_counter: counter + 1}}
   end
 
   defp handle_stream({:query, query_or_prepared, params, statement_options}, conn) do

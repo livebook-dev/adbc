@@ -882,7 +882,7 @@ static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NI
 
     ERL_NIF_TERM ref = res->make_resource(env);
     enif_release_resource(res);
-    return erlang::nif::ok(env, ref);
+    return ref;
 }
 
 static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
