@@ -198,17 +198,29 @@ defmodule Adbc.Connection do
   @doc """
   Performs a bulk insert operation.
 
-  This function creates a table (or appends to an existing one) and inserts a list of
-  `Adbc.Column`s in supported databases. This should be more efficient than using SQL
+  This function creates a table (or appends to an existing one) and inserts
+  columns in supported databases. This should be more efficient than using SQL
   query in supported databases.
 
-  Alternatively, you can pass an `Adbc.StreamResult.t()` (obtained from
-  `query_pointer/4`) to efficiently insert query results without materializing the data.
+  Columns can be given as:
+
+    * a keyword list of column name to data, where values are either plain lists
+      (converted via `Adbc.Column.new/2`) or `Adbc.Column.t()` structs (the name
+      from the keyword key overrides the column's name)
+
+    * a list of `Adbc.Column.t()` structs
+
+    * an `Adbc.StreamResult.t()` (obtained from `query_pointer/4`) to efficiently
+      insert query results without materializing the data
+
+    * a `Pythonx.Object` representing a PyArrow `RecordBatchReader`
+      (requires the `pythonx` package)
 
   ## Arguments
 
     * `conn` - The connection process
-    * `columns_or_stream` - Either a list of `Adbc.Column.t()` or an `Adbc.StreamResult.t()`
+    * `columns_or_stream` - Columns as a keyword list, a list of `Adbc.Column.t()`,
+      an `Adbc.StreamResult.t()`, or a `Pythonx.Object`
     * `opts` - Options for the bulk insert operation
 
   ## Options
@@ -235,12 +247,19 @@ defmodule Adbc.Connection do
 
   ## Examples
 
+      # Using a keyword list (types are inferred, use Adbc.Column for explicit types)
+      Adbc.Connection.bulk_insert(conn,
+        [id: [1, 2, 3], name: Adbc.Column.string(["Alice", "Bob", "Charlie"])],
+        table: "users"
+      )
+      #=> {:ok, 3}
+
+      # Using a list of columns
       columns = [
         Adbc.Column.s64([1, 2, 3], name: "id"),
         Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
       ]
 
-      # Create a new table
       Adbc.Connection.bulk_insert(conn, columns, table: "users")
       #=> {:ok, 3}
 
@@ -267,7 +286,7 @@ defmodule Adbc.Connection do
   """
   @spec bulk_insert(
           t(),
-          [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object),
+          [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object),
           Keyword.t()
         ) ::
           {:ok, non_neg_integer()} | {:error, Exception.t()}
@@ -298,7 +317,7 @@ defmodule Adbc.Connection do
 
   def bulk_insert(conn, columns, opts) when is_list(columns) and is_list(opts) do
     statement_options = build_ingest_options(opts)
-    command(conn, {:bulk_insert, maybe_name_columns(columns), statement_options})
+    command(conn, {:bulk_insert, to_columns(columns), statement_options})
   end
 
   @doc """
@@ -306,7 +325,7 @@ defmodule Adbc.Connection do
   """
   @spec bulk_insert!(
           t(),
-          [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object),
+          [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object),
           Keyword.t()
         ) ::
           non_neg_integer()
@@ -321,6 +340,20 @@ defmodule Adbc.Connection do
   Ingests columns into a temporary table that is automatically dropped
   when the returned result is garbage collected.
 
+  Columns can be given as:
+
+    * a keyword list of column name to data, where values are either plain lists
+      (converted via `Adbc.Column.new/2`) or `Adbc.Column.t()` structs (the name
+      from the keyword key overrides the column's name)
+
+    * a list of `Adbc.Column.t()` structs
+
+    * an `Adbc.StreamResult.t()` (obtained from `query_pointer/4`) to efficiently
+      insert query results without materializing the data
+
+    * a `Pythonx.Object` representing a PyArrow `RecordBatchReader`
+      (requires the `pythonx` package)
+
   Returns `{:ok, %Adbc.IngestResult{}}` on success.
 
   > ### Garbage collection {: .warning}
@@ -332,19 +365,26 @@ defmodule Adbc.Connection do
 
   ## Examples
 
+      # Using a keyword list
+      {:ok, result} = Adbc.Connection.ingest(conn,
+        id: [1, 2, 3],
+        name: Adbc.Column.string(["Alice", "Bob", "Charlie"])
+      )
+      result.table
+      #=> "adbc_ingest_0"
+      result.num_rows
+      #=> 3
+
+      # Using a list of columns
       columns = [
         Adbc.Column.s64([1, 2, 3], name: "id"),
         Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
       ]
 
       {:ok, result} = Adbc.Connection.ingest(conn, columns)
-      result.table
-      #=> "adbc_ingest_0"
-      result.num_rows
-      #=> 3
 
   """
-  @spec ingest(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) ::
+  @spec ingest(t(), [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object)) ::
           {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
   def ingest(conn, %Adbc.StreamResult{} = stream) do
     if stream.conn && stream.conn == GenServer.whereis(conn) do
@@ -364,13 +404,13 @@ defmodule Adbc.Connection do
   end
 
   def ingest(conn, columns) when is_list(columns) do
-    command(conn, {:ingest, maybe_name_columns(columns)})
+    command(conn, {:ingest, to_columns(columns)})
   end
 
   @doc """
   Same as `ingest/2` but raises an exception on error.
   """
-  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) ::
+  @spec ingest!(t(), [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object)) ::
           Adbc.IngestResult.t()
   def ingest!(conn, columns_or_stream) do
     case ingest(conn, columns_or_stream) do
@@ -439,7 +479,16 @@ defmodule Adbc.Connection do
     statement_options
   end
 
-  defp maybe_name_columns(columns) do
+  defp to_columns([{key, _value} | _] = keyword) when is_atom(key) do
+    Enum.map(keyword, fn {name, %Adbc.Column{} = col} ->
+      %{col | field: %{col.field | name: Atom.to_string(name)}}
+
+    {name, data} when is_list(data) ->
+      Adbc.Column.new(data, name: Atom.to_string(name))
+    end)
+  end
+
+  defp to_columns(columns) do
     columns
     |> Enum.with_index(1)
     |> Enum.map(fn

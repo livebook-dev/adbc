@@ -1237,6 +1237,25 @@ defmodule Adbc.ConnectionTest do
                    end
     end
 
+    test "accepts keyword list mixing columns and inferred lists", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      assert {:ok, 3} =
+               Connection.bulk_insert(conn,
+                 [
+                   id: [1, 2, 3],
+                   name: Adbc.Column.string(["Alice", "Bob", "Charlie"])
+                 ],
+                 table: "users"
+               )
+
+      {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
+      map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      assert map["id"] == [1, 2, 3]
+      assert map["name"] == ["Alice", "Bob", "Charlie"]
+    end
+
     # Note: type coverage for bulk_insert roundtrips (integers, floats, strings,
     # binary, decimals, lists, dictionaries, timestamps, booleans) is in adbc_duckdb_test.exs
   end
@@ -1430,6 +1449,24 @@ defmodule Adbc.ConnectionTest do
       assert map["id"] == [1, 2]
       assert map["col2"] == ["Alice", "Bob"]
       assert map["age"] == [25, 30]
+    end
+
+    test "accepts keyword list mixing columns and inferred lists", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      assert {:ok, %Adbc.IngestResult{} = result} =
+               Connection.ingest(conn,
+                 id: [1, 2, 3],
+                 name: Adbc.Column.string(["Alice", "Bob", "Charlie"])
+               )
+
+      {:ok, query_result} =
+        Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
+
+      map = query_result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      assert map["id"] == [1, 2, 3]
+      assert map["name"] == ["Alice", "Bob", "Charlie"]
     end
   end
 end
