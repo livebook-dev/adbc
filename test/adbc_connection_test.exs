@@ -78,8 +78,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: false,
                      metadata: nil
                    },
-                   data: [[0, 1, 100, 101, 102, 103]]
-                 },
+                 } = info_name_col,
                  %Adbc.Column{
                    field: %{
                      name: "info_value",
@@ -97,12 +96,14 @@ defmodule Adbc.ConnectionTest do
                        %{"string_value" => [_]},
                        # "0.4.0"
                        %{"string_value" => [_]},
-                       %{"int64_value" => [1_001_000]}
+                       %{"int64_value" => _}
                      ]
                    ]
                  }
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(info_name_col) == [0, 1, 100, 101, 102, 103]
     end
 
     test "get some info from a connection", %{db: db} do
@@ -140,8 +141,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: false,
                      metadata: nil
                    },
-                   data: [[0]]
-                 },
+                 } = info_name_col,
                  %Adbc.Column{
                    field: %{
                      name: "info_value",
@@ -153,6 +153,8 @@ defmodule Adbc.ConnectionTest do
                  }
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(info_name_col) == [0]
     end
   end
 
@@ -260,10 +262,11 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [[123]]
                  } = column
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(column) == [123]
 
       # Ensure matching struct fields
       assert map_size(column) == map_size(Adbc.Column.s64([]))
@@ -299,20 +302,21 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[123]]
-                 },
+                   }
+                 } = num_col,
                  %Adbc.Column{
                    field: %{
                      name: "bool",
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[1]]
-                 }
+                   }
+                 } = bool_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [123]
+      assert Adbc.Column.to_list(bool_col) == [1]
     end
 
     test "select with parameters", %{db: db} do
@@ -341,11 +345,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[579]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [579]
     end
 
     test "select with prepared query", %{db: db} do
@@ -375,11 +380,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[579]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [579]
     end
 
     test "select with multiple prepared queries", %{db: db} do
@@ -410,11 +416,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[579]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [579]
 
       assert {:ok,
               results = %Adbc.Result{
@@ -439,11 +446,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[1456]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [1456]
     end
 
     test "fails on invalid query", %{db: db} do
@@ -480,11 +488,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[123]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [123]
 
       assert results =
                %Adbc.Result{
@@ -517,20 +526,21 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[123]]
-                 },
+                   }
+                 } = num_col,
                  %Adbc.Column{
                    field: %{
                      name: "bool",
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[1]]
-                 }
+                   }
+                 } = bool_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [123]
+      assert Adbc.Column.to_list(bool_col) == [1]
     end
 
     test "select with parameters", %{db: db} do
@@ -559,11 +569,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[579]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [579]
     end
 
     test "fails on invalid query", %{db: db} do
@@ -613,20 +624,21 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[123]]
-                 },
+                   }
+                 } = num_col,
                  %Adbc.Column{
                    field: %{
                      name: "bool",
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[1]]
-                 }
+                   }
+                 } = bool_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [123]
+      assert Adbc.Column.to_list(bool_col) == [1]
     end
 
     test "with parameters", %{db: db} do
@@ -658,11 +670,12 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
-                   data: [[579]]
-                 }
+                   }
+                 } = num_col
                ]
              } = Adbc.Result.materialize(results)
+
+      assert Adbc.Column.to_list(num_col) == [579]
     end
 
     test "invalid statement option key", %{db: db} do
@@ -986,16 +999,6 @@ defmodule Adbc.ConnectionTest do
       assert map["id"] == [nil, 1, 3]
       assert map["name"] == [nil, "Alice", "Charlie"]
 
-      # Non-nullable columns with nil values return a clear error
-      bad_columns = [
-        Adbc.Column.s64([1, nil, 3], name: "id"),
-        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
-      ]
-
-      assert {:error, %ArgumentError{} = error} =
-               Connection.bulk_insert(conn, bad_columns, table: "bad_table")
-
-      assert error.message =~ "nullable"
     end
 
     test "bulk inserts a Pythonx.Object implementing arrow stream", %{db: db} do

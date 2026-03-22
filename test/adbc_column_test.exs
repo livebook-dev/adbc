@@ -56,7 +56,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([1, nil, 3])
       assert col.field.type == :s64
       assert col.field.nullable == true
-      assert col.data == [[1, nil, 3]]
+      assert Adbc.Column.to_list(col) == [1, nil, 3]
     end
 
     test "only nils defaults to string" do

@@ -79,26 +79,23 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.new([1, 2, 3], name: "ids")
-      %Adbc.Column{
-        field: %Adbc.Field{name: "ids", type: :s64, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.new([1, 2, 3], name: "ids")
+      iex> col.field
+      %Adbc.Field{name: "ids", type: :s64, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
-      iex> Adbc.Column.new([1, nil, 3.0])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil},
-        data: [[1, nil, 3.0]],
-        size: 3
-      }
+      iex> col = Adbc.Column.new([1, nil, 3.0])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, nil, 3.0]
 
-      iex> Adbc.Column.new([1, 2, 3], type: :u32)
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.new([1, 2, 3], type: :u32)
+      iex> col.field
+      %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec new(list(), Keyword.t()) :: t()
@@ -121,6 +118,12 @@ defmodule Adbc.Column do
     }
   end
 
+  @integer_types %{s8: 8, s16: 16, s32: 32, s64: 64, u8: 8, u16: 16, u32: 32, u64: 64}
+
+  defp encode_data(type, data) when is_map_key(@integer_types, type) do
+    encode_signed(data, Map.fetch!(@integer_types, type), &encode_integer/1)
+  end
+
   defp encode_data(:date32, data), do: encode_date32(data)
   defp encode_data(:date64, data), do: encode_date64(data)
   defp encode_data({:time32, unit}, data), do: encode_time(data, unit, 32)
@@ -128,7 +131,7 @@ defmodule Adbc.Column do
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
 
   defp encode_data({:duration, _unit}, data),
-    do: encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)
+    do: encode_signed(data, 64, &encode_integer/1)
 
   defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
   defp encode_data(_type, data), do: data
@@ -313,17 +316,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.u8([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :u8, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.u8([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :u8, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec u8([u8() | nil], Keyword.t()) :: t()
   def u8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:u8, opts),
+      data: [encode_data(:u8, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -343,17 +349,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.u16([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :u16, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.u16([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :u16, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec u16([u16() | nil], Keyword.t()) :: t()
   def u16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:u16, opts),
+      data: [encode_data(:u16, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -373,17 +382,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.u32([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.u32([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec u32([u32() | nil], Keyword.t()) :: t()
   def u32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:u32, opts),
+      data: [encode_data(:u32, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -403,17 +415,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.u32([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.u64([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :u64, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec u64([u64() | nil], Keyword.t()) :: t()
   def u64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:u64, opts),
+      data: [encode_data(:u64, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -433,17 +448,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.s8([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :s8, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.s8([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :s8, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec s8([s8() | nil], Keyword.t()) :: t()
   def s8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:s8, opts),
+      data: [encode_data(:s8, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -463,17 +481,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.s16([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :s16, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.s16([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :s16, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec s16([s16() | nil], Keyword.t()) :: t()
   def s16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:s16, opts),
+      data: [encode_data(:s16, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -493,17 +514,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.s32([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :s32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.s32([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :s32, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec s32([s32() | nil], Keyword.t()) :: t()
   def s32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:s32, opts),
+      data: [encode_data(:s32, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -523,17 +547,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.s64([1, 2, 3])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :s64, nullable: false, metadata: nil},
-        data: [[1, 2, 3]],
-        size: 3
-      }
+      iex> col = Adbc.Column.s64([1, 2, 3])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :s64, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1, 2, 3]
 
   """
   @spec s64([s64() | nil], Keyword.t()) :: t()
   def s64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:s64, opts),
+      data: [encode_data(:s64, data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -693,7 +720,7 @@ defmodule Adbc.Column do
   defp coef_length(coef, length), do: coef_length(Kernel.div(coef, 10), length + 1)
 
   defp encode_decimal(data, bitwidth, precision, scale) do
-    encode_signed(data, <<>>, <<>>, 0, bitwidth, fn
+    encode_signed(data, bitwidth, fn
       integer when is_integer(integer) ->
         if coef_length(integer) > precision do
           raise ArgumentError,
@@ -1058,7 +1085,7 @@ defmodule Adbc.Column do
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:duration, unit}, opts),
-      data: [encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)],
+      data: [encode_signed(data, 64, &encode_integer/1)],
       size: length(data)
     }
   end
@@ -1240,6 +1267,8 @@ defmodule Adbc.Column do
       when index_type in [:s8, :u8, :s16, :u16, :s32, :u32, :s64, :u64] do
     %Adbc.Column{
       field: Adbc.Field.new({:dictionary, key.field, value.field}, opts),
+      # Each chunk in the dictionary is a single array and you cannot
+      # have keys across chunks, so in here we assume the chunks are independent
       data: Enum.zip_with(key.data, value.data, fn k, v -> %{key: k, value: v} end),
       size: key.size
     }
@@ -1302,12 +1331,13 @@ defmodule Adbc.Column do
   end
 
   def to_list(%Adbc.Column{
-        field: %{type: {:run_end_encoded, _run_ends_field, values_field}},
+        field: %{type: {:run_end_encoded, run_ends_field, values_field}},
         data: batches
       }) do
     Enum.flat_map(batches, fn batch ->
       values = to_list(%Adbc.Column{field: values_field, data: [batch.values]})
-      expand_runs(batch.run_ends, values, batch.offset, batch.offset + batch.length)
+      run_ends = to_list(%Adbc.Column{field: run_ends_field, data: [batch.run_ends], size: 0})
+      expand_runs(run_ends, values, batch.offset, batch.offset + batch.length)
     end)
   end
 
@@ -1442,6 +1472,23 @@ defmodule Adbc.Column do
     end)
   end
 
+  for {type, decode_fun} <- [
+        s8: :decode_signed_8,
+        s16: :decode_signed_16,
+        s32: :decode_signed_32,
+        s64: :decode_signed_64,
+        u8: :decode_unsigned_8,
+        u16: :decode_unsigned_16,
+        u32: :decode_unsigned_32,
+        u64: :decode_unsigned_64
+      ] do
+    def to_list(%Adbc.Column{field: %{type: unquote(type)}, data: batches}) do
+      Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+        unquote(decode_fun)(binary, bitmap, bit_offset, &Function.identity/1)
+      end)
+    end
+  end
+
   def to_list(%Adbc.Column{data: batches}) do
     Enum.concat(batches)
   end
@@ -1451,6 +1498,8 @@ defmodule Adbc.Column do
   end
 
   defp encode_list([], child_batches, offsets, bitmap, pending, _offset, _offset_size) do
+    # This is effectively a single batch. While values is a single array
+    # in Arrow, we keep it as a list so we concat buffers in C
     {_data, bitmap, bit_offset} = bitmap_finish(<<>>, bitmap, pending)
     %{offsets: offsets, validity: bitmap, values: Enum.reverse(child_batches), offset: bit_offset}
   end
@@ -1482,14 +1531,14 @@ defmodule Adbc.Column do
   defp milliseconds_to_date(ms), do: Date.from_gregorian_days(div(ms, 86_400_000) + @epoch_days)
 
   defp encode_date32(data) do
-    encode_signed(data, <<>>, <<>>, 0, 32, fn
+    encode_signed(data, 32, fn
       %Date{} = date -> Date.to_gregorian_days(date) - @epoch_days
       integer when is_integer(integer) -> integer
     end)
   end
 
   defp encode_date64(data) do
-    encode_signed(data, <<>>, <<>>, 0, 64, fn
+    encode_signed(data, 64, fn
       %Date{} = date -> (Date.to_gregorian_days(date) - @epoch_days) * 86_400_000
       integer when is_integer(integer) -> integer
     end)
@@ -1505,7 +1554,7 @@ defmodule Adbc.Column do
   defp encode_time(data, unit, bitwidth) do
     multiplier = Map.fetch!(@time_unit_multiplier, unit)
 
-    encode_signed(data, <<>>, <<>>, 0, bitwidth, fn
+    encode_signed(data, bitwidth, fn
       %Time{} = time ->
         {seconds, microseconds} = Time.to_seconds_after_midnight(time)
         seconds * multiplier + microseconds * div(multiplier, 1_000_000)
@@ -1528,7 +1577,7 @@ defmodule Adbc.Column do
   defp encode_timestamp(data, unit) do
     multiplier = Map.fetch!(@time_unit_multiplier, unit)
 
-    encode_signed(data, <<>>, <<>>, 0, 64, fn
+    encode_signed(data, 64, fn
       %NaiveDateTime{} = ndt ->
         {gregorian_seconds, microseconds} = NaiveDateTime.to_gregorian_seconds(ndt)
         unix_seconds = gregorian_seconds - @epoch_seconds
@@ -1542,7 +1591,7 @@ defmodule Adbc.Column do
   defp encode_integer(integer) when is_integer(integer), do: integer
 
   defp encode_interval(data, :month) do
-    encode_signed(data, <<>>, <<>>, 0, 32, &encode_integer/1)
+    encode_signed(data, 32, &encode_integer/1)
   end
 
   defp encode_interval(data, :day_time) do
@@ -1595,6 +1644,10 @@ defmodule Adbc.Column do
   #   - integer N: postponed valid bits, no partial byte in progress
   #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
   # `bitmap` is passed explicitly for Erlang binary append optimization.
+
+  defp encode_signed(list, size, encoder) do
+    encode_signed(list, <<>>, <<>>, 0, size, encoder)
+  end
 
   defp encode_signed([], data, bitmap, pending, _size, _encoder) do
     bitmap_finish(data, bitmap, pending)
@@ -1754,10 +1807,16 @@ defmodule Adbc.Column do
   end
 
   for {name, specifier} <- [
+        decode_signed_8: quote(do: signed - integer - little - 8),
+        decode_signed_16: quote(do: signed - integer - little - 16),
         decode_signed_32: quote(do: signed - integer - little - 32),
         decode_signed_64: quote(do: signed - integer - little - 64),
         decode_signed_128: quote(do: signed - integer - little - 128),
-        decode_signed_256: quote(do: signed - integer - little - 256)
+        decode_signed_256: quote(do: signed - integer - little - 256),
+        decode_unsigned_8: quote(do: unsigned - integer - little - 8),
+        decode_unsigned_16: quote(do: unsigned - integer - little - 16),
+        decode_unsigned_32: quote(do: unsigned - integer - little - 32),
+        decode_unsigned_64: quote(do: unsigned - integer - little - 64)
       ] do
     defp unquote(name)(binary, validity, offset, decoder) do
       unquote(name)(binary, validity, offset, 0, decoder)

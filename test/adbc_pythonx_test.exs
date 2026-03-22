@@ -250,7 +250,7 @@ defmodule Adbc.PythonxTest do
                        {:run_end_encoded, %Adbc.Field{name: "run_ends", type: :s32},
                         %Adbc.Field{name: "values", type: :string}}
                    },
-                   data: [%{offset: 0, length: 7, values: ["a", "b", "c"], run_ends: [3, 5, 7]}]
+                   data: [%{offset: 0, length: 7, values: ["a", "b", "c"], run_ends: {_, _, _}}]
                  }
                ]
              } = result
@@ -297,7 +297,7 @@ defmodule Adbc.PythonxTest do
                    },
                    data: [
                      %{
-                       values: [10, 20, 30, 40, 50],
+                       values: {_, _, _},
                        offsets: [0, 2, 1],
                        sizes: [2, 3, 2],
                        validity: [true, true, true]

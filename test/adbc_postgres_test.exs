@@ -28,10 +28,12 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[123]]
-               }
+                 data: [_]
+               } = num_col
              ]
            } = Adbc.Result.materialize(results)
+
+    assert Adbc.Column.to_list(num_col) == [123]
   end
 
   test "list of strings", %{db: _, conn: conn} do
@@ -46,7 +48,10 @@ defmodule Adbc.PostgresTest do
 
     result = result |> Adbc.Result.materialize()
     assert [col] = result.data
-    assert col.field.type == {:list, %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}}
+
+    assert col.field.type ==
+             {:list, %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}}
+
     assert Adbc.Column.to_list(col) == [["1", "2", "3"]]
   end
 
@@ -93,7 +98,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = datetime_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -102,7 +107,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = datetime_usec_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -111,7 +116,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = datetime_tz_8601_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -120,7 +125,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = datetime_tz_offset_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -129,7 +134,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = date_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -138,7 +143,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = time_col,
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -147,7 +152,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [{_, _, _}]
+                 data: [_]
                } = time_usec_col
              ]
            } = Adbc.Result.materialize(results)
@@ -245,8 +250,13 @@ defmodule Adbc.PostgresTest do
                Adbc.Connection.query(
                  conn,
                  "SELECT ($2 = ANY($1))::int",
-                 [Adbc.Column.list([Adbc.Column.s32(values)], Adbc.Field.new(:s32)), Adbc.Column.s32([v])]
+                 [
+                   Adbc.Column.list([Adbc.Column.s32(values)], Adbc.Field.new(:s32)),
+                   Adbc.Column.s32([v])
+                 ]
                )
+
+      result = result |> Adbc.Result.materialize()
 
       assert %Adbc.Result{
                data: [
@@ -257,10 +267,12 @@ defmodule Adbc.PostgresTest do
                      metadata: nil,
                      nullable: true
                    },
-                   data: [[1]]
-                 }
+                   data: [_]
+                 } = col
                ]
-             } = result |> Adbc.Result.materialize()
+             } = result
+
+      assert Adbc.Column.to_list(col) == [1]
     end
 
     refute Enum.member?(values, not_in_values)
@@ -275,6 +287,8 @@ defmodule Adbc.PostgresTest do
                ]
              )
 
+    result = result |> Adbc.Result.materialize()
+
     assert %Adbc.Result{
              data: [
                %Adbc.Column{
@@ -284,10 +298,12 @@ defmodule Adbc.PostgresTest do
                    metadata: nil,
                    nullable: true
                  },
-                 data: [[0]]
-               }
+                 data: [_]
+               } = col
              ]
-           } = result |> Adbc.Result.materialize()
+           } = result
+
+    assert Adbc.Column.to_list(col) == [0]
   end
 
   test "top-level parameter values should have the same length/rows", %{db: _, conn: conn} do

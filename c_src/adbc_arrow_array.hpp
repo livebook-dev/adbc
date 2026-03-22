@@ -530,6 +530,19 @@ ERL_NIF_TERM get_arrow_run_end_encoded(ErlNifEnv *env, struct ArrowSchema * sche
     return get_arrow_run_end_encoded(env, schema, values, 0, -1, level, resource);
 }
 
+// Slice a validity bitmap at the given element offset, returning {validity_term, bit_offset}.
+// The bitmap is sliced to start at byte offset/8, with bit_offset = offset%8.
+static void slice_validity_bitmap(ErlNifEnv *env, const uint8_t *bitmap, int64_t offset, int64_t count, void* resource, ERL_NIF_TERM &validity_out, int &bit_offset_out) {
+    bit_offset_out = (int)(offset % 8);
+    if (bitmap == nullptr) {
+        validity_out = kAtomNil;
+    } else {
+        size_t bitmap_start = offset / 8;
+        size_t total_bitmap_bytes = (offset + count + 7) / 8 - bitmap_start;
+        validity_out = enif_make_resource_binary(env, resource, bitmap + bitmap_start, total_bitmap_bytes);
+    }
+}
+
 ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, ArrowType list_type, unsigned n_items, void* resource) {
     ERL_NIF_TERM error{};
     if (schema->children == nullptr) {
@@ -563,15 +576,10 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env, struct ArrowSchema * 
     ERL_NIF_TERM values_term = enif_make_list1(env, childrens[1]);
 
     // Validity bitmap
-    constexpr int64_t bitmap_buffer_index = 0;
-    const uint8_t * bitmap_buffer = (const uint8_t *)values->buffers[bitmap_buffer_index];
+    const uint8_t * bitmap_buffer = (const uint8_t *)values->buffers[0];
     ERL_NIF_TERM validity_term;
-    if (bitmap_buffer == nullptr) {
-        validity_term = kAtomNil;
-    } else {
-        size_t total_bitmap_bytes = (values->length + 7) / 8;
-        validity_term = enif_make_resource_binary(env, resource, bitmap_buffer, total_bitmap_bytes);
-    }
+    int bit_offset;
+    slice_validity_bitmap(env, bitmap_buffer, offset, count, resource, validity_term, bit_offset);
 
     // Offsets
     ERL_NIF_TERM offsets_term;
@@ -593,7 +601,7 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env, struct ArrowSchema * 
 
     // Return %{offsets: ..., validity: ..., values: ..., offset: ...}
     ERL_NIF_TERM keys[] = { kAtomOffsets, kAtomValidity, kAtomValues, kAtomOffsetKey };
-    ERL_NIF_TERM vals[] = { offsets_term, validity_term, values_term, enif_make_int(env, (int)offset) };
+    ERL_NIF_TERM vals[] = { offsets_term, validity_term, values_term, enif_make_int(env, bit_offset) };
     ERL_NIF_TERM map_out;
     enif_make_map_from_arrays(env, keys, vals, 4, &map_out);
     return map_out;
@@ -701,19 +709,10 @@ ERL_NIF_TERM make_buffer_tuple(ErlNifEnv *env, struct ArrowArray * values, int64
     ERL_NIF_TERM data_binary = enif_make_resource_binary(env, resource, data_ptr, data_size);
 
     ERL_NIF_TERM validity_term;
-    ERL_NIF_TERM offset_term = enif_make_int(env, (int)offset);
-    if (validity_bitmap == nullptr) {
-        validity_term = kAtomNil;
-    } else {
-        size_t total_bitmap_bytes = (values->length + 7) / 8;
-        validity_term = enif_make_resource_binary(
-            env, resource,
-            validity_bitmap,
-            total_bitmap_bytes
-        );
-    }
+    int bit_offset;
+    slice_validity_bitmap(env, validity_bitmap, offset, count, resource, validity_term, bit_offset);
 
-    return enif_make_tuple3(env, data_binary, validity_term, offset_term);
+    return enif_make_tuple3(env, data_binary, validity_term, enif_make_int(env, bit_offset));
 }
 
 int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, int64_t level, std::vector<ERL_NIF_TERM> &out_terms, ERL_NIF_TERM &term_type, ERL_NIF_TERM &arrow_metadata, ERL_NIF_TERM &error, bool skip_dictionary_check, void* resource) {
@@ -731,6 +730,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
     const char* name = schema->name ? schema->name : "";
     ERL_NIF_TERM current_term{}, children_term{};
     size_t format_len = strlen(format);
+    size_t element_bytes = 0;
 
     term_type = kAtomNil;
     std::vector<ERL_NIF_TERM> children;
@@ -784,86 +784,40 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
             }
             current_term = kAtomNil;
         } else if (format[0] == 'l') {
-            // NANOARROW_TYPE_INT64
-            using value_type = int64_t;
             term_type = kAdbcColumnTypeS64;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=l), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_int64);
+            element_bytes = 8;
         } else if (format[0] == 'c') {
-            using value_type = int8_t;
             term_type = kAdbcColumnTypeS8;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=c), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_int64);
+            element_bytes = 1;
         } else if (format[0] == 's') {
-            using value_type = int16_t;
             term_type = kAdbcColumnTypeS16;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=s), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_int64);
+            element_bytes = 2;
         } else if (format[0] == 'i') {
-            using value_type = int32_t;
             term_type = kAdbcColumnTypeS32;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=i), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_int64);
+            element_bytes = 4;
         } else if (format[0] == 'L') {
-            using value_type = uint64_t;
             term_type = kAdbcColumnTypeU64;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=L), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_uint64);
+            element_bytes = 8;
         } else if (format[0] == 'C') {
-            using value_type = uint8_t;
             term_type = kAdbcColumnTypeU8;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=C), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_uint64);
+            element_bytes = 1;
         } else if (format[0] == 'S') {
-            using value_type = uint16_t;
             term_type = kAdbcColumnTypeU16;
-            if (count == -1) count = values->length;
-            if (count > values->length) count = values->length - offset;
-            if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=S), values->n_buffers != 2");
-                return 1;
-            }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_uint64);
+            element_bytes = 2;
         } else if (format[0] == 'I') {
-            using value_type = uint32_t;
             term_type = kAdbcColumnTypeU32;
+            element_bytes = 4;
+        }
+
+        if (element_bytes > 0) {
             if (count == -1) count = values->length;
             if (count > values->length) count = values->length - offset;
             if (values->n_buffers != 2) {
-                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=I), values->n_buffers != 2");
+                snprintf(err_msg_buf, 255, "invalid n_buffers value for ArrowArray (format=%s), values->n_buffers != 2", schema->format);
+                error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
                 return 1;
             }
-            current_term = values_from_buffer(env, offset, count, (const uint8_t *)values->buffers[bitmap_buffer_index], (const value_type *)values->buffers[data_buffer_index], enif_make_uint64);
+            current_term = make_buffer_tuple(env, values, offset, count, element_bytes, data_buffer_index, bitmap_buffer_index, resource);
         } else if (format[0] == 'e') {
             // NANOARROW_TYPE_HALF_FLOAT
             using value_type = uint16_t;
