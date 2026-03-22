@@ -695,66 +695,6 @@ defmodule Adbc.Column do
     end)
   end
 
-  # Single-pass encoding of a data list into {binary, bitmap | nil, offset}.
-  # `encoder` converts each non-nil element to an integer.
-  # `pending` tracks bitmap state:
-  #   - integer N: postponed valid bits, no partial byte in progress
-  #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
-  # `bitmap` is passed explicitly for Erlang binary append optimization.
-
-  defp encode_signed([], data, bitmap, pending, _size, _encoder)
-       when is_integer(pending) and byte_size(bitmap) == 0 do
-    {data, nil, 0}
-  end
-
-  defp encode_signed([], data, bitmap, pending, _size, _encoder) when is_integer(pending) do
-    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
-    bitmap = if rem_bits > 0, do: <<bitmap::binary, (1 <<< rem_bits) - 1>>, else: bitmap
-    {data, bitmap, 0}
-  end
-
-  defp encode_signed([], data, bitmap, {byte, _bits}, _size, _encoder) do
-    {data, <<bitmap::binary, byte>>, 0}
-  end
-
-  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder)
-       when is_integer(pending) do
-    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
-    {bitmap, pending} = bitmap_put_bit(bitmap, (1 <<< rem_bits) - 1, rem_bits, 0)
-    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
-  end
-
-  defp encode_signed([nil | rest], data, bitmap, {byte, bits}, size, encoder) do
-    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 0)
-    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
-  end
-
-  defp encode_signed([value | rest], data, bitmap, pending, size, encoder)
-       when is_integer(pending) do
-    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
-    encode_signed(rest, data, bitmap, pending + 1, size, encoder)
-  end
-
-  defp encode_signed([value | rest], data, bitmap, {byte, bits}, size, encoder) do
-    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 1)
-    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
-    encode_signed(rest, data, bitmap, pending, size, encoder)
-  end
-
-  @compile {:inline, bitmap_put_bit: 4, bitmap_flush_valid: 2}
-  defp bitmap_put_bit(bitmap, byte, 7, bit) do
-    {<<bitmap::binary, byte ||| bit <<< 7>>, 0}
-  end
-
-  defp bitmap_put_bit(bitmap, byte, bits, bit) do
-    {bitmap, {byte ||| bit <<< bits, bits + 1}}
-  end
-
-  defp bitmap_flush_valid(bitmap, pending) do
-    full_size = div(pending, 8) * 8
-    {<<bitmap::binary, -1::size(full_size)>>, rem(pending, 8)}
-  end
-
   @doc type: :column_builder
   @doc """
   A column that contains UTF-8 encoded strings.
@@ -1361,6 +1301,70 @@ defmodule Adbc.Column do
   defp duplicate_runs(value, n, run_ends, values, pos, stop) do
     [value | duplicate_runs(value, n - 1, run_ends, values, pos, stop)]
   end
+
+  ## Bit encoding
+
+  # Single-pass encoding of a data list into {binary, bitmap | nil, offset}.
+  # `encoder` converts each non-nil element to an integer.
+  # `pending` tracks bitmap state:
+  #   - integer N: postponed valid bits, no partial byte in progress
+  #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
+  # `bitmap` is passed explicitly for Erlang binary append optimization.
+
+  defp encode_signed([], data, bitmap, pending, _size, _encoder)
+       when is_integer(pending) and byte_size(bitmap) == 0 do
+    {data, nil, 0}
+  end
+
+  defp encode_signed([], data, bitmap, pending, _size, _encoder) when is_integer(pending) do
+    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
+    bitmap = if rem_bits > 0, do: <<bitmap::binary, (1 <<< rem_bits) - 1>>, else: bitmap
+    {data, bitmap, 0}
+  end
+
+  defp encode_signed([], data, bitmap, {byte, _bits}, _size, _encoder) do
+    {data, <<bitmap::binary, byte>>, 0}
+  end
+
+  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder)
+       when is_integer(pending) do
+    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
+    {bitmap, pending} = bitmap_put_bit(bitmap, (1 <<< rem_bits) - 1, rem_bits, 0)
+    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+  end
+
+  defp encode_signed([nil | rest], data, bitmap, {byte, bits}, size, encoder) do
+    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 0)
+    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+  end
+
+  defp encode_signed([value | rest], data, bitmap, pending, size, encoder)
+       when is_integer(pending) do
+    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    encode_signed(rest, data, bitmap, pending + 1, size, encoder)
+  end
+
+  defp encode_signed([value | rest], data, bitmap, {byte, bits}, size, encoder) do
+    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 1)
+    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    encode_signed(rest, data, bitmap, pending, size, encoder)
+  end
+
+  @compile {:inline, bitmap_put_bit: 4, bitmap_flush_valid: 2}
+  defp bitmap_put_bit(bitmap, byte, 7, bit) do
+    {<<bitmap::binary, byte ||| bit <<< 7>>, 0}
+  end
+
+  defp bitmap_put_bit(bitmap, byte, bits, bit) do
+    {bitmap, {byte ||| bit <<< bits, bits + 1}}
+  end
+
+  defp bitmap_flush_valid(bitmap, pending) do
+    full_size = div(pending, 8) * 8
+    {<<bitmap::binary, -1::size(full_size)>>, rem(pending, 8)}
+  end
+
+  ## Bit decoding
 
   for {name, specifier} <- [
         decode_signed_128: quote(do: signed - integer - little - 128),
