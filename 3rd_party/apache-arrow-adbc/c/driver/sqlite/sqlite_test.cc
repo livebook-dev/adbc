@@ -158,6 +158,8 @@ class SqliteQuirks : public adbc_validation::DriverQuirks {
         return "SQLite";
       case ADBC_INFO_VENDOR_VERSION:
         return "3.";
+      case ADBC_INFO_DRIVER_ADBC_VERSION:
+        return ADBC_VERSION_1_1_0;
       default:
         return std::nullopt;
     }
@@ -264,10 +266,8 @@ TEST_F(SqliteConnectionTest, GetInfoMetadata) {
 
   adbc_validation::StreamReader reader;
   std::vector<uint32_t> info = {
-      ADBC_INFO_DRIVER_NAME,
-      ADBC_INFO_DRIVER_VERSION,
-      ADBC_INFO_VENDOR_NAME,
-      ADBC_INFO_VENDOR_VERSION,
+      ADBC_INFO_DRIVER_NAME, ADBC_INFO_DRIVER_VERSION, ADBC_INFO_DRIVER_ADBC_VERSION,
+      ADBC_INFO_VENDOR_NAME, ADBC_INFO_VENDOR_VERSION,
   };
   ASSERT_THAT(AdbcConnectionGetInfo(&connection, info.data(), info.size(),
                                     &reader.stream.value, &error),
@@ -283,31 +283,37 @@ TEST_F(SqliteConnectionTest, GetInfoMetadata) {
       ASSERT_FALSE(ArrowArrayViewIsNull(reader.array_view->children[0], row));
       const uint32_t code =
           reader.array_view->children[0]->buffer_views[1].data.as_uint32[row];
+      const uint32_t offset =
+          reader.array_view->children[1]->buffer_views[1].data.as_int32[row];
       seen.push_back(code);
 
-      int str_child_index = 0;
-      struct ArrowArrayView* str_child =
-          reader.array_view->children[1]->children[str_child_index];
+      struct ArrowArrayView* str_child = reader.array_view->children[1]->children[0];
+      struct ArrowArrayView* int_child = reader.array_view->children[1]->children[2];
       switch (code) {
         case ADBC_INFO_DRIVER_NAME: {
-          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, 0);
+          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, offset);
           EXPECT_EQ("ADBC SQLite Driver", std::string(val.data, val.size_bytes));
           break;
         }
         case ADBC_INFO_DRIVER_VERSION: {
-          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, 1);
+          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, offset);
           EXPECT_EQ("(unknown)", std::string(val.data, val.size_bytes));
           break;
         }
         case ADBC_INFO_VENDOR_NAME: {
-          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, 2);
+          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, offset);
           EXPECT_EQ("SQLite", std::string(val.data, val.size_bytes));
           break;
         }
         case ADBC_INFO_VENDOR_VERSION: {
-          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, 3);
+          ArrowStringView val = ArrowArrayViewGetStringUnsafe(str_child, offset);
           EXPECT_THAT(std::string(val.data, val.size_bytes),
                       ::testing::MatchesRegex("3\\..*"));
+          break;
+        }
+        case ADBC_INFO_DRIVER_ADBC_VERSION: {
+          EXPECT_EQ(ADBC_VERSION_1_1_0, ArrowArrayViewGetIntUnsafe(int_child, offset));
+          break;
         }
         default:
           // Ignored
@@ -446,7 +452,7 @@ class SqliteReaderTest : public ::testing::Test {
 
   void Exec(const std::string& query) {
     SCOPED_TRACE(query);
-    int rc = sqlite3_prepare_v2(db, query.c_str(), query.size(), &stmt,
+    int rc = sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size()), &stmt,
                                 /*pzTail=*/nullptr);
     ASSERT_EQ(SQLITE_OK, rc) << "Failed to prepare query: " << sqlite3_errmsg(db);
     ASSERT_EQ(SQLITE_DONE, sqlite3_step(stmt));
@@ -454,17 +460,19 @@ class SqliteReaderTest : public ::testing::Test {
     stmt = nullptr;
   }
 
-  void Bind(struct ArrowArray* batch, struct ArrowSchema* schema) {
+  void Bind(struct ArrowArray* batch, struct ArrowSchema* schema,
+            bool bind_by_name = false) {
     Handle<struct ArrowArrayStream> stream;
     struct ArrowArray batch_internal = *batch;
     batch->release = nullptr;
     adbc_validation::MakeStream(&stream.value, schema, {batch_internal});
-    ASSERT_NO_FATAL_FAILURE(Bind(&stream.value));
+    ASSERT_NO_FATAL_FAILURE(Bind(&stream.value, bind_by_name));
   }
 
-  void Bind(struct ArrowArrayStream* stream) {
-    ASSERT_THAT(InternalAdbcSqliteBinderSetArrayStream(&binder, stream, &error),
-                IsOkStatus(&error));
+  void Bind(struct ArrowArrayStream* stream, bool bind_by_name = false) {
+    ASSERT_THAT(
+        InternalAdbcSqliteBinderSetArrayStream(&binder, stream, bind_by_name, &error),
+        IsOkStatus(&error));
   }
 
   void ExecSelect(const std::string& values, size_t infer_rows,
@@ -478,8 +486,9 @@ class SqliteReaderTest : public ::testing::Test {
 
   void Exec(const std::string& query, size_t infer_rows,
             adbc_validation::StreamReader* reader) {
-    ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(db, query.c_str(), query.size(), &stmt,
-                                            /*pzTail=*/nullptr));
+    ASSERT_EQ(SQLITE_OK,
+              sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size()), &stmt,
+                                 /*pzTail=*/nullptr));
     struct AdbcSqliteBinder* binder =
         this->binder.schema.release ? &this->binder : nullptr;
     ASSERT_THAT(InternalAdbcSqliteExportReader(db, stmt, binder, infer_rows,
@@ -824,6 +833,32 @@ TEST_F(SqliteReaderTest, InferTypedParams) {
   ASSERT_THAT(reader.stream->get_last_error(&reader.stream.value),
               ::testing::HasSubstr(
                   "[SQLite] Type mismatch in column 0: expected INT64 but got DOUBLE"));
+}
+
+TEST_F(SqliteReaderTest, BindByName) {
+  adbc_validation::StreamReader reader;
+  Handle<struct ArrowSchema> schema;
+  Handle<struct ArrowArray> batch;
+
+  ASSERT_THAT(adbc_validation::MakeSchema(&schema.value,
+                                          {
+                                              {"@b", NANOARROW_TYPE_INT64},
+                                              {"@a", NANOARROW_TYPE_INT64},
+                                          }),
+              IsOkErrno());
+  ASSERT_THAT((adbc_validation::MakeBatch<int64_t, int64_t>(&schema.value, &batch.value,
+                                                            /*error=*/nullptr, {1}, {2})),
+              IsOkErrno());
+
+  ASSERT_NO_FATAL_FAILURE(Bind(&batch.value, &schema.value, true));
+  ASSERT_NO_FATAL_FAILURE(Exec("SELECT @a, @b", /*infer_rows=*/2, &reader));
+  ASSERT_EQ(2, reader.schema->n_children);
+  ASSERT_EQ(NANOARROW_TYPE_INT64, reader.fields[0].type);
+  ASSERT_EQ(NANOARROW_TYPE_INT64, reader.fields[1].type);
+
+  ASSERT_NO_FATAL_FAILURE(reader.Next());
+  ASSERT_NO_FATAL_FAILURE(CompareArray<int64_t>(reader.array_view->children[0], {2}));
+  ASSERT_NO_FATAL_FAILURE(CompareArray<int64_t>(reader.array_view->children[1], {1}));
 }
 
 TEST_F(SqliteReaderTest, MultiValueParams) {

@@ -78,7 +78,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: false,
                      metadata: nil
                    },
-                   data: [0, 1, 100, 101, 102]
+                   data: [0, 1, 100, 101, 102, 103]
                  },
                  %Adbc.Column{
                    field: %{
@@ -95,7 +95,8 @@ defmodule Adbc.ConnectionTest do
                      # "(unknown)"
                      %{"string_value" => [_]},
                      # "0.4.0"
-                     %{"string_value" => [_]}
+                     %{"string_value" => [_]},
+                     %{"int64_value" => [1_001_000]}
                    ]
                  }
                ]
