@@ -27,7 +27,7 @@ defmodule Adbc.ResultTest do
             type: {:timestamp, :seconds, "UTC"},
             nullable: true
           },
-          data: [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]]
+          data: [[~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]]]
         },
         %Adbc.Column{
           field: %Adbc.Field{
@@ -35,7 +35,7 @@ defmodule Adbc.ResultTest do
             type: {:timestamp, :seconds, "UTC"},
             nullable: true
           },
-          data: [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]]
+          data: [[~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]]]
         },
         %Adbc.Column{
           field: %Adbc.Field{
@@ -50,8 +50,8 @@ defmodule Adbc.ResultTest do
             nullable: true
           },
           data: [
-            [[1], [2, 3], [3, 4], [4]],
-            [[3, 4], [4], [5, 6], [6]]
+            [[[1], [2, 3], [3, 4], [4]],
+             [[3, 4], [4], [5, 6], [6]]]
           ]
         }
       ]
@@ -176,7 +176,7 @@ defmodule Adbc.ResultTest do
           |> File.read!()
           |> :erlang.binary_to_term()
 
-        assert expected == column.data
+        assert expected == Adbc.Column.to_list(column)
       end
     end
   end

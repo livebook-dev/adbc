@@ -26,8 +26,6 @@ defmodule Adbc.Column do
           data: term()
         }
 
-  import Bitwise
-
   # Value-range types used in constructor specs
   @type s8 :: -128..127
   @type u8 :: 0..255
@@ -42,8 +40,6 @@ defmodule Adbc.Column do
   @type interval_month :: s32()
   @type interval_day_xime :: {s32(), s32()}
   @type interval_month_day_nano :: {s32(), s32(), s64()}
-
-  @valid_run_end_types [:s16, :s32, :s64]
 
   @doc """
   Creates a column by inferring the type from the data.
@@ -83,19 +79,19 @@ defmodule Adbc.Column do
       iex> Adbc.Column.new([1, 2, 3], name: "ids")
       %Adbc.Column{
         field: %Adbc.Field{name: "ids", type: :s64, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
       iex> Adbc.Column.new([1, nil, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil},
-        data: [1, nil, 3.0]
+        data: [[1, nil, 3.0]]
       }
 
       iex> Adbc.Column.new([1, 2, 3], type: :u32)
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
@@ -114,7 +110,7 @@ defmodule Adbc.Column do
         nullable: nullable,
         metadata: nil
       },
-      data: data
+      data: [data]
     }
   end
 
@@ -271,13 +267,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.boolean([true, false, true])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :boolean, nullable: false, metadata: nil},
-        data: [true, false, true]
+        data: [[true, false, true]]
       }
 
   """
   @spec boolean([boolean()], Keyword.t()) :: t()
   def boolean(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -300,13 +296,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u8([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u8, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec u8([u8() | nil], Keyword.t()) :: t()
   def u8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -329,13 +325,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u16([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u16, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec u16([u16() | nil], Keyword.t()) :: t()
   def u16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -358,13 +354,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec u32([u32() | nil], Keyword.t()) :: t()
   def u32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -387,13 +383,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec u64([u64() | nil], Keyword.t()) :: t()
   def u64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -416,13 +412,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s8([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s8, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec s8([s8() | nil], Keyword.t()) :: t()
   def s8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -445,13 +441,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s16([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s16, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec s16([s16() | nil], Keyword.t()) :: t()
   def s16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -474,13 +470,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s32, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec s32([s32() | nil], Keyword.t()) :: t()
   def s32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -503,13 +499,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s64([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s64, nullable: false, metadata: nil},
-        data: [1, 2, 3]
+        data: [[1, 2, 3]]
       }
 
   """
   @spec s64([s64() | nil], Keyword.t()) :: t()
   def s64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -532,13 +528,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f16([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f16, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0]
+        data: [[1.0, 2.0, 3.0]]
       }
 
   """
   @spec f16([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -561,13 +557,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f32([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f32, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0]
+        data: [[1.0, 2.0, 3.0]]
       }
 
   """
   @spec f32([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -590,13 +586,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f64([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f64, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0]
+        data: [[1.0, 2.0, 3.0]]
       }
 
   """
   @spec f64([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -626,7 +622,7 @@ defmodule Adbc.Column do
 
     %Adbc.Column{
       field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: preprocess_decimal(data, bitwidth, precision, scale)
+      data: [preprocess_decimal(data, bitwidth, precision, scale)]
     }
   end
 
@@ -657,7 +653,7 @@ defmodule Adbc.Column do
 
     %Adbc.Column{
       field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: preprocess_decimal(data, bitwidth, precision, scale)
+      data: [preprocess_decimal(data, bitwidth, precision, scale)]
     }
   end
 
@@ -740,13 +736,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.string(["a", "ab", "abc"])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :string, nullable: false, metadata: nil},
-        data: ["a", "ab", "abc"]
+        data: [["a", "ab", "abc"]]
       }
 
   """
   @spec string([String.t() | nil], Keyword.t()) :: t()
   def string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:string, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:string, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -771,13 +767,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.large_string(["a", "ab", "abc"])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :large_string, nullable: false, metadata: nil},
-        data: ["a", "ab", "abc"]
+        data: [["a", "ab", "abc"]]
       }
 
   """
   @spec large_string([String.t() | nil], Keyword.t()) :: t()
   def large_string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -800,13 +796,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.binary([<<0>>, <<1>>, <<2>>])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :binary, nullable: false, metadata: nil},
-        data: [<<0>>, <<1>>, <<2>>]
+        data: [[<<0>>, <<1>>, <<2>>]]
       }
 
   """
   @spec binary([iodata() | nil], Keyword.t()) :: t()
   def binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -831,13 +827,13 @@ defmodule Adbc.Column do
       iex> Adbc.Column.large_binary([<<0>>, <<1>>, <<2>>])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :large_binary, nullable: false, metadata: nil},
-        data: [<<0>>, <<1>>, <<2>>]
+        data: [[<<0>>, <<1>>, <<2>>]]
       }
 
   """
   @spec large_binary([iodata() | nil], Keyword.t()) :: t()
   def large_binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -863,14 +859,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.fixed_size_binary([<<0>>, <<1>>, <<2>>], 1)
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}, nullable: false, metadata: nil},
-        data: [<<0>>, <<1>>, <<2>>]
+        data: [[<<0>>, <<1>>, <<2>>]]
       }
 
   """
   @spec fixed_size_binary([iodata() | nil], non_neg_integer(), Keyword.t()) :: t()
   def fixed_size_binary(data, nbytes, opts \\ [])
       when is_list(data) and is_integer(nbytes) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -892,7 +888,7 @@ defmodule Adbc.Column do
   """
   @spec date32([Date.t() | s32() | nil], Keyword.t()) :: t()
   def date32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -914,7 +910,7 @@ defmodule Adbc.Column do
   """
   @spec date64([Date.t() | s64() | nil], Keyword.t()) :: t()
   def date64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -952,12 +948,12 @@ defmodule Adbc.Column do
 
   def time(data, unit, opts)
       when is_list(data) and is_list(opts) and unit in [:seconds, :milliseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:time32, unit}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:time32, unit}, opts), data: [data]}
   end
 
   def time(data, unit, opts)
       when is_list(data) and is_list(opts) and unit in [:microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:time64, unit}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:time64, unit}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -996,7 +992,7 @@ defmodule Adbc.Column do
   def timestamp(data, unit, timezone, opts \\ [])
       when is_list(data) and is_binary(timezone) and is_list(opts) and
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:timestamp, unit, timezone}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:timestamp, unit, timezone}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -1025,7 +1021,7 @@ defmodule Adbc.Column do
   def duration(data, unit, opts \\ [])
       when is_list(data) and is_list(opts) and
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:duration, unit}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:duration, unit}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -1068,7 +1064,7 @@ defmodule Adbc.Column do
   def interval(data, interval_unit, opts \\ [])
       when is_list(data) and is_list(opts) and
              interval_unit in [:month, :day_time, :month_day_nano] do
-    %Adbc.Column{field: Adbc.Field.new({:interval, interval_unit}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:interval, interval_unit}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -1089,7 +1085,7 @@ defmodule Adbc.Column do
   """
   @spec list(list(), Adbc.Field.t(), Keyword.t()) :: t()
   def list(data, %Adbc.Field{} = inner_field, opts \\ []) when is_list(data) do
-    %Adbc.Column{field: Adbc.Field.new({:list, inner_field}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:list, inner_field}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -1110,7 +1106,7 @@ defmodule Adbc.Column do
   """
   @spec large_list(list(), Adbc.Field.t(), Keyword.t()) :: t()
   def large_list(data, %Adbc.Field{} = inner_field, opts \\ []) when is_list(data) do
-    %Adbc.Column{field: Adbc.Field.new({:large_list, inner_field}, opts), data: data}
+    %Adbc.Column{field: Adbc.Field.new({:large_list, inner_field}, opts), data: [data]}
   end
 
   @doc type: :column_builder
@@ -1135,7 +1131,7 @@ defmodule Adbc.Column do
       when is_list(data) do
     %Adbc.Column{
       field: Adbc.Field.new({:fixed_size_list, inner_field, fixed_size}, opts),
-      data: data
+      data: [data]
     }
   end
 
@@ -1193,7 +1189,7 @@ defmodule Adbc.Column do
       when index_type in [:s8, :u8, :s16, :u16, :s32, :u32, :s64, :u64] do
     %Adbc.Column{
       field: Adbc.Field.new({:dictionary, key.field, value.field}, opts),
-      data: %{key: key.data, value: value.data}
+      data: Enum.zip_with(key.data, value.data, fn k, v -> %{key: k, value: v} end)
     }
   end
 
@@ -1201,93 +1197,19 @@ defmodule Adbc.Column do
   `materialize/1` converts a column's data from reference type to regular Elixir terms.
   """
   @spec materialize(t()) :: t()
-  def materialize(%Adbc.Column{data: data_ref} = self)
+  def materialize(%Adbc.Column{field: field, data: data_ref} = column)
       when is_list(data_ref) do
     if Enum.all?(data_ref, &is_reference/1) do
-      do_materialize(self)
+      case Adbc.Nif.adbc_column_materialize(data_ref) do
+        {:ok, data} ->
+          %{column | data: data}
+
+        {:error, reason} ->
+          raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
+      end
     else
-      self
+      column
     end
-  end
-
-  def materialize(%Adbc.Column{} = self) do
-    self
-  end
-
-  defp do_materialize(%Adbc.Column{data: data_ref, field: field} = self) do
-    case Adbc.Nif.adbc_column_materialize(data_ref) do
-      {:ok, results} ->
-        materialize_results(self, field.type, results)
-
-      {:error, reason} ->
-        raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
-    end
-  end
-
-  # Dictionary: NIF returns maps %{key: [...], value: [...]} per batch
-  defp materialize_results(column, {:dictionary, _, _}, results) do
-    data =
-      Enum.reduce(results, %{key: [], value: []}, fn %{key: k, value: v}, acc ->
-        %{key: acc.key ++ k, value: acc.value ++ v}
-      end)
-
-    %{column | data: data}
-  end
-
-  # Run-end encoded: NIF returns maps with run_ends, values, length, offset per batch.
-  # Length and offset stay in the data map as they're specific to run_end_encoded.
-  defp materialize_results(column, {:run_end_encoded, _, _}, results) do
-    data =
-      Enum.reduce(results, %{run_ends: [], values: [], length: 0, offset: 0}, fn batch, acc ->
-        %{
-          run_ends: acc.run_ends ++ batch.run_ends,
-          values: acc.values ++ batch.values,
-          length: batch.length,
-          offset: batch.offset
-        }
-      end)
-
-    %{column | data: data}
-  end
-
-  # List view: NIF returns maps %{validity, offsets, sizes, values} per batch
-  defp materialize_results(column, {type, _}, results)
-       when type in [:list_view, :large_list_view] do
-    data =
-      Enum.reduce(results, %{validity: [], offsets: [], sizes: [], values: []}, fn batch, acc ->
-        %{
-          validity: acc.validity ++ batch.validity,
-          offsets: acc.offsets ++ batch.offsets,
-          sizes: acc.sizes ++ batch.sizes,
-          values: acc.values ++ batch.values
-        }
-      end)
-
-    %{column | data: data}
-  end
-
-  # Decimal: NIF returns binary-encoded coefficients that need conversion to Decimal structs
-  defp materialize_results(column, {:decimal, bits, _, scale}, results) do
-    data =
-      results
-      |> Enum.concat()
-      |> Enum.map(fn
-        <<coef::signed-integer-size(bits)-little>> ->
-          if coef < 0 do
-            Decimal.new(-1, -coef, -scale)
-          else
-            Decimal.new(1, coef, -scale)
-          end
-
-        nil ->
-          nil
-      end)
-
-    %{column | data: data}
-  end
-
-  defp materialize_results(column, _type, results) do
-    %{column | data: Enum.concat(results)}
   end
 
   @doc """
@@ -1312,119 +1234,91 @@ defmodule Adbc.Column do
   """
   @spec to_list(t()) :: [term()]
   def to_list(%Adbc.Column{
-        field: %{type: {type, _inner_field}},
-        data: %{
-          validity: validity,
-          offsets: offsets,
-          sizes: sizes,
-          values: values
-        }
-      })
-      when type in [:list_view, :large_list_view] and is_list(validity) and is_list(offsets) and
-             is_list(sizes) do
-    Enum.zip_with([offsets, sizes, validity], fn [offset, size, valid] ->
-      if valid do
-        Enum.slice(values, offset, size)
-      else
-        nil
-      end
-    end)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:run_end_encoded, %Adbc.Field{type: run_end_type}, _values_field}},
-        data: %{
-          run_ends: run_ends_data,
-          values: values_data,
-          length: length,
-          offset: offset
-        }
-      })
-      when is_integer(offset) and offset >= 0 and is_integer(length) and length >= 1 do
-    max_allowed_length =
-      case run_end_type do
-        :s16 ->
-          1 <<< 16
-
-        :s32 ->
-          1 <<< 32
-
-        :s64 ->
-          1 <<< 64
-
-        _ ->
-          raise ArgumentError,
-                "invalid run end type: #{inspect(run_end_type)}, expected one of #{inspect(@valid_run_end_types)}"
-      end
-
-    if offset + length > max_allowed_length do
-      raise ArgumentError,
-            "run end data exceeds maximum allowed length: #{length} + #{offset} > #{max_allowed_length}"
-    end
-
-    run_end_len = Enum.count(run_ends_data)
-
-    {run_end_start_index, values_start_index, encoded} =
-      case Enum.drop_while(run_ends_data, &(&1 < offset)) do
-        [] ->
-          raise ArgumentError,
-                "last run end is #{hd(Enum.reverse(run_ends_data))} but it should >= #{offset + length} (offset: #{offset}, length: #{length})"
-
-        encoded = [run_end_start_index | _] ->
-          values_start_index = run_end_len - Enum.count(encoded)
-
-          if run_end_start_index == offset do
-            {run_end_start_index, values_start_index, encoded}
-          else
-            {offset, values_start_index, encoded}
-          end
-      end
-
-    if offset + length > hd(Enum.reverse(run_ends_data)) do
-      raise ArgumentError,
-            "last run end is #{hd(Enum.reverse(run_ends_data))} but it should >= #{offset + length} (offset: #{offset}, length: #{length})"
-    end
-
-    {_, _, decoded} =
-      Enum.reduce(encoded, {run_end_start_index, values_start_index, []}, fn
-        run_end, {index, value_index, acc} ->
-          real_end =
-            if run_end > offset + length do
-              offset + length
-            else
-              run_end
-            end
-
-          {run_end, value_index + 1,
-           List.duplicate(Enum.at(values_data, value_index), real_end - index) ++ acc}
-      end)
-
-    Enum.reverse(decoded)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:dictionary, _key_field, _value_field}},
-        data: %{key: key_data, value: value_data}
+        field: %{type: {:dictionary, key_field, value_field}},
+        data: batches
       }) do
-    Enum.map(key_data, fn
-      index when is_integer(index) ->
-        Enum.at(value_data, index)
+    Enum.flat_map(batches, fn %{key: key_data, value: value_data} ->
+      value_list = to_list(%Adbc.Column{field: value_field, data: [value_data]})
 
-      nil ->
-        nil
+      to_list(%Adbc.Column{field: key_field, data: [key_data]})
+      |> Enum.map(fn
+        index when is_integer(index) -> Enum.at(value_list, index)
+        nil -> nil
+      end)
     end)
   end
 
-  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: data}) do
-    columns =
-      Enum.zip_with(fields, data, fn field, col_data ->
-        %Adbc.Column{field: field, data: col_data}
-      end)
-
-    %Adbc.Result{data: columns, num_rows: nil}
-    |> Table.to_rows()
-    |> Enum.to_list()
+  def to_list(%Adbc.Column{
+        field: %{type: {:run_end_encoded, _run_ends_field, values_field}},
+        data: batches
+      }) do
+    Enum.flat_map(batches, fn batch ->
+      values = to_list(%Adbc.Column{field: values_field, data: [batch.values]})
+      expand_runs(batch.run_ends, values, batch.offset, batch.offset + batch.length)
+    end)
   end
 
-  def to_list(%Adbc.Column{data: data}), do: data
+  def to_list(%Adbc.Column{field: %{type: {type, inner_field}}, data: batches})
+      when type in [:list_view, :large_list_view] do
+    Enum.flat_map(batches, fn batch ->
+      values = to_list(%Adbc.Column{field: inner_field, data: [batch.values]})
+
+      Enum.zip_with([batch.offsets, batch.sizes, batch.validity], fn
+        [offset, size, true] -> Enum.slice(values, offset, size)
+        [_offset, _size, false] -> nil
+      end)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:decimal, bits, _, scale}}, data: batches}) do
+    Enum.flat_map(batches, fn batch ->
+      Enum.map(batch, fn
+        <<coef::signed-integer-size(bits)-little>> ->
+          if coef < 0 do
+            Decimal.new(-1, -coef, -scale)
+          else
+            Decimal.new(1, coef, -scale)
+          end
+
+        nil ->
+          nil
+      end)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batches}) do
+    Enum.flat_map(batches, fn batch ->
+      columns =
+        Enum.zip_with(fields, batch, fn field, col_data ->
+          %Adbc.Column{field: field, data: [col_data]}
+        end)
+
+      %Adbc.Result{data: columns, num_rows: nil}
+      |> Table.to_rows()
+      |> Enum.to_list()
+    end)
+  end
+
+  def to_list(%Adbc.Column{data: batches}) do
+    Enum.concat(batches)
+  end
+
+  defp expand_runs([run_end | run_ends], [_ | values], pos, stop)
+       when run_end <= pos do
+    expand_runs(run_ends, values, pos, stop)
+  end
+
+  defp expand_runs([run_end | run_ends], [value | values], pos, stop) do
+    duplicate_runs(value, min(run_end, stop) - pos, run_ends, values, min(run_end, stop), stop)
+  end
+
+  defp expand_runs(_, _, _, _), do: []
+
+  defp duplicate_runs(_value, 0, run_ends, values, pos, stop) do
+    expand_runs(run_ends, values, pos, stop)
+  end
+
+  defp duplicate_runs(value, n, run_ends, values, pos, stop) do
+    [value | duplicate_runs(value, n - 1, run_ends, values, pos, stop)]
+  end
 end

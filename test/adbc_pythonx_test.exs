@@ -78,7 +78,7 @@ defmodule Adbc.PythonxTest do
                ]
              } = result
 
-      assert data == [[1, 2, 3], [4, 5], nil, [6]]
+      assert data == [[[1, 2, 3], [4, 5], nil, [6]]]
     end
   end
 
@@ -99,16 +99,12 @@ defmodule Adbc.PythonxTest do
                    field: %Adbc.Field{
                      name: "dict",
                      type: {:dictionary, %Adbc.Field{type: key_type}, %Adbc.Field{type: :string}}
-                   },
-                   data: %{key: key_data, value: value_data}
+                   }
                  }
                ]
              } = result
 
       assert key_type in [:s8, :s16, :s32, :s64]
-      assert key_data == [0, 1, 0, 2, 1]
-      assert value_data == ["foo", "bar", "baz"]
-
       assert Adbc.Column.to_list(hd(result.data)) == ["foo", "bar", "foo", "baz", "bar"]
     end
 
@@ -123,6 +119,32 @@ defmodule Adbc.PythonxTest do
         """)
 
       assert Adbc.Column.to_list(hd(result.data)) == ["foo", nil, "bar", "baz", nil]
+    end
+
+    test "materializes dictionary with struct values" do
+      result =
+        eval!("""
+        import pyarrow
+        struct_type = pyarrow.struct([
+          pyarrow.field("x", pyarrow.int32()),
+          pyarrow.field("y", pyarrow.utf8())
+        ])
+        dictionary = pyarrow.array([
+          {"x": 1, "y": "a"},
+          {"x": 2, "y": "b"},
+          {"x": 3, "y": "c"}
+        ], type=struct_type)
+        indices = pyarrow.array([0, 2, 1, 0])
+        data = pyarrow.DictionaryArray.from_arrays(indices, dictionary)
+        pyarrow.Table.from_arrays([data], names=["dict"])
+        """)
+
+      assert Adbc.Column.to_list(hd(result.data)) == [
+               %{"x" => 1, "y" => "a"},
+               %{"x" => 3, "y" => "c"},
+               %{"x" => 2, "y" => "b"},
+               %{"x" => 1, "y" => "a"}
+             ]
     end
   end
 
@@ -185,17 +207,28 @@ defmodule Adbc.PythonxTest do
                        {:run_end_encoded, %Adbc.Field{name: "run_ends", type: :s32},
                         %Adbc.Field{name: "values", type: :string}}
                    },
-                   data: %{run_ends: run_ends, values: values, length: length, offset: offset}
+                   data: [%{offset: 0, length: 7, values: ["a", "b", "c"], run_ends: [3, 5, 7]}]
                  }
                ]
              } = result
 
-      assert run_ends == [3, 5, 7]
-      assert values == ["a", "b", "c"]
-      assert length == 7
-      assert offset == 0
-
       assert Adbc.Column.to_list(hd(result.data)) == ["a", "a", "a", "b", "b", "c", "c"]
+    end
+
+    test "materializes run-end encoded column with dictionary values" do
+      result =
+        eval!("""
+        import pyarrow
+        dict_type = pyarrow.dictionary(pyarrow.int32(), pyarrow.utf8())
+        data = pyarrow.RunEndEncodedArray.from_arrays(
+          pyarrow.array([3, 5, 7], type=pyarrow.int32()),
+          pyarrow.array(["foo", "bar", "baz"], type=dict_type)
+        )
+        pyarrow.Table.from_arrays([data], names=["ree"])
+        """)
+
+      assert Adbc.Column.to_list(hd(result.data)) ==
+               ["foo", "foo", "foo", "bar", "bar", "baz", "baz"]
     end
   end
 
@@ -219,22 +252,29 @@ defmodule Adbc.PythonxTest do
                      name: "lv",
                      type: {:list_view, %Adbc.Field{name: "item", type: :s32}}
                    },
-                   data: %{
-                     validity: validity,
-                     offsets: offsets,
-                     sizes: sizes,
-                     values: values
-                   }
+                   data: [%{values: [10, 20, 30, 40, 50], offsets: [0, 2, 1], sizes: [2, 3, 2], validity: [true, true, true]}]
                  }
                ]
              } = result
 
-      assert is_list(validity)
-      assert offsets == [0, 2, 1]
-      assert sizes == [2, 3, 2]
-      assert values == [10, 20, 30, 40, 50]
-
       assert Adbc.Column.to_list(hd(result.data)) == [[10, 20], [30, 40, 50], [20, 30]]
+    end
+
+    test "materializes list_view column with dictionary inner type" do
+      result =
+        eval!("""
+        import pyarrow
+        dict_type = pyarrow.dictionary(pyarrow.int32(), pyarrow.utf8())
+        values = pyarrow.array(["foo", "bar", "baz", "foo", "bar"], type=dict_type)
+        offsets = pyarrow.array([0, 2, 1], type=pyarrow.int32())
+        sizes = pyarrow.array([2, 3, 2], type=pyarrow.int32())
+        lv_type = pyarrow.list_view(pyarrow.field("item", dict_type, nullable=False))
+        data = pyarrow.ListViewArray.from_arrays(offsets, sizes, values, type=lv_type)
+        pyarrow.Table.from_arrays([data], names=["lv"])
+        """)
+
+      assert Adbc.Column.to_list(hd(result.data)) ==
+               [["foo", "bar"], ["baz", "foo", "bar"], ["bar", "baz"]]
     end
   end
 end

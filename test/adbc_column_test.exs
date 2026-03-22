@@ -4,7 +4,7 @@ defmodule Adbc.ColumnTest do
 
   describe "new/2" do
     test "empty list defaults to string" do
-      assert %Adbc.Column{field: %{type: :string, nullable: false}, data: []} =
+      assert %Adbc.Column{field: %{type: :string, nullable: false}, data: [[]]} =
                Adbc.Column.new([])
     end
 
@@ -12,7 +12,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([true, false, true])
       assert col.field.type == :boolean
       assert col.field.nullable == false
-      assert col.data == [true, false, true]
+      assert col.data == [[true, false, true]]
     end
 
     test "integers infer as s64" do
@@ -31,7 +31,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([1, 2.5, 3])
       assert col.field.type == :f64
       assert col.field.nullable == false
-      assert col.data == [1, 2.5, 3]
+      assert col.data == [[1, 2.5, 3]]
     end
 
     test "nan, infinity, neg_infinity infer as f64" do
@@ -49,7 +49,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([1, nil, 3])
       assert col.field.type == :s64
       assert col.field.nullable == true
-      assert col.data == [1, nil, 3]
+      assert col.data == [[1, nil, 3]]
     end
 
     test "only nils defaults to string" do
@@ -175,7 +175,7 @@ defmodule Adbc.ColumnTest do
                  nullable: false,
                  metadata: nil
                },
-               data: [decimal_data, value_data]
+               data: [[decimal_data, value_data]]
              } = Adbc.Column.decimal128([decimal, value], precision, scale)
 
       assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
@@ -193,7 +193,7 @@ defmodule Adbc.ColumnTest do
                  nullable: false,
                  metadata: nil
                },
-               data: [decimal_data, value_data]
+               data: [[decimal_data, value_data]]
              } = Adbc.Column.decimal256([decimal, value], precision, scale)
 
       assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
@@ -214,7 +214,7 @@ defmodule Adbc.ColumnTest do
           type: {:decimal, bitwidth, precision, scale},
           nullable: true
         },
-        data: [nil]
+        data: [[nil]]
       }
 
       assert %Adbc.Column{
@@ -224,7 +224,7 @@ defmodule Adbc.ColumnTest do
                  nullable: true,
                  metadata: nil
                },
-               data: [nil]
+               data: [[nil]]
              } = Adbc.Column.materialize(decimal_with_nil)
     end
 
@@ -245,7 +245,7 @@ defmodule Adbc.ColumnTest do
                  type: {:decimal, ^bitwidth, ^precision, ^scale},
                  nullable: false
                },
-               data: [data]
+               data: [[data]]
              } = Adbc.Column.decimal128([decimal], precision, scale)
 
       assert <<decode::signed-integer-little-size(bitwidth)>> = data
@@ -259,7 +259,7 @@ defmodule Adbc.ColumnTest do
                  type: {:decimal, ^bitwidth, ^precision, ^scale},
                  nullable: false
                },
-               data: [data]
+               data: [[data]]
              } = Adbc.Column.decimal256([decimal], precision, scale)
 
       assert <<decode::signed-integer-little-size(bitwidth)>> = data
@@ -306,7 +306,7 @@ defmodule Adbc.ColumnTest do
                  nullable: false,
                  metadata: nil
                },
-               data: [decimal_data, value_data]
+               data: [[decimal_data, value_data]]
              } = Adbc.Column.decimal128([decimal, value], precision, scale)
 
       assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
@@ -324,7 +324,7 @@ defmodule Adbc.ColumnTest do
                  nullable: false,
                  metadata: nil
                },
-               data: [decimal_data, value_data]
+               data: [[decimal_data, value_data]]
              } = Adbc.Column.decimal256([decimal, value], precision, scale)
 
       assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
@@ -364,7 +364,7 @@ defmodule Adbc.ColumnTest do
                  type: {:decimal, ^bitwidth, ^precision, ^scale},
                  nullable: false
                },
-               data: [data]
+               data: [[data]]
              } = Adbc.Column.decimal128([decimal], precision, scale)
 
       assert <<decode::signed-integer-little-size(bitwidth)>> = data
@@ -378,7 +378,7 @@ defmodule Adbc.ColumnTest do
                  type: {:decimal, ^bitwidth, ^precision, ^scale},
                  nullable: false
                },
-               data: [data]
+               data: [[data]]
              } = Adbc.Column.decimal256([decimal], precision, scale)
 
       assert <<decode::signed-integer-little-size(bitwidth)>> = data

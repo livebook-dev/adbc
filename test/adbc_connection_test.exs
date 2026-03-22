@@ -78,7 +78,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: false,
                      metadata: nil
                    },
-                   data: [0, 1, 100, 101, 102, 103]
+                   data: [[0, 1, 100, 101, 102, 103]]
                  },
                  %Adbc.Column{
                    field: %{
@@ -87,7 +87,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [
+                   data: [[
                      %{"string_value" => ["SQLite"]},
                      # "3.43.2"
                      %{"string_value" => [_]},
@@ -97,7 +97,7 @@ defmodule Adbc.ConnectionTest do
                      # "0.4.0"
                      %{"string_value" => [_]},
                      %{"int64_value" => [1_001_000]}
-                   ]
+                   ]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -138,7 +138,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: false,
                      metadata: nil
                    },
-                   data: [0]
+                   data: [[0]]
                  },
                  %Adbc.Column{
                    field: %{
@@ -147,7 +147,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [%{"string_value" => ["SQLite"]}]
+                   data: [[%{"string_value" => ["SQLite"]}]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -218,7 +218,7 @@ defmodule Adbc.ConnectionTest do
                        nullable: false,
                        metadata: nil
                      },
-                     data: ["table", "view"]
+                     data: [["table", "view"]]
                    }
                  ]
                } = Adbc.Result.materialize(results)
@@ -258,7 +258,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [123]
+                   data: [[123]]
                  } = column
                ]
              } = Adbc.Result.materialize(results)
@@ -298,7 +298,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [123]
+                   data: [[123]]
                  },
                  %Adbc.Column{
                    field: %{
@@ -307,7 +307,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [1]
+                   data: [[1]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -340,7 +340,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [579]
+                   data: [[579]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -374,7 +374,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [579]
+                   data: [[579]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -409,7 +409,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [579]
+                   data: [[579]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -438,7 +438,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [1456]
+                   data: [[1456]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -479,7 +479,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [123]
+                   data: [[123]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -516,7 +516,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [123]
+                   data: [[123]]
                  },
                  %Adbc.Column{
                    field: %{
@@ -525,7 +525,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [1]
+                   data: [[1]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -558,7 +558,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [579]
+                   data: [[579]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -612,7 +612,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [123]
+                   data: [[123]]
                  },
                  %Adbc.Column{
                    field: %{
@@ -621,7 +621,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [1]
+                   data: [[1]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -657,7 +657,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [579]
+                   data: [[579]]
                  }
                ]
              } = Adbc.Result.materialize(results)

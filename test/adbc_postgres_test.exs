@@ -28,7 +28,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [123]
+                 data: [[123]]
                }
              ]
            } = Adbc.Result.materialize(results)
@@ -54,7 +54,7 @@ defmodule Adbc.PostgresTest do
                    metadata: nil,
                    nullable: true
                  },
-                 data: [["1", "2", "3"]]
+                 data: [[["1", "2", "3"]]]
                }
              ]
            } = result |> Adbc.Result.materialize()
@@ -73,7 +73,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[1, 2, 3, nil, 5]]
+                 data: [[[1, 2, 3, nil, 5]]]
                }
              ]
            } = Adbc.Result.materialize(results)
@@ -96,7 +96,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]
+                 data: [[[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]]
                }
              ]
            } = Adbc.Result.materialize(results)
@@ -125,7 +125,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~N[2023-03-01 10:23:45.000000]]
+                 data: [[~N[2023-03-01 10:23:45.000000]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -134,7 +134,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~N[2023-03-01 10:23:45.123456]]
+                 data: [[~N[2023-03-01 10:23:45.123456]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -143,7 +143,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~N[2023-03-01 18:23:45.000000]]
+                 data: [[~N[2023-03-01 18:23:45.000000]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -152,7 +152,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~N[2023-03-01 08:23:45.000000]]
+                 data: [[~N[2023-03-01 08:23:45.000000]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -161,7 +161,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~D[2023-03-01]]
+                 data: [[~D[2023-03-01]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -170,7 +170,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~T[10:23:45.000000]]
+                 data: [[~T[10:23:45.000000]]]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -179,7 +179,7 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [~T[10:23:45.123456]]
+                 data: [[~T[10:23:45.123456]]]
                }
              ]
            } = Adbc.Result.materialize(results)
@@ -208,7 +208,7 @@ defmodule Adbc.PostgresTest do
                         metadata: %{"ADBC:postgresql:typname" => "numeric"}
                       }}
                  },
-                 data: [["inf", "-inf", "4.2", "nan"]]
+                 data: [[["inf", "-inf", "4.2", "nan"]]]
                }
              ]
            } = Adbc.Result.materialize(results)
@@ -247,7 +247,7 @@ defmodule Adbc.PostgresTest do
              ]
            } = Adbc.Result.materialize(results)
 
-    assert Enum.count(generate_series) == 3_506_641
+    assert generate_series |> Enum.concat() |> Enum.count() == 3_506_641
   end
 
   test "query with parameters", %{db: _, conn: conn} do
@@ -258,6 +258,8 @@ defmodule Adbc.PostgresTest do
                [Adbc.Column.s32([1, 2, 3])]
              )
 
+    result = result |> Adbc.Result.materialize()
+
     assert %Adbc.Result{
              data: [
                %Adbc.Column{
@@ -266,11 +268,12 @@ defmodule Adbc.PostgresTest do
                    type: :s32,
                    metadata: nil,
                    nullable: true
-                 },
-                 data: [1, 2, 3]
+                 }
                }
              ]
-           } = result |> Adbc.Result.materialize()
+           } = result
+
+    assert Adbc.Result.to_map(result) == %{"x" => [1, 2, 3]}
   end
 
   test "query with parameters, operator in", %{db: _, conn: conn} do
@@ -294,7 +297,7 @@ defmodule Adbc.PostgresTest do
                      metadata: nil,
                      nullable: true
                    },
-                   data: [1]
+                   data: [[1]]
                  }
                ]
              } = result |> Adbc.Result.materialize()
@@ -321,7 +324,7 @@ defmodule Adbc.PostgresTest do
                    metadata: nil,
                    nullable: true
                  },
-                 data: [0]
+                 data: [[0]]
                }
              ]
            } = result |> Adbc.Result.materialize()
