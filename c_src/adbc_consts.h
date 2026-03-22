@@ -53,6 +53,7 @@ static ERL_NIF_TERM kAtomTypeKey;
 static ERL_NIF_TERM kAtomNullableKey;
 static ERL_NIF_TERM kAtomMetadataKey;
 static ERL_NIF_TERM kAtomDataKey;
+static ERL_NIF_TERM kAtomSizeKey;
 static ERL_NIF_TERM kAtomLengthKey;
 static ERL_NIF_TERM kAtomOffsetKey;
 
@@ -95,7 +96,7 @@ static ERL_NIF_TERM kAdbcColumnTypeList;
 static ERL_NIF_TERM kAdbcColumnTypeLargeList;
 static ERL_NIF_TERM kAdbcColumnTypeListView;
 static ERL_NIF_TERM kAdbcColumnTypeLargeListView;
-#define kAdbcColumnTypeFixedSizeList(n_items) enif_make_tuple2(env, kAtomFixedSizeBinary, enif_make_int64(env, n_items))
+#define kAdbcColumnTypeFixedSizeList(inner_field, n_items) enif_make_tuple3(env, kAtomFixedSizeList, inner_field, enif_make_int64(env, n_items))
 static ERL_NIF_TERM kAdbcColumnTypeStruct;
 static ERL_NIF_TERM kAdbcColumnTypeMap;
 static ERL_NIF_TERM kAdbcColumnTypeDenseUnion;

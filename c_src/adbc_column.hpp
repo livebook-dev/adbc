@@ -129,11 +129,13 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, ERL_N
         kAtomStructKey,
         kAtomFieldKey,
         kAtomDataKey,
+        kAtomSizeKey,
     };
     std::vector<ERL_NIF_TERM> values = {
         kAtomAdbcColumnModule,
         field_term,
         data_ref_list,
+        kAtomNil,
     };
 
     ERL_NIF_TERM adbc_column;
@@ -148,12 +150,14 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struc
         kAtomStructKey,
         kAtomFieldKey,
         kAtomDataKey,
+        kAtomSizeKey,
     };
 
     std::vector<ERL_NIF_TERM> values = {
         kAtomAdbcColumnModule,
         field_term,
         data,
+        kAtomNil,
     };
 
     ERL_NIF_TERM adbc_column;
@@ -303,6 +307,11 @@ int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTyp
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
     ArrowArrayMove(tmp.get(), array_out);
     return 0;
+}
+
+static inline bool bitmap_valid_at(const uint8_t *bitmap, size_t index, int bit_offset) {
+    size_t bit_pos = index + bit_offset;
+    return (bitmap[bit_pos / 8] & (1 << (bit_pos % 8))) != 0;
 }
 
 // Append raw bytes directly to the Arrow data buffer (buffer index 1).
@@ -664,116 +673,93 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
         return 1;
     }
 
-    struct AdbcColumnType list_item_type = adbc_column_type_to_nanoarrow_type(env, inner_type_term);
-    if (!list_item_type.valid) {
-        enif_snprintf(error_out->message, sizeof(error_out->message),
-            "unsupported inner type `%T` in list", inner_type_term);
-        return kErrorBufferUnknownType;
-    }
-
-    // Build items from plain data lists using inner field type
-    // list is a list of batches, each batch is a list of sublists
-    std::vector<struct AdbcColumnNifTerm> items;
+    // data is a list of batches, each batch is %{offsets: binary, validity: binary|nil, values: list, offset: int}
     ERL_NIF_TERM batch, batch_tail = list;
     while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        ERL_NIF_TERM head, tail;
-        tail = batch;
-        while (enif_get_list_cell(env, tail, &head, &tail)) {
-            struct AdbcColumnNifTerm item;
-            if (enif_is_identical(head, kAtomNil)) {
-                item.is_nil = 1;
-            } else {
-                item.is_nil = 0;
-                item.type_term = inner_type_term;
-                item.nullable_term = inner_nullable_term;
-                // Wrap sublist data as a single-element batch list
-                // because do_get_list_* functions now expect batched data
-                item.data_term = enif_make_list1(env, head);
-                item.name_term = kAtomNil;
-                item.metadata_term = kAtomNil;
-                item.struct_name_term = kAtomAdbcFieldModule;
-                item.n_items = 0;
-            }
-            items.emplace_back(item);
+        if (!enif_is_map(env, batch)) {
+            snprintf(error_out->message, sizeof(error_out->message),
+                "Expected list data batch to be a map with offsets, validity, values, and offset");
+            return 1;
         }
-    }
 
-    // set item type from inner field
-    switch (list_item_type.arrow_type)
-    {
-    case NANOARROW_TYPE_NA:
-    case NANOARROW_TYPE_BOOL:
-    case NANOARROW_TYPE_INT8:
-    case NANOARROW_TYPE_UINT8:
-    case NANOARROW_TYPE_INT16:
-    case NANOARROW_TYPE_UINT16:
-    case NANOARROW_TYPE_INT32:
-    case NANOARROW_TYPE_UINT32:
-    case NANOARROW_TYPE_INT64:
-    case NANOARROW_TYPE_UINT64:
-    case NANOARROW_TYPE_HALF_FLOAT:
-    case NANOARROW_TYPE_FLOAT:
-    case NANOARROW_TYPE_DOUBLE:
-    case NANOARROW_TYPE_BINARY:
-    case NANOARROW_TYPE_LARGE_BINARY:
-    case NANOARROW_TYPE_STRING:
-    case NANOARROW_TYPE_LARGE_STRING:
-    case NANOARROW_TYPE_DATE32:
-    case NANOARROW_TYPE_DATE64:
-    case NANOARROW_TYPE_LIST:
-    case NANOARROW_TYPE_LARGE_LIST:
-    case NANOARROW_TYPE_INTERVAL_MONTHS:
-    case NANOARROW_TYPE_INTERVAL_DAY_TIME:
-    case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out->children[0], list_item_type.arrow_type));
-        break;
-    case NANOARROW_TYPE_TIMESTAMP:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out->children[0], list_item_type.arrow_type, list_item_type.time_unit, list_item_type.timezone.c_str()));
-        break;
-    case NANOARROW_TYPE_DURATION:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out->children[0], list_item_type.arrow_type, list_item_type.time_unit, NULL));
-        break;
-    case NANOARROW_TYPE_TIME32:
-    case NANOARROW_TYPE_TIME64:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out->children[0], list_item_type.arrow_type, list_item_type.time_unit, NULL));
-        break;
-    case NANOARROW_TYPE_FIXED_SIZE_BINARY:
-    case NANOARROW_TYPE_FIXED_SIZE_LIST:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeFixedSize(schema_out->children[0], list_item_type.arrow_type, list_item_type.fixed_size));
-        break;
-    case NANOARROW_TYPE_DECIMAL128:
-    case NANOARROW_TYPE_DECIMAL256:
-        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDecimal(schema_out->children[0], list_item_type.arrow_type, list_item_type.precision, list_item_type.scale));
-        break;
-    default:
-        break;
-    }
+        ERL_NIF_TERM offsets_term, validity_term, values_term, offset_term;
+        if (!enif_get_map_value(env, batch, kAtomOffsets, &offsets_term) ||
+            !enif_get_map_value(env, batch, kAtomValidity, &validity_term) ||
+            !enif_get_map_value(env, batch, kAtomValues, &values_term) ||
+            !enif_get_map_value(env, batch, kAtomOffsetKey, &offset_term)) {
+            snprintf(error_out->message, sizeof(error_out->message),
+                "Expected list data batch to have offsets, validity, values, and offset keys");
+            return 1;
+        }
 
-    // build the array
-    // todo: handle nested types
-    if (list_item_type.arrow_type == NANOARROW_TYPE_LIST || list_item_type.arrow_type == NANOARROW_TYPE_LARGE_LIST) {
-        // NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromType(array_out, list_item_type.arrow_type));
-        // NANOARROW_RETURN_NOT_OK(ArrowArrayAllocateChildren(array_out, 1));
-        snprintf(error_out->message, sizeof(error_out->message), "nested types are not supported yet");
-        return kErrorInternalError;
-    } else {
+        // Build child array from the values (a list of batches for the inner column)
+        struct AdbcColumnNifTerm child_column;
+        child_column.is_nil = 0;
+        child_column.type_term = inner_type_term;
+        child_column.nullable_term = inner_nullable_term;
+        child_column.data_term = values_term;
+        child_column.name_term = kAtomNil;
+        child_column.metadata_term = kAtomNil;
+        child_column.struct_name_term = kAtomAdbcFieldModule;
+        child_column.n_items = 0;
+
+        // Build child values into a temporary child array
+        nanoarrow::UniqueArray child_array;
+        struct ArrowSchema child_schema{};
+        bool skip_init = false;
+        int ret = adbc_column_to_adbc_field(env, &child_column, true, skip_init, child_array.get(), &child_schema, error_out);
+        if (ret != 0) {
+            if (child_schema.release) child_schema.release(&child_schema);
+            return ret;
+        }
+
+        // Now set up the parent schema's child from the built child schema
+        if (schema_out->children[0]->release) {
+            schema_out->children[0]->release(schema_out->children[0]);
+        }
+        ArrowSchemaMove(&child_schema, schema_out->children[0]);
+
         NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(array_out, schema_out, error_out));
         NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(array_out));
-    }
 
-    for (auto &item : items) {
-        if (item.is_nil) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(array_out, 1));
-        } else {
-            struct ArrowSchema child_schema{};
-            int ret = adbc_column_to_adbc_field(env, &item, true, true, array_out->children[0], &child_schema, error_out);
-            if (ret != 0) {
-                return ret;
-            }
-            NANOARROW_RETURN_NOT_OK(ArrowArrayFinishElement(array_out));
+        // Move child array data into the parent's child slot
+        ArrowArrayMove(child_array.get(), array_out->children[0]);
+
+        // Read offsets binary
+        ErlNifBinary offsets_bin;
+        if (!enif_inspect_binary(env, offsets_term, &offsets_bin)) {
+            snprintf(error_out->message, sizeof(error_out->message), "Expected offsets to be a binary");
+            return 1;
         }
+
+        bool has_validity = !enif_is_identical(validity_term, kAtomNil);
+        ErlNifBinary validity_bin;
+        int bit_offset = 0;
+        if (has_validity) {
+            if (!enif_inspect_binary(env, validity_term, &validity_bin)) return 1;
+        }
+        if (!enif_get_int(env, offset_term, &bit_offset)) return 1;
+
+        // Determine element count from offsets binary
+        size_t offset_elem_size = (column_type->arrow_type == NANOARROW_TYPE_LARGE_LIST) ? 8 : 4;
+        size_t n_elements = (offsets_bin.size / offset_elem_size) - 1;
+
+        // Copy offsets into the list's offset buffer (buffer index 1).
+        // Skip the first offset (0) since ArrowArrayStartAppending already wrote it.
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(array_out, 1),
+            offsets_bin.data + offset_elem_size, offsets_bin.size - offset_elem_size));
+
+        // Set length and validity
+        for (size_t i = 0; i < n_elements; i++) {
+            if (has_validity && !bitmap_valid_at(validity_bin.data, i, bit_offset)) {
+                NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(array_out, 1));
+            } else {
+                NANOARROW_RETURN_NOT_OK(ArrowArrayFinishElement(array_out));
+            }
+        }
+
+        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
     }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
 
     return 0;
 }
@@ -964,18 +950,19 @@ struct AdbcColumnType adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF
                         } else {
                             ret.valid = 0;
                         }
-                    } else if (enif_is_identical(tuple[0], kAtomFixedSizeList)) {
+                    } else {
+                        ret.valid = 0;
+                    }
+                } else if (arity == 3) {
+                    if (enif_is_identical(tuple[0], kAtomFixedSizeList)) {
                         int32_t fixed_size;
-                        if (erlang::nif::get(env, tuple[1], &fixed_size)) {
+                        if (erlang::nif::get(env, tuple[2], &fixed_size)) {
                             ret.arrow_type = NANOARROW_TYPE_FIXED_SIZE_LIST;
                             ret.fixed_size = fixed_size;
                         } else {
                             ret.valid = 0;
                         }
-                    } else {
-                        ret.valid = 0;
-                    }
-                } else if (arity == 3) {
+                    } else
                     if (enif_is_identical(tuple[0], kAdbcColumnTypeDictionary)) {
                         ret.arrow_type = NANOARROW_TYPE_DICTIONARY;
                     } else if (enif_is_identical(tuple[0], kAtomTimestamp)) {

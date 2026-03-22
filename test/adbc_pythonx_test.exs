@@ -72,13 +72,56 @@ defmodule Adbc.PythonxTest do
                    field: %Adbc.Field{
                      name: "lists",
                      type: {:list, %Adbc.Field{name: "item", type: :s32}}
-                   },
-                   data: data
-                 }
+                   }
+                 } = col
                ]
              } = result
 
-      assert data == [[[1, 2, 3], [4, 5], nil, [6]]]
+      assert Adbc.Column.to_list(col) == [[1, 2, 3], [4, 5], nil, [6]]
+    end
+
+    test "materializes large list column" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([[1, 2], None, [3, 4, 5]], type=pyarrow.large_list(pyarrow.int32()))
+        pyarrow.Table.from_arrays([data], names=["lists"])
+        """)
+
+      assert %Adbc.Result{
+               data: [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "lists",
+                     type: {:large_list, %Adbc.Field{name: "item", type: :s32}}
+                   }
+                 } = col
+               ]
+             } = result
+
+      assert Adbc.Column.to_list(col) == [[1, 2], nil, [3, 4, 5]]
+    end
+
+    test "materializes fixed size list column" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([[1, 2, 3], [4, 5, 6], None, [7, 8, 9]], type=pyarrow.list_(pyarrow.int32(), 3))
+        pyarrow.Table.from_arrays([data], names=["lists"])
+        """)
+
+      assert %Adbc.Result{
+               data: [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "lists",
+                     type: {:fixed_size_list, %Adbc.Field{name: "item", type: :s32}, 3}
+                   }
+                 } = col
+               ]
+             } = result
+
+      assert Adbc.Column.to_list(col) == [[1, 2, 3], [4, 5, 6], nil, [7, 8, 9]]
     end
   end
 

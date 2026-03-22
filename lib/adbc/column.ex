@@ -21,11 +21,12 @@ defmodule Adbc.Column do
   import Bitwise
 
   @enforce_keys [:field]
-  defstruct [:field, :data]
+  defstruct [:field, :data, :size]
 
   @type t :: %Adbc.Column{
           field: Adbc.Field.t(),
-          data: term()
+          data: term(),
+          size: non_neg_integer() | nil
         }
 
   # Value-range types used in constructor specs
@@ -81,19 +82,22 @@ defmodule Adbc.Column do
       iex> Adbc.Column.new([1, 2, 3], name: "ids")
       %Adbc.Column{
         field: %Adbc.Field{name: "ids", type: :s64, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
       iex> Adbc.Column.new([1, nil, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil},
-        data: [[1, nil, 3.0]]
+        data: [[1, nil, 3.0]],
+        size: 3
       }
 
       iex> Adbc.Column.new([1, 2, 3], type: :u32)
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
@@ -112,7 +116,8 @@ defmodule Adbc.Column do
         nullable: nullable,
         metadata: nil
       },
-      data: [encode_data(type, data)]
+      data: [encode_data(type, data)],
+      size: length(data)
     }
   end
 
@@ -281,13 +286,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.boolean([true, false, true])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :boolean, nullable: false, metadata: nil},
-        data: [[true, false, true]]
+        data: [[true, false, true]],
+        size: 3
       }
 
   """
   @spec boolean([boolean()], Keyword.t()) :: t()
   def boolean(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -310,13 +316,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u8([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u8, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec u8([u8() | nil], Keyword.t()) :: t()
   def u8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -339,13 +346,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u16([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u16, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec u16([u16() | nil], Keyword.t()) :: t()
   def u16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -368,13 +376,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec u32([u32() | nil], Keyword.t()) :: t()
   def u32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -397,13 +406,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.u32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec u64([u64() | nil], Keyword.t()) :: t()
   def u64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -426,13 +436,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s8([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s8, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec s8([s8() | nil], Keyword.t()) :: t()
   def s8(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -455,13 +466,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s16([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s16, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec s16([s16() | nil], Keyword.t()) :: t()
   def s16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -484,13 +496,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s32([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s32, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec s32([s32() | nil], Keyword.t()) :: t()
   def s32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -513,13 +526,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.s64([1, 2, 3])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :s64, nullable: false, metadata: nil},
-        data: [[1, 2, 3]]
+        data: [[1, 2, 3]],
+        size: 3
       }
 
   """
   @spec s64([s64() | nil], Keyword.t()) :: t()
   def s64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -542,13 +556,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f16([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f16, nullable: false, metadata: nil},
-        data: [[1.0, 2.0, 3.0]]
+        data: [[1.0, 2.0, 3.0]],
+        size: 3
       }
 
   """
   @spec f16([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -571,13 +586,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f32([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f32, nullable: false, metadata: nil},
-        data: [[1.0, 2.0, 3.0]]
+        data: [[1.0, 2.0, 3.0]],
+        size: 3
       }
 
   """
   @spec f32([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -600,13 +616,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.f64([1.0, 2.0, 3.0])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :f64, nullable: false, metadata: nil},
-        data: [[1.0, 2.0, 3.0]]
+        data: [[1.0, 2.0, 3.0]],
+        size: 3
       }
 
   """
   @spec f64([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -634,7 +651,8 @@ defmodule Adbc.Column do
       when is_integer(precision) and precision >= 1 and precision <= 38 do
     %Adbc.Column{
       field: Adbc.Field.new({:decimal128, precision, scale}, opts),
-      data: [encode_decimal(data, 128, precision, scale)]
+      data: [encode_decimal(data, 128, precision, scale)],
+      size: length(data)
     }
   end
 
@@ -663,7 +681,8 @@ defmodule Adbc.Column do
       when is_integer(precision) and precision >= 1 and precision <= 76 do
     %Adbc.Column{
       field: Adbc.Field.new({:decimal256, precision, scale}, opts),
-      data: [encode_decimal(data, 256, precision, scale)]
+      data: [encode_decimal(data, 256, precision, scale)],
+      size: length(data)
     }
   end
 
@@ -723,13 +742,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.string(["a", "ab", "abc"])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :string, nullable: false, metadata: nil},
-        data: [["a", "ab", "abc"]]
+        data: [["a", "ab", "abc"]],
+        size: 3
       }
 
   """
   @spec string([String.t() | nil], Keyword.t()) :: t()
   def string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:string, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:string, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -754,13 +774,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.large_string(["a", "ab", "abc"])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :large_string, nullable: false, metadata: nil},
-        data: [["a", "ab", "abc"]]
+        data: [["a", "ab", "abc"]],
+        size: 3
       }
 
   """
   @spec large_string([String.t() | nil], Keyword.t()) :: t()
   def large_string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -783,13 +804,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.binary([<<0>>, <<1>>, <<2>>])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :binary, nullable: false, metadata: nil},
-        data: [[<<0>>, <<1>>, <<2>>]]
+        data: [[<<0>>, <<1>>, <<2>>]],
+        size: 3
       }
 
   """
   @spec binary([iodata() | nil], Keyword.t()) :: t()
   def binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -814,13 +836,14 @@ defmodule Adbc.Column do
       iex> Adbc.Column.large_binary([<<0>>, <<1>>, <<2>>])
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: :large_binary, nullable: false, metadata: nil},
-        data: [[<<0>>, <<1>>, <<2>>]]
+        data: [[<<0>>, <<1>>, <<2>>]],
+        size: 3
       }
 
   """
   @spec large_binary([iodata() | nil], Keyword.t()) :: t()
   def large_binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: [data], size: length(data)}
   end
 
   @doc type: :column_builder
@@ -846,14 +869,19 @@ defmodule Adbc.Column do
       iex> Adbc.Column.fixed_size_binary([<<0>>, <<1>>, <<2>>], 1)
       %Adbc.Column{
         field: %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}, nullable: false, metadata: nil},
-        data: [[<<0>>, <<1>>, <<2>>]]
+        data: [[<<0>>, <<1>>, <<2>>]],
+        size: 3
       }
 
   """
   @spec fixed_size_binary([iodata() | nil], non_neg_integer(), Keyword.t()) :: t()
   def fixed_size_binary(data, nbytes, opts \\ [])
       when is_list(data) and is_integer(nbytes) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts),
+      data: [data],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -875,7 +903,11 @@ defmodule Adbc.Column do
   """
   @spec date32([Date.t() | s32() | nil], Keyword.t()) :: t()
   def date32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: [encode_date32(data)]}
+    %Adbc.Column{
+      field: Adbc.Field.new(:date32, opts),
+      data: [encode_date32(data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -897,7 +929,11 @@ defmodule Adbc.Column do
   """
   @spec date64([Date.t() | s64() | nil], Keyword.t()) :: t()
   def date64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: [encode_date64(data)]}
+    %Adbc.Column{
+      field: Adbc.Field.new(:date64, opts),
+      data: [encode_date64(data)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -937,7 +973,8 @@ defmodule Adbc.Column do
       when is_list(data) and is_list(opts) and unit in [:seconds, :milliseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:time32, unit}, opts),
-      data: [encode_time(data, unit, 32)]
+      data: [encode_time(data, unit, 32)],
+      size: length(data)
     }
   end
 
@@ -945,7 +982,8 @@ defmodule Adbc.Column do
       when is_list(data) and is_list(opts) and unit in [:microseconds, :nanoseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:time64, unit}, opts),
-      data: [encode_time(data, unit, 64)]
+      data: [encode_time(data, unit, 64)],
+      size: length(data)
     }
   end
 
@@ -987,7 +1025,8 @@ defmodule Adbc.Column do
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:timestamp, unit, timezone}, opts),
-      data: [encode_timestamp(data, unit)]
+      data: [encode_timestamp(data, unit)],
+      size: length(data)
     }
   end
 
@@ -1019,7 +1058,8 @@ defmodule Adbc.Column do
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:duration, unit}, opts),
-      data: [encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)]
+      data: [encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)],
+      size: length(data)
     }
   end
 
@@ -1065,7 +1105,8 @@ defmodule Adbc.Column do
              interval_unit in [:month, :day_time, :month_day_nano] do
     %Adbc.Column{
       field: Adbc.Field.new({:interval, interval_unit}, opts),
-      data: [encode_interval(data, interval_unit)]
+      data: [encode_interval(data, interval_unit)],
+      size: length(data)
     }
   end
 
@@ -1085,9 +1126,13 @@ defmodule Adbc.Column do
   * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
-  @spec list(list(), Adbc.Field.t(), Keyword.t()) :: t()
+  @spec list([t() | nil], Adbc.Field.t(), Keyword.t()) :: t()
   def list(data, %Adbc.Field{} = inner_field, opts \\ []) when is_list(data) do
-    %Adbc.Column{field: Adbc.Field.new({:list, inner_field}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:list, inner_field}, opts),
+      data: [encode_list(data, 32)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -1106,9 +1151,13 @@ defmodule Adbc.Column do
   * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
-  @spec large_list(list(), Adbc.Field.t(), Keyword.t()) :: t()
+  @spec large_list([t() | nil], Adbc.Field.t(), Keyword.t()) :: t()
   def large_list(data, %Adbc.Field{} = inner_field, opts \\ []) when is_list(data) do
-    %Adbc.Column{field: Adbc.Field.new({:large_list, inner_field}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:large_list, inner_field}, opts),
+      data: [encode_list(data, 64)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -1191,26 +1240,28 @@ defmodule Adbc.Column do
       when index_type in [:s8, :u8, :s16, :u16, :s32, :u32, :s64, :u64] do
     %Adbc.Column{
       field: Adbc.Field.new({:dictionary, key.field, value.field}, opts),
-      data: Enum.zip_with(key.data, value.data, fn k, v -> %{key: k, value: v} end)
+      data: Enum.zip_with(key.data, value.data, fn k, v -> %{key: k, value: v} end),
+      size: key.size
     }
   end
 
   @doc """
-  `materialize/1` converts a column's data from reference type to regular Elixir terms.
+  Converts a column's data from reference type to regular Elixir terms.
+
+  The `size` field is `nil` for unmaterialized columns and is set to the
+  number of elements after materialization (or when built from Elixir).
+  You can use `size` to check whether a column has been materialized.
   """
   @spec materialize(t()) :: t()
-  def materialize(%Adbc.Column{field: field, data: data_ref} = column)
-      when is_list(data_ref) do
-    if Enum.all?(data_ref, &is_reference/1) do
-      case Adbc.Nif.adbc_column_materialize(data_ref) do
-        {:ok, data} ->
-          %{column | data: data}
+  def materialize(%Adbc.Column{size: size} = column) when is_integer(size), do: column
 
-        {:error, reason} ->
-          raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
-      end
-    else
-      column
+  def materialize(%Adbc.Column{field: field, data: data_ref} = column) do
+    case Adbc.Nif.adbc_column_materialize(data_ref) do
+      {:ok, {data, size}} ->
+        %{column | data: data, size: size}
+
+      {:error, reason} ->
+        raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
     end
   end
 
@@ -1269,6 +1320,45 @@ defmodule Adbc.Column do
         [offset, size, true] -> Enum.slice(values, offset, size)
         [_offset, _size, false] -> nil
       end)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batches}) do
+    Enum.flat_map(batches, fn batch ->
+      columns =
+        Enum.zip_with(fields, batch, fn field, col_data ->
+          %Adbc.Column{field: field, data: [col_data], size: 0}
+        end)
+
+      %Adbc.Result{data: columns, num_rows: nil}
+      |> Table.to_rows()
+      |> Enum.to_list()
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: batches}) do
+    Enum.flat_map(batches, fn %{} = batch ->
+      values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
+      <<first::signed-integer-little-32, rest::binary>> = batch.offsets
+      decode_list_32(rest, batch.validity, batch.offset, values, first, 0)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:large_list, inner_field}}, data: batches}) do
+    Enum.flat_map(batches, fn %{} = batch ->
+      values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
+      <<first::signed-integer-little-64, rest::binary>> = batch.offsets
+      decode_list_64(rest, batch.validity, batch.offset, values, first, 0)
+    end)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:fixed_size_list, inner_field, fixed_size}},
+        data: batches
+      }) do
+    Enum.flat_map(batches, fn %{} = batch ->
+      values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
+      decode_fixed_size_list(values, batch.validity, batch.offset, fixed_size, 0)
     end)
   end
 
@@ -1352,21 +1442,39 @@ defmodule Adbc.Column do
     end)
   end
 
-  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batches}) do
-    Enum.flat_map(batches, fn batch ->
-      columns =
-        Enum.zip_with(fields, batch, fn field, col_data ->
-          %Adbc.Column{field: field, data: [col_data]}
-        end)
-
-      %Adbc.Result{data: columns, num_rows: nil}
-      |> Table.to_rows()
-      |> Enum.to_list()
-    end)
-  end
-
   def to_list(%Adbc.Column{data: batches}) do
     Enum.concat(batches)
+  end
+
+  defp encode_list(data, offset_size) do
+    encode_list(data, [], <<0::size(offset_size)>>, <<>>, 0, 0, offset_size)
+  end
+
+  defp encode_list([], child_batches, offsets, bitmap, pending, _offset, _offset_size) do
+    {_data, bitmap, bit_offset} = bitmap_finish(<<>>, bitmap, pending)
+    %{offsets: offsets, validity: bitmap, values: Enum.reverse(child_batches), offset: bit_offset}
+  end
+
+  defp encode_list([nil | rest], batches, offsets, bitmap, pending, offset, offset_size) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    offsets = <<offsets::binary, offset::signed-integer-little-size(offset_size)>>
+    encode_list(rest, batches, offsets, bitmap, pending, offset, offset_size)
+  end
+
+  defp encode_list(
+         [%Adbc.Column{data: data, size: size} | rest],
+         batches,
+         offsets,
+         bitmap,
+         pending,
+         offset,
+         offset_size
+       ) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    new_offset = offset + size
+    batches = Enum.reverse(data, batches)
+    offsets = <<offsets::binary, new_offset::signed-integer-little-size(offset_size)>>
+    encode_list(rest, batches, offsets, bitmap, pending, new_offset, offset_size)
   end
 
   @epoch_days Date.to_gregorian_days(~D[1970-01-01])
@@ -1457,8 +1565,6 @@ defmodule Adbc.Column do
     NaiveDateTime.from_gregorian_seconds(gregorian_seconds, {microseconds, precision})
   end
 
-  @decimal_zero Decimal.new(0)
-  defp coef_to_decimal(0, _scale), do: @decimal_zero
   defp coef_to_decimal(coef, scale) when coef < 0, do: Decimal.new(-1, -coef, -scale)
   defp coef_to_decimal(coef, scale), do: Decimal.new(1, coef, -scale)
 
@@ -1541,76 +1647,6 @@ defmodule Adbc.Column do
     encode_interval_month_day_nano(rest, data, bitmap, pending)
   end
 
-  ## Interval decoding (custom multi-field binary, avoids big integer arithmetic)
-
-  defp decode_interval_day_time(binary, nil, _offset) do
-    decode_interval_day_time(binary)
-  end
-
-  defp decode_interval_day_time(binary, bitmap, offset) do
-    <<_::bits-size(offset), bitmap::bits>> = bitmap
-    decode_interval_day_time(binary, bitmap, [], 0)
-  end
-
-  defp decode_interval_day_time(
-         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>
-       ) do
-    [{days, ms} | decode_interval_day_time(rest)]
-  end
-
-  defp decode_interval_day_time(<<>>), do: []
-
-  defp decode_interval_day_time(
-         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>,
-         bitmap,
-         acc,
-         count
-       ) do
-    acc = [{days, ms} | acc]
-    count = count + 1
-    acc = maybe_nullify_each(bitmap, count, acc)
-    decode_interval_day_time(rest, bitmap, acc, count)
-  end
-
-  defp decode_interval_day_time(<<>>, bitmap, acc, count) do
-    Enum.reverse(maybe_nullify_end(bitmap, count, acc))
-  end
-
-  defp decode_interval_month_day_nano(binary, nil, _offset) do
-    decode_interval_month_day_nano(binary)
-  end
-
-  defp decode_interval_month_day_nano(binary, bitmap, offset) do
-    <<_::bits-size(offset), bitmap::bits>> = bitmap
-    decode_interval_month_day_nano(binary, bitmap, [], 0)
-  end
-
-  defp decode_interval_month_day_nano(
-         <<months::signed-integer-little-32, days::signed-integer-little-32,
-           ns::signed-integer-little-64, rest::binary>>
-       ) do
-    [{months, days, ns} | decode_interval_month_day_nano(rest)]
-  end
-
-  defp decode_interval_month_day_nano(<<>>), do: []
-
-  defp decode_interval_month_day_nano(
-         <<months::signed-integer-little-32, days::signed-integer-little-32,
-           ns::signed-integer-little-64, rest::binary>>,
-         bitmap,
-         acc,
-         count
-       ) do
-    acc = [{months, days, ns} | acc]
-    count = count + 1
-    acc = maybe_nullify_each(bitmap, count, acc)
-    decode_interval_month_day_nano(rest, bitmap, acc, count)
-  end
-
-  defp decode_interval_month_day_nano(<<>>, bitmap, acc, count) do
-    Enum.reverse(maybe_nullify_end(bitmap, count, acc))
-  end
-
   defp bitmap_finish(data, bitmap, pending) when is_integer(pending) and byte_size(bitmap) == 0 do
     {data, nil, 0}
   end
@@ -1650,7 +1686,72 @@ defmodule Adbc.Column do
     {<<bitmap::binary, -1::size(full_size)>>, rem(pending, 8)}
   end
 
-  ## Bit decoding
+  ## Decoding
+
+  defp decode_fixed_size_list([], _validity, _bit_offset, _fixed_size, _index) do
+    []
+  end
+
+  defp decode_fixed_size_list(values, validity, bit_offset, fixed_size, index) do
+    {chunk, rest} = Enum.split(values, fixed_size)
+    element = if bitmap_valid?(validity, index, bit_offset), do: chunk
+    [element | decode_fixed_size_list(rest, validity, bit_offset, fixed_size, index + 1)]
+  end
+
+  defp decode_interval_day_time(binary, validity, offset) do
+    decode_interval_day_time(binary, validity, offset, 0)
+  end
+
+  defp decode_interval_day_time(
+         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>,
+         validity,
+         offset,
+         index
+       ) do
+    value = if bitmap_valid?(validity, index, offset), do: {days, ms}
+    [value | decode_interval_day_time(rest, validity, offset, index + 1)]
+  end
+
+  defp decode_interval_day_time(<<>>, _validity, _offset, _index), do: []
+
+  defp decode_interval_month_day_nano(binary, validity, offset) do
+    decode_interval_month_day_nano(binary, validity, offset, 0)
+  end
+
+  defp decode_interval_month_day_nano(
+         <<months::signed-integer-little-32, days::signed-integer-little-32,
+           ns::signed-integer-little-64, rest::binary>>,
+         validity,
+         offset,
+         index
+       ) do
+    value = if bitmap_valid?(validity, index, offset), do: {months, days, ns}
+    [value | decode_interval_month_day_nano(rest, validity, offset, index + 1)]
+  end
+
+  defp decode_interval_month_day_nano(<<>>, _validity, _offset, _index), do: []
+
+  for {name, specifier} <- [
+        decode_list_32: quote(do: signed - integer - little - 32),
+        decode_list_64: quote(do: signed - integer - little - 64)
+      ] do
+    defp unquote(name)(<<>>, _validity, _bit_offset, _values, _prev, _index) do
+      []
+    end
+
+    defp unquote(name)(
+           <<next::unquote(specifier), rest::binary>>,
+           validity,
+           bit_offset,
+           values,
+           prev,
+           index
+         ) do
+      {chunk, values} = Enum.split(values, next - prev)
+      element = if bitmap_valid?(validity, index, bit_offset), do: chunk
+      [element | unquote(name)(rest, validity, bit_offset, values, next, index + 1)]
+    end
+  end
 
   for {name, specifier} <- [
         decode_signed_32: quote(do: signed - integer - little - 32),
@@ -1658,64 +1759,30 @@ defmodule Adbc.Column do
         decode_signed_128: quote(do: signed - integer - little - 128),
         decode_signed_256: quote(do: signed - integer - little - 256)
       ] do
-    defp unquote(name)(binary, bitmap, offset, decoder) do
-      case bitmap do
-        nil ->
-          unquote(name)(binary, decoder)
-
-        _ ->
-          <<_::bits-size(offset), bitmap::bits>> = bitmap
-          unquote(name)(binary, bitmap, [], 0, decoder)
-      end
+    defp unquote(name)(binary, validity, offset, decoder) do
+      unquote(name)(binary, validity, offset, 0, decoder)
     end
 
-    # Fast version without bitmap
-    defp unquote(name)(<<int::unquote(specifier), rest::binary>>, decoder) do
-      [decoder.(int) | unquote(name)(rest, decoder)]
+    defp unquote(name)(
+           <<int::unquote(specifier), rest::binary>>,
+           validity,
+           offset,
+           index,
+           decoder
+         ) do
+      value = if bitmap_valid?(validity, index, offset), do: decoder.(int)
+      [value | unquote(name)(rest, validity, offset, index + 1, decoder)]
     end
 
-    defp unquote(name)(<<>>, _decoder), do: []
-
-    # Slow version with with bitmap
-    defp unquote(name)(<<int::unquote(specifier), rest::binary>>, bitmap, acc, count, decoder) do
-      acc = [decoder.(int) | acc]
-      count = count + 1
-      acc = maybe_nullify_each(bitmap, count, acc)
-      unquote(name)(rest, bitmap, acc, count, decoder)
-    end
-
-    defp unquote(name)(<<>>, bitmap, acc, count, _decoder) do
-      Enum.reverse(maybe_nullify_end(bitmap, count, acc))
-    end
+    defp unquote(name)(<<>>, _validity, _offset, _index, _decoder), do: []
   end
 
-  # Check if we've completed a group of 8 — if so, nullify based on bitmap byte
-  defp maybe_nullify_each(bitmap, count, acc) do
-    if (count &&& 7) == 0 and count > 0 do
-      nullify(acc, :binary.at(bitmap, div(count, 8) - 1), 256)
-    else
-      acc
-    end
+  @compile {:inline, bitmap_valid?: 3}
+  defp bitmap_valid?(nil, _index, _bit_offset), do: true
+
+  defp bitmap_valid?(validity, index, bit_offset) do
+    bit_pos = index + bit_offset
+    byte = :binary.at(validity, div(bit_pos, 8))
+    (byte &&& 1 <<< rem(bit_pos, 8)) != 0
   end
-
-  # End-of-binary: nullify the remaining partial group
-  defp maybe_nullify_end(bitmap, count, acc) do
-    rem = count &&& 7
-
-    if rem > 0 do
-      nullify(acc, :binary.at(bitmap, div(count, 8)), 1 <<< rem)
-    else
-      acc
-    end
-  end
-
-  # Walk back through last entries using a bitmask (one shift ahead).
-  # Early exit when remaining bits in byte are all 1: byte == mask - 1.
-  defp nullify(acc, byte, mask) when mask == 1 or byte == mask - 1, do: acc
-
-  defp nullify([_head | rest], byte, mask) when (byte &&& mask >>> 1) == 0,
-    do: [nil | nullify(rest, byte, mask >>> 1)]
-
-  defp nullify([head | rest], byte, mask),
-    do: [head | nullify(rest, byte, mask >>> 1)]
 end

@@ -608,6 +608,7 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
     }
 
     std::vector<ERL_NIF_TERM> materialized;
+    int64_t total_size = 0;
     ERL_NIF_TERM error{};
     for (auto& ref : data_ref) {
         if ((res = record_type::get_resource(env, ref, error)) == nullptr) {
@@ -616,6 +617,8 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
         if (res->val.schema == nullptr || res->val.values == nullptr) {
             return enif_make_badarg(env);
         }
+
+        total_size += res->val.values->length;
 
         std::vector<ERL_NIF_TERM> out_terms;
         constexpr int level = 0;
@@ -635,8 +638,8 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
         materialized.emplace_back(ret);
     }
 
-    ERL_NIF_TERM ret = enif_make_list_from_array(env, materialized.data(), materialized.size());
-    return erlang::nif::ok(env, ret);
+    ERL_NIF_TERM data_list = enif_make_list_from_array(env, materialized.data(), materialized.size());
+    return erlang::nif::ok(env, enif_make_tuple2(env, data_list, enif_make_int64(env, total_size)));
 }
 
 static ERL_NIF_TERM adbc_arrow_array_stream_release(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
@@ -1113,6 +1116,7 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomNullableKey = erlang::nif::atom(env, "nullable");
     kAtomMetadataKey = erlang::nif::atom(env, "metadata");
     kAtomDataKey = erlang::nif::atom(env, "data");
+    kAtomSizeKey = erlang::nif::atom(env, "size");
     kAtomLengthKey = erlang::nif::atom(env, "length");
     kAtomOffsetKey = erlang::nif::atom(env, "offset");
 

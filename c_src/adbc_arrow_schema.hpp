@@ -382,14 +382,12 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                 for (size_t i = 3; i < format_len; i++) {
                     n_items = n_items * 10 + (format[i] - '0');
                 }
-                type_term = kAdbcColumnTypeFixedSizeList(n_items);
-
                 ERL_NIF_TERM elem_schema;
                 if (get_list_element_schema(env, schema, level, elem_schema, error) != 0) {
                     return 1;
                 }
 
-                type_term = enif_make_tuple2(env, type_term, elem_schema);
+                type_term = kAdbcColumnTypeFixedSizeList(elem_schema, n_items);
                 children_term = make_adbc_column(env, schema, type_term, metadata);
             } else if (strncmp("w:", format, 2) == 0) {
                 // NANOARROW_TYPE_FIXED_SIZE_BINARY

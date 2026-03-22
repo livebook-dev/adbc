@@ -35,22 +35,11 @@ defmodule Adbc.ResultTest do
           name: "end_time",
           nullable: true
         ),
-        %Adbc.Column{
-          field: %Adbc.Field{
-            name: "time_series",
-            type:
-              {:list,
-               %Adbc.Field{
-                 name: "item",
-                 type: :s32,
-                 nullable: true
-               }},
-            nullable: true
-          },
-          data: [
-            [[[1], [2, 3], [3, 4], [4]], [[3, 4], [4], [5, 6], [6]]]
-          ]
-        }
+        Adbc.Column.list(
+          [Adbc.Column.s32([1, 2, 3, 4]), Adbc.Column.s32([3, 4, 5, 6])],
+          Adbc.Field.new(:s32, nullable: true),
+          name: "time_series", nullable: true
+        )
       ]
     }
   end
@@ -60,12 +49,12 @@ defmodule Adbc.ResultTest do
              %{
                "end_time" => ~N[2024-05-31 13:00:00],
                "start_time" => ~N[2024-05-31 12:00:00],
-               "time_series" => [[1], [2, 3], [3, 4], [4]]
+               "time_series" => [1, 2, 3, 4]
              },
              %{
                "end_time" => ~N[2024-05-31 13:30:00],
                "start_time" => ~N[2024-05-31 12:30:00],
-               "time_series" => [[3, 4], [4], [5, 6], [6]]
+               "time_series" => [3, 4, 5, 6]
              }
            ]
   end
@@ -74,7 +63,7 @@ defmodule Adbc.ResultTest do
     assert %{
              "start_time" => [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
              "end_time" => [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]],
-             "time_series" => [[[1], [2, 3], [3, 4], [4]], [[3, 4], [4], [5, 6], [6]]]
+             "time_series" => [[1, 2, 3, 4], [3, 4, 5, 6]]
            } == Result.to_map(result())
   end
 

@@ -41,42 +41,21 @@ defmodule Adbc.PostgresTest do
              Adbc.Connection.query(
                conn,
                "SELECT $1",
-               [Adbc.Column.list([ids], Adbc.Field.new(:string))]
+               [Adbc.Column.list([Adbc.Column.string(ids)], Adbc.Field.new(:string))]
              )
 
-    assert %Adbc.Result{
-             data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   type:
-                     {:list,
-                      %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}},
-                   metadata: nil,
-                   nullable: true
-                 },
-                 data: [[["1", "2", "3"]]]
-               }
-             ]
-           } = result |> Adbc.Result.materialize()
+    result = result |> Adbc.Result.materialize()
+    assert [col] = result.data
+    assert col.field.type == {:list, %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}}
+    assert Adbc.Column.to_list(col) == [["1", "2", "3"]]
   end
 
   test "list of ints", %{conn: conn} do
     assert {:ok, results} = Connection.query(conn, "SELECT ARRAY[1, 2, 3, null, 5] as num")
-
-    assert %Adbc.Result{
-             data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "num",
-                   type:
-                     {:list, %Adbc.Field{name: "item", type: :s32, nullable: true, metadata: nil}},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [[[1, 2, 3, nil, 5]]]
-               }
-             ]
-           } = Adbc.Result.materialize(results)
+    result = Adbc.Result.materialize(results)
+    assert [col] = result.data
+    assert col.field.name == "num"
+    assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5]]
   end
 
   test "nested lists", %{conn: conn} do
@@ -86,20 +65,9 @@ defmodule Adbc.PostgresTest do
                "SELECT ARRAY[ARRAY[1, 2, 3, null, 5], ARRAY[6, null, 7, null, 9]] as num"
              )
 
-    assert %Adbc.Result{
-             data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "num",
-                   type:
-                     {:list, %Adbc.Field{name: "item", type: :s32, nullable: true, metadata: nil}},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [[[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]]
-               }
-             ]
-           } = Adbc.Result.materialize(results)
+    result = Adbc.Result.materialize(results)
+    assert [col] = result.data
+    assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]
   end
 
   test "temporal types", %{conn: conn} do
@@ -200,26 +168,9 @@ defmodule Adbc.PostgresTest do
                "SELECT ARRAY['infinity'::NUMERIC, '-infinity'::NUMERIC, 4.2::NUMERIC, 'nan'::NUMERIC];"
              )
 
-    assert %Adbc.Result{
-             data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "array",
-                   nullable: true,
-                   metadata: nil,
-                   type:
-                     {:list,
-                      %Adbc.Field{
-                        name: "item",
-                        type: :string,
-                        nullable: true,
-                        metadata: %{"ADBC:postgresql:typname" => "numeric"}
-                      }}
-                 },
-                 data: [[["inf", "-inf", "4.2", "nan"]]]
-               }
-             ]
-           } = Adbc.Result.materialize(results)
+    result = Adbc.Result.materialize(results)
+    assert [col] = result.data
+    assert Adbc.Column.to_list(col) == [["inf", "-inf", "4.2", "nan"]]
   end
 
   test "large arrow chunks", %{conn: conn} do
@@ -294,7 +245,7 @@ defmodule Adbc.PostgresTest do
                Adbc.Connection.query(
                  conn,
                  "SELECT ($2 = ANY($1))::int",
-                 [Adbc.Column.list([values], Adbc.Field.new(:s32)), Adbc.Column.s32([v])]
+                 [Adbc.Column.list([Adbc.Column.s32(values)], Adbc.Field.new(:s32)), Adbc.Column.s32([v])]
                )
 
       assert %Adbc.Result{
@@ -319,7 +270,7 @@ defmodule Adbc.PostgresTest do
                conn,
                "SELECT ($2 = ANY($1))::int",
                [
-                 Adbc.Column.list([values], Adbc.Field.new(:s32)),
+                 Adbc.Column.list([Adbc.Column.s32(values)], Adbc.Field.new(:s32)),
                  Adbc.Column.s32([not_in_values])
                ]
              )

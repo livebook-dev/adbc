@@ -69,7 +69,7 @@ defmodule Adbc.DuckDBTest do
     columns = [
       Adbc.Column.s32([1, 2, 3], name: "id"),
       Adbc.Column.list(
-        [[10, 20], [30], [40, 50, 60]],
+        [Adbc.Column.s32([10, 20]), Adbc.Column.s32([30]), Adbc.Column.s32([40, 50, 60])],
         Adbc.Field.new(:s32),
         name: "nums"
       )
@@ -82,6 +82,30 @@ defmodule Adbc.DuckDBTest do
 
     assert map["id"] == [1, 2, 3]
     assert map["nums"] == [[10, 20], [30], [40, 50, 60]]
+  end
+
+  test "list of dates", %{conn: conn} do
+    columns = [
+      Adbc.Column.s32([1, 2, 3], name: "id"),
+      Adbc.Column.list(
+        [
+          Adbc.Column.date32([~D[2024-01-01], ~D[2024-06-15]]),
+          nil,
+          Adbc.Column.date32([~D[2025-03-22]])
+        ],
+        Adbc.Field.new(:date32),
+        name: "dates",
+        nullable: true
+      )
+    ]
+
+    assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "list_dates")
+
+    {:ok, result} = Connection.query(conn, "SELECT * FROM list_dates ORDER BY id")
+    result = Adbc.Result.materialize(result)
+    assert [id_col, dates_col] = result.data
+    assert Adbc.Column.to_list(id_col) == [1, 2, 3]
+    assert Adbc.Column.to_list(dates_col) == [[~D[2024-01-01], ~D[2024-06-15]], nil, [~D[2025-03-22]]]
   end
 
   test "dictionary", %{conn: conn} do
