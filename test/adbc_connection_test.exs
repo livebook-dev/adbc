@@ -1241,7 +1241,8 @@ defmodule Adbc.ConnectionTest do
       conn = start_supervised!({Connection, database: db})
 
       assert {:ok, 3} =
-               Connection.bulk_insert(conn,
+               Connection.bulk_insert(
+                 conn,
                  [
                    id: [1, 2, 3],
                    name: Adbc.Column.string(["Alice", "Bob", "Charlie"])

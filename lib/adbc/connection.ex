@@ -286,7 +286,10 @@ defmodule Adbc.Connection do
   """
   @spec bulk_insert(
           t(),
-          [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object),
+          [Adbc.Column.t()]
+          | keyword(list() | Adbc.Column.t())
+          | Adbc.StreamResult.t()
+          | unquote(python_object),
           Keyword.t()
         ) ::
           {:ok, non_neg_integer()} | {:error, Exception.t()}
@@ -325,7 +328,10 @@ defmodule Adbc.Connection do
   """
   @spec bulk_insert!(
           t(),
-          [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object),
+          [Adbc.Column.t()]
+          | keyword(list() | Adbc.Column.t())
+          | Adbc.StreamResult.t()
+          | unquote(python_object),
           Keyword.t()
         ) ::
           non_neg_integer()
@@ -384,7 +390,13 @@ defmodule Adbc.Connection do
       {:ok, result} = Adbc.Connection.ingest(conn, columns)
 
   """
-  @spec ingest(t(), [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object)) ::
+  @spec ingest(
+          t(),
+          [Adbc.Column.t()]
+          | keyword(list() | Adbc.Column.t())
+          | Adbc.StreamResult.t()
+          | unquote(python_object)
+        ) ::
           {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
   def ingest(conn, %Adbc.StreamResult{} = stream) do
     if stream.conn && stream.conn == GenServer.whereis(conn) do
@@ -410,7 +422,13 @@ defmodule Adbc.Connection do
   @doc """
   Same as `ingest/2` but raises an exception on error.
   """
-  @spec ingest!(t(), [Adbc.Column.t()] | keyword(list() | Adbc.Column.t()) | Adbc.StreamResult.t() | unquote(python_object)) ::
+  @spec ingest!(
+          t(),
+          [Adbc.Column.t()]
+          | keyword(list() | Adbc.Column.t())
+          | Adbc.StreamResult.t()
+          | unquote(python_object)
+        ) ::
           Adbc.IngestResult.t()
   def ingest!(conn, columns_or_stream) do
     case ingest(conn, columns_or_stream) do
@@ -480,11 +498,12 @@ defmodule Adbc.Connection do
   end
 
   defp to_columns([{key, _value} | _] = keyword) when is_atom(key) do
-    Enum.map(keyword, fn {name, %Adbc.Column{} = col} ->
-      %{col | field: %{col.field | name: Atom.to_string(name)}}
+    Enum.map(keyword, fn
+      {name, %Adbc.Column{} = col} ->
+        %{col | field: %{col.field | name: Atom.to_string(name)}}
 
-    {name, data} when is_list(data) ->
-      Adbc.Column.new(data, name: Atom.to_string(name))
+      {name, data} when is_list(data) ->
+        Adbc.Column.new(data, name: Atom.to_string(name))
     end)
   end
 

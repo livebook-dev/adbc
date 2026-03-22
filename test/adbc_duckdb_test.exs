@@ -181,13 +181,15 @@ defmodule Adbc.DuckDBTest do
         name: "date_col",
         nullable: true
       ),
-      Adbc.Column.timestamp([~N[2024-01-15 10:30:00], epoch_us, nil],
+      Adbc.Column.timestamp(
+        [~N[2024-01-15 10:30:00], epoch_us, nil],
         :microseconds,
         "UTC",
         name: "ts_col",
         nullable: true
       ),
-      Adbc.Column.time([~T[10:30:00], time_us, nil],
+      Adbc.Column.time(
+        [~T[10:30:00], time_us, nil],
         :microseconds,
         name: "time_col",
         nullable: true
