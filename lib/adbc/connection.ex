@@ -965,7 +965,7 @@ defmodule Adbc.Connection do
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
            :ok <- init_statement_options(stmt, options),
-           :ok <- Adbc.Nif.adbc_statement_bind(stmt, flatten_columns(columns)),
+           :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         {:ok, rows_affected}
       end
@@ -995,7 +995,7 @@ defmodule Adbc.Connection do
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
            :ok <- init_statement_options(stmt, options),
-           :ok <- Adbc.Nif.adbc_statement_bind(stmt, flatten_columns(columns)),
+           :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
@@ -1059,23 +1059,6 @@ defmodule Adbc.Connection do
   defp maybe_bind(_stmt, []), do: :ok
 
   defp maybe_bind(stmt, params) do
-    Adbc.Nif.adbc_statement_bind(stmt, flatten_columns(params))
+    Adbc.Nif.adbc_statement_bind(stmt, params)
   end
-
-  defp flatten_columns(columns) do
-    Enum.map(columns, fn
-      %Adbc.Column{} = col -> flatten_column_data(col)
-      other -> other
-    end)
-  end
-
-  defp flatten_column_data(%Adbc.Column{field: %{type: {:dictionary, _, _}}, data: [single]} = col) do
-    %{col | data: single}
-  end
-
-  defp flatten_column_data(%Adbc.Column{data: [first | _] = batches} = col) when is_list(first) do
-    %{col | data: :lists.append(batches)}
-  end
-
-  defp flatten_column_data(col), do: col
 end

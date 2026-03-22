@@ -621,7 +621,7 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
         constexpr int level = 0;
         ERL_NIF_TERM out_type;
         ERL_NIF_TERM out_metadata;
-        if (arrow_array_to_nif_term(env, res->val.schema, res->val.values, level, out_terms, out_type, out_metadata, error) != 0) {
+        if (arrow_array_to_nif_term(env, res->val.schema, res->val.values, level, out_terms, out_type, out_metadata, error, false, (void*)res) != 0) {
             return error;
         }
 

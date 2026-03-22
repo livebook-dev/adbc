@@ -232,14 +232,16 @@ int do_get_list_integer(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, bool s
         write_array = array_out;
     }
 
-    int ret = get_list_integer<T>(env, list, nullable, write_array, ArrowArrayAppendInt);
-    if (ret == 0) {
-        if (!skip_init) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-            ArrowArrayMove(tmp.get(), array_out);
-        }
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_integer<T>(env, batch, nullable, write_array, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    if (!skip_init) {
+        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+        ArrowArrayMove(tmp.get(), array_out);
+    }
+    return 0;
 }
 
 int get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, double val)> &callback) {
@@ -279,15 +281,17 @@ int do_get_list_half_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arr
     private_data->storage_type = NANOARROW_TYPE_UINT16;
 
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_float(env, list, nullable, write_array, [](struct ArrowArray* arr, double val) -> int {
-        return ArrowArrayAppendUInt(arr, float_to_float16(val));
-    });
-    if (ret == 0) {
-        private_data->storage_type = storage_type;
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_float(env, batch, nullable, write_array, [](struct ArrowArray* arr, double val) -> int {
+            return ArrowArrayAppendUInt(arr, float_to_float16(val));
+        });
+        if (ret != 0) return ret;
     }
-    return ret;
+    private_data->storage_type = storage_type;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
@@ -297,61 +301,99 @@ int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTyp
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_float(env, list, nullable, write_array, ArrowArrayAppendDouble);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_float(env, batch, nullable, write_array, ArrowArrayAppendDouble);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
-int get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, const std::function<int(struct ArrowArray*, const struct ArrowDecimal*)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        struct ArrowDecimal val{};
-        ArrowDecimalInit(&val, bitwidth, precision, scale);
-        ErlNifBinary bytes;
-        if (enif_inspect_iolist_as_binary(env, head, &bytes)) {
+int get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM data_term, bool nullable, struct ArrowArray* write_array, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, const std::function<int(struct ArrowArray*, const struct ArrowDecimal*)> &callback) {
+    // data_term is {binary, validity | nil, offset}
+    int arity;
+    const ERL_NIF_TERM *tuple;
+    if (!enif_get_tuple(env, data_term, &arity, &tuple) || arity != 3) {
+        return 1;
+    }
+
+    ErlNifBinary binary;
+    if (!enif_inspect_binary(env, tuple[0], &binary)) {
+        return 1;
+    }
+
+    size_t element_bytes = bitwidth / 8;
+    if (binary.size % element_bytes != 0) {
+        return 1;
+    }
+    size_t count = binary.size / element_bytes;
+
+    // Parse validity: nil means all valid, otherwise a bitmap binary
+    bool has_validity = !enif_is_identical(tuple[1], kAtomNil);
+    ErlNifBinary validity_bin;
+    int bit_offset = 0;
+    if (has_validity) {
+        if (!enif_inspect_binary(env, tuple[1], &validity_bin)) {
+            return 1;
+        }
+    }
+    if (!enif_get_int(env, tuple[2], &bit_offset)) {
+        return 1;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        bool is_valid = true;
+        if (has_validity) {
+            size_t bit_pos = i + bit_offset;
+            uint8_t vbyte = validity_bin.data[bit_pos / 8];
+            is_valid = (vbyte & (1 << (bit_pos % 8))) != 0;
+        }
+        if (!is_valid && nullable) {
+            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
+        } else {
+            struct ArrowDecimal val{};
+            ArrowDecimalInit(&val, bitwidth, precision, scale);
+            const uint8_t *element = binary.data + (i * element_bytes);
+
             if (nanoarrow_type == NANOARROW_TYPE_DECIMAL128) {
-                if (bytes.size != 16) {
-                    return 1;
-                }
-                ArrowDecimalSetBytes(&val, (const uint8_t *)bytes.data);
+                if (element_bytes != 16) return 1;
+                ArrowDecimalSetBytes(&val, element);
             } else if (nanoarrow_type == NANOARROW_TYPE_DECIMAL256) {
-                if (bytes.size != 32) {
-                    return 1;
-                }
-                ArrowDecimalSetBytes(&val, (const uint8_t *)bytes.data);
+                if (element_bytes != 32) return 1;
+                ArrowDecimalSetBytes(&val, element);
             } else {
                 return 1;
             }
             NANOARROW_RETURN_NOT_OK(callback(write_array, &val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
         }
     }
     return 0;
 }
 
-int do_get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM batches_list, bool nullable, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDecimal(schema_out, nanoarrow_type, precision, scale));
 
     nanoarrow::UniqueArray tmp;
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_decimal(env, list, nullable, write_array, nanoarrow_type, bitwidth, precision, scale, ArrowArrayAppendDecimal);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+
+    // batches_list is a list of {binary, validity} tuples
+    ERL_NIF_TERM head, tail;
+    tail = batches_list;
+    while (enif_get_list_cell(env, tail, &head, &tail)) {
+        int ret = get_list_decimal(env, head, nullable, write_array, nanoarrow_type, bitwidth, precision, scale, ArrowArrayAppendDecimal);
+        if (ret != 0) return ret;
     }
-    return ret;
+
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
-int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM dict, bool nullable, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batches_list, bool nullable, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     // type_term is {:dictionary, key_field, value_field}
     int arity;
     const ERL_NIF_TERM *tuple_elems;
@@ -362,25 +404,50 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM dict,
     ERL_NIF_TERM key_field_map = tuple_elems[1];
     ERL_NIF_TERM value_field_map = tuple_elems[2];
 
-    // Get key and value data from dict
-    ERL_NIF_TERM key_data, value_data;
-    if (!enif_get_map_value(env, dict, kAtomKey, &key_data)) {
-        return kErrorBufferGetMapValue;
-    }
-    if (!enif_get_map_value(env, dict, kAtomValue, &value_data)) {
-        return kErrorBufferGetMapValue;
+    // Collect key and value data from all batches into flat lists
+    // Each batch is a %{key: [...], value: [...]} map
+    std::vector<ERL_NIF_TERM> all_key_items;
+    std::vector<ERL_NIF_TERM> all_value_items;
+
+    ERL_NIF_TERM batch, batch_tail = batches_list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        ERL_NIF_TERM batch_key_data, batch_value_data;
+        if (!enif_get_map_value(env, batch, kAtomKey, &batch_key_data)) {
+            return kErrorBufferGetMapValue;
+        }
+        if (!enif_get_map_value(env, batch, kAtomValue, &batch_value_data)) {
+            return kErrorBufferGetMapValue;
+        }
+
+        // Collect individual items from key list
+        ERL_NIF_TERM head, tail;
+        tail = batch_key_data;
+        while (enif_get_list_cell(env, tail, &head, &tail)) {
+            all_key_items.push_back(head);
+        }
+
+        // Collect individual items from value list
+        tail = batch_value_data;
+        while (enif_get_list_cell(env, tail, &head, &tail)) {
+            all_value_items.push_back(head);
+        }
     }
 
+    // Build combined key and value lists
+    ERL_NIF_TERM key_data = enif_make_list_from_array(env, all_key_items.data(), (unsigned)all_key_items.size());
+    ERL_NIF_TERM value_data = enif_make_list_from_array(env, all_value_items.data(), (unsigned)all_value_items.size());
+
     // Build AdbcColumnNifTerm for key from field + data
+    // Wrap flat lists as single-element batch lists since do_get_list_* expects batched data
     struct AdbcColumnNifTerm keys;
     keys.is_nil = 0;
     if (!enif_get_map_value(env, key_field_map, kAtomTypeKey, &keys.type_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, key_field_map, kAtomNullableKey, &keys.nullable_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, key_field_map, kAtomNameKey, &keys.name_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, key_field_map, kAtomMetadataKey, &keys.metadata_term)) return kErrorBufferGetMapValue;
-    keys.data_term = key_data;
+    keys.data_term = enif_make_list1(env, key_data);
     keys.struct_name_term = kAtomAdbcFieldModule;
-    if (!enif_get_list_length(env, key_data, &keys.n_items)) keys.n_items = 0;
+    keys.n_items = (unsigned)all_key_items.size();
 
     // Build AdbcColumnNifTerm for value from field + data
     struct AdbcColumnNifTerm values;
@@ -389,9 +456,9 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM dict,
     if (!enif_get_map_value(env, value_field_map, kAtomNullableKey, &values.nullable_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomNameKey, &values.name_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomMetadataKey, &values.metadata_term)) return kErrorBufferGetMapValue;
-    values.data_term = value_data;
+    values.data_term = enif_make_list1(env, value_data);
     values.struct_name_term = kAtomAdbcFieldModule;
-    if (!enif_get_list_length(env, value_data, &values.n_items)) values.n_items = 0;
+    values.n_items = (unsigned)all_value_items.size();
 
     struct AdbcColumnType key_type = adbc_column_type_to_nanoarrow_type(env, keys.type_term);
     if (!key_type.valid) {
@@ -460,12 +527,14 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTy
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromType(write_array, nanoarrow_type));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_string(env, list, nullable, write_array, ArrowArrayAppendString);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_string(env, batch, nullable, write_array, ArrowArrayAppendString);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, bool val)> &callback) {
@@ -492,12 +561,14 @@ int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowT
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_boolean(env, list, nullable, write_array, ArrowArrayAppendInt);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_boolean(env, batch, nullable, write_array, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowBufferView val)> &callback) {
@@ -526,12 +597,14 @@ int do_get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullab
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_fixed_size_binary(env, list, nullable, write_array, ArrowArrayAppendBytes);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_fixed_size_binary(env, batch, nullable, write_array, ArrowArrayAppendBytes);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_utc_offset() {
@@ -622,12 +695,14 @@ int do_get_list_date(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType
         };
     }
 
-    int ret = get_list_date(env, list, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_date(env, batch, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_time(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int64_t(int64_t, uint64_t)> &normalize_ex_value, const std::function<int(struct ArrowArray*, int64_t val)> &callback) {
@@ -707,12 +782,14 @@ int do_get_list_time(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType
         val = (val * 1000000 + us) * 1000 / unit;
         return val;
     };
-    int ret = get_list_time(env, list, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_time(env, batch, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_timestamp(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int64_t(int64_t, uint64_t)> &normalize_ex_value, const std::function<int(struct ArrowArray*, int64_t val)> &callback) {
@@ -810,12 +887,14 @@ int do_get_list_timestamp(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arro
         val = (val * 1000000 + us) * 1000 / unit;
         return val;
     };
-    int ret = get_list_timestamp(env, list, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_timestamp(env, batch, nullable, write_array, normalize_ex_value, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_duration(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, int64_t val)> &callback) {
@@ -841,12 +920,14 @@ int do_get_list_duration(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arrow
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int ret = get_list_duration(env, list, nullable, write_array, ArrowArrayAppendInt);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_duration(env, batch, nullable, write_array, ArrowArrayAppendInt);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int get_list_interval_month(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowInterval * val)> &callback) {
@@ -941,12 +1022,14 @@ int do_get_list_interval(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arrow
         return 1;
     }
 
-    int ret = get_list_interval(env, list, nullable, write_array, ArrowArrayAppendInterval);
-    if (ret == 0) {
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-        ArrowArrayMove(tmp.get(), array_out);
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        int ret = get_list_interval(env, batch, nullable, write_array, ArrowArrayAppendInterval);
+        if (ret != 0) return ret;
     }
-    return ret;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
+    ArrowArrayMove(tmp.get(), array_out);
+    return 0;
 }
 
 int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, bool nullable, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
@@ -990,34 +1073,31 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
         return kErrorBufferUnknownType;
     }
 
-    unsigned n_items = 0;
-    if (!enif_get_list_length(env, list, &n_items)) {
-        return 1;
-    }
-
     // Build items from plain data lists using inner field type
-    ERL_NIF_TERM head, tail;
-    tail = list;
+    // list is a list of batches, each batch is a list of sublists
     std::vector<struct AdbcColumnNifTerm> items;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        struct AdbcColumnNifTerm item;
-        if (enif_is_identical(head, kAtomNil)) {
-            item.is_nil = 1;
-        } else {
-            item.is_nil = 0;
-            item.type_term = inner_type_term;
-            item.nullable_term = inner_nullable_term;
-            item.data_term = head;
-            item.name_term = kAtomNil;
-            item.metadata_term = kAtomNil;
-            item.struct_name_term = kAtomAdbcFieldModule;
-            if (enif_is_list(env, head)) {
-                if (!enif_get_list_length(env, head, &item.n_items)) item.n_items = 0;
+    ERL_NIF_TERM batch, batch_tail = list;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        ERL_NIF_TERM head, tail;
+        tail = batch;
+        while (enif_get_list_cell(env, tail, &head, &tail)) {
+            struct AdbcColumnNifTerm item;
+            if (enif_is_identical(head, kAtomNil)) {
+                item.is_nil = 1;
             } else {
+                item.is_nil = 0;
+                item.type_term = inner_type_term;
+                item.nullable_term = inner_nullable_term;
+                // Wrap sublist data as a single-element batch list
+                // because do_get_list_* functions now expect batched data
+                item.data_term = enif_make_list1(env, head);
+                item.name_term = kAtomNil;
+                item.metadata_term = kAtomNil;
+                item.struct_name_term = kAtomAdbcFieldModule;
                 item.n_items = 0;
             }
+            items.emplace_back(item);
         }
-        items.emplace_back(item);
     }
 
     // set item type from inner field
@@ -1187,25 +1267,12 @@ int must_be_adbc_column(ErlNifEnv *env,
         return kErrorBufferGetMapValue;
     }
 
-    // Dictionary is always {:dictionary, key_field, value_field}
-    int arity = 0;
-    const ERL_NIF_TERM *tuple_elements;
-    bool is_dict = enif_get_tuple(env, type_term, &arity, &tuple_elements) && arity >= 1 &&
-                   enif_is_identical(tuple_elements[0], kAdbcColumnTypeDictionary);
-
-    if (is_dict) {
-        if (!enif_is_map(env, data_term)) {
-            return kErrorBufferDataIsNotAMap;
-        }
-    } else {
-        if (!enif_is_list(env, data_term)) {
-            return kErrorBufferDataIsNotAList;
-        }
-        if (n_items) {
-            if (!enif_get_list_length(env, data_term, n_items)) {
-                return kErrorBufferGetDataListLength;
-            }
-        }
+    // Data is always a list of batches
+    if (!enif_is_list(env, data_term)) {
+        return kErrorBufferDataIsNotAList;
+    }
+    if (n_items) {
+        *n_items = 0;
     }
 
     return 0;
@@ -1504,11 +1571,7 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, ERL_NIF_TERM adbc_column, bool all
     bool skip_init = false;
     ret = adbc_column_to_adbc_field(env, &column, allow_nil, skip_init, array_out, schema_out, error_out);
     if (n_items) {
-        if (array_out->dictionary && schema_out->dictionary) {
-            *n_items = array_out->length;
-        } else {
-            *n_items = column.n_items;
-        }
+        *n_items = array_out->length;
     }
     return ret;
 }

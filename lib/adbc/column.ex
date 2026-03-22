@@ -18,6 +18,8 @@ defmodule Adbc.Column do
   detect nullable, nor validate it, you must explicitly provide
   said value as argument.
   """
+  import Bitwise
+
   @enforce_keys [:field]
   defstruct [:field, :data]
 
@@ -663,57 +665,94 @@ defmodule Adbc.Column do
   defp coef_length(0, length), do: length
   defp coef_length(coef, length), do: coef_length(Kernel.div(coef, 10), length + 1)
 
-  defp preprocess_decimal([], _bitwidth, _precision, _scale), do: []
+  defp preprocess_decimal(data, bitwidth, precision, scale) do
+    encode_signed(data, <<>>, <<>>, 0, bitwidth, fn
+      integer when is_integer(integer) ->
+        if coef_length(integer) > precision do
+          raise ArgumentError,
+                "`#{Integer.to_string(integer)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
+        end
 
-  defp preprocess_decimal([nil | rest], bitwidth, precision, scale) do
-    [nil | preprocess_decimal(rest, bitwidth, precision, scale)]
-  end
+        integer * Integer.pow(10, scale)
 
-  defp preprocess_decimal([integer | rest], bitwidth, precision, scale)
-       when is_integer(integer) do
-    if coef_length(integer) > precision do
-      raise ArgumentError,
-            "`#{Integer.to_string(integer)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
-    else
-      coef = integer * Integer.pow(10, scale)
-
-      [
-        <<coef::signed-integer-little-size(bitwidth)>>
-        | preprocess_decimal(rest, bitwidth, precision, scale)
-      ]
-    end
-  end
-
-  defp preprocess_decimal(
-         [%Decimal{exp: exp} = decimal | _rest],
-         bitwidth,
-         _precision,
-         scale
-       )
-       when -exp > scale do
-    raise ArgumentError,
-          "`#{Decimal.to_string(decimal)}` with exponent `#{exp}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number with scale value `#{scale}`"
-  end
-
-  defp preprocess_decimal([%Decimal{exp: exp} = decimal | rest], bitwidth, precision, scale)
-       when -exp <= scale do
-    cond do
-      Decimal.inf?(decimal) or Decimal.nan?(decimal) ->
+      %Decimal{exp: exp} = decimal when -exp > scale ->
         raise ArgumentError,
-              "`#{Decimal.to_string(decimal)}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number"
+              "`#{Decimal.to_string(decimal)}` with exponent `#{exp}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number with scale value `#{scale}`"
 
-      coef_length(decimal.coef) > precision ->
-        raise ArgumentError,
-              "`#{Decimal.to_string(decimal)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
+      %Decimal{exp: exp} = decimal ->
+        cond do
+          Decimal.inf?(decimal) or Decimal.nan?(decimal) ->
+            raise ArgumentError,
+                  "`#{Decimal.to_string(decimal)}` cannot be represented as a valid decimal#{Integer.to_string(bitwidth)} number"
 
-      true ->
-        coef = decimal.coef * decimal.sign * Integer.pow(10, exp + scale)
+          coef_length(decimal.coef) > precision ->
+            raise ArgumentError,
+                  "`#{Decimal.to_string(decimal)}` cannot be fitted into a decimal#{Integer.to_string(bitwidth)} with the specified precision #{Integer.to_string(precision)}"
 
-        [
-          <<coef::signed-integer-little-size(bitwidth)>>
-          | preprocess_decimal(rest, bitwidth, precision, scale)
-        ]
-    end
+          true ->
+            decimal.coef * decimal.sign * Integer.pow(10, exp + scale)
+        end
+    end)
+  end
+
+  # Single-pass encoding of a data list into {binary, bitmap | nil, offset}.
+  # `encoder` converts each non-nil element to an integer.
+  # `pending` tracks bitmap state:
+  #   - integer N: postponed valid bits, no partial byte in progress
+  #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
+  # `bitmap` is passed explicitly for Erlang binary append optimization.
+
+  defp encode_signed([], data, bitmap, pending, _size, _encoder)
+       when is_integer(pending) and byte_size(bitmap) == 0 do
+    {data, nil, 0}
+  end
+
+  defp encode_signed([], data, bitmap, pending, _size, _encoder) when is_integer(pending) do
+    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
+    bitmap = if rem_bits > 0, do: <<bitmap::binary, (1 <<< rem_bits) - 1>>, else: bitmap
+    {data, bitmap, 0}
+  end
+
+  defp encode_signed([], data, bitmap, {byte, _bits}, _size, _encoder) do
+    {data, <<bitmap::binary, byte>>, 0}
+  end
+
+  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder)
+       when is_integer(pending) do
+    {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
+    {bitmap, pending} = bitmap_put_bit(bitmap, (1 <<< rem_bits) - 1, rem_bits, 0)
+    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+  end
+
+  defp encode_signed([nil | rest], data, bitmap, {byte, bits}, size, encoder) do
+    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 0)
+    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+  end
+
+  defp encode_signed([value | rest], data, bitmap, pending, size, encoder)
+       when is_integer(pending) do
+    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    encode_signed(rest, data, bitmap, pending + 1, size, encoder)
+  end
+
+  defp encode_signed([value | rest], data, bitmap, {byte, bits}, size, encoder) do
+    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 1)
+    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    encode_signed(rest, data, bitmap, pending, size, encoder)
+  end
+
+  @compile {:inline, bitmap_put_bit: 4, bitmap_flush_valid: 2}
+  defp bitmap_put_bit(bitmap, byte, 7, bit) do
+    {<<bitmap::binary, byte ||| bit <<< 7>>, 0}
+  end
+
+  defp bitmap_put_bit(bitmap, byte, bits, bit) do
+    {bitmap, {byte ||| bit <<< bits, bits + 1}}
+  end
+
+  defp bitmap_flush_valid(bitmap, pending) do
+    full_size = div(pending, 8) * 8
+    {<<bitmap::binary, -1::size(full_size)>>, rem(pending, 8)}
   end
 
   @doc type: :column_builder
@@ -1271,18 +1310,14 @@ defmodule Adbc.Column do
   end
 
   def to_list(%Adbc.Column{field: %{type: {:decimal, bits, _, scale}}, data: batches}) do
-    Enum.flat_map(batches, fn batch ->
-      Enum.map(batch, fn
-        <<coef::signed-integer-size(bits)-little>> ->
-          if coef < 0 do
-            Decimal.new(-1, -coef, -scale)
-          else
-            Decimal.new(1, coef, -scale)
-          end
+    decoder = &coef_to_decimal(&1, scale)
 
-        nil ->
-          nil
-      end)
+    Enum.flat_map(batches, fn
+      {binary, bitmap, bit_offset} when bits == 128 ->
+        decode_signed_128(binary, bitmap, bit_offset, decoder)
+
+      {binary, bitmap, bit_offset} ->
+        decode_signed_256(binary, bitmap, bit_offset, decoder)
     end)
   end
 
@@ -1303,6 +1338,11 @@ defmodule Adbc.Column do
     Enum.concat(batches)
   end
 
+  @decimal_zero Decimal.new(0)
+  defp coef_to_decimal(0, _scale), do: @decimal_zero
+  defp coef_to_decimal(coef, scale) when coef < 0, do: Decimal.new(-1, -coef, -scale)
+  defp coef_to_decimal(coef, scale), do: Decimal.new(1, coef, -scale)
+
   defp expand_runs([run_end | run_ends], [_ | values], pos, stop)
        when run_end <= pos do
     expand_runs(run_ends, values, pos, stop)
@@ -1321,4 +1361,69 @@ defmodule Adbc.Column do
   defp duplicate_runs(value, n, run_ends, values, pos, stop) do
     [value | duplicate_runs(value, n - 1, run_ends, values, pos, stop)]
   end
+
+  for {name, specifier} <- [
+        decode_signed_128: quote(do: signed - integer - little - 128),
+        decode_signed_256: quote(do: signed - integer - little - 256)
+      ] do
+    defp unquote(name)(binary, bitmap, offset, decoder) do
+      case bitmap do
+        nil ->
+          unquote(name)(binary, decoder)
+
+        _ ->
+          <<_::bits-size(offset), bitmap::bits>> = bitmap
+          unquote(name)(binary, bitmap, [], 0, decoder)
+      end
+    end
+
+    # Fast version without bitmap
+    defp unquote(name)(<<int::unquote(specifier), rest::binary>>, decoder) do
+      [decoder.(int) | unquote(name)(rest, decoder)]
+    end
+
+    defp unquote(name)(<<>>, _decoder), do: []
+
+    # Slow version with with bitmap
+    defp unquote(name)(<<int::unquote(specifier), rest::binary>>, bitmap, acc, count, decoder) do
+      acc = [decoder.(int) | acc]
+      count = count + 1
+      acc = maybe_nullify_each(bitmap, count, acc)
+      unquote(name)(rest, bitmap, acc, count, decoder)
+    end
+
+    defp unquote(name)(<<>>, bitmap, acc, count, _decoder) do
+      Enum.reverse(maybe_nullify_end(bitmap, count, acc))
+    end
+  end
+
+  # Check if we've completed a group of 8 — if so, nullify based on bitmap byte
+  defp maybe_nullify_each(bitmap, count, acc) do
+    if (count &&& 7) == 0 and count > 0 do
+      nullify(acc, :binary.at(bitmap, div(count, 8) - 1), 256)
+    else
+      acc
+    end
+  end
+
+  # End-of-binary: nullify the remaining partial group
+  defp maybe_nullify_end(bitmap, count, acc) do
+    rem = count &&& 7
+
+    if rem > 0 do
+      nullify(acc, :binary.at(bitmap, div(count, 8)), 1 <<< rem)
+    else
+      acc
+    end
+  end
+
+  # Walk back through last entries using a bitmask (one shift ahead).
+  # Early exit when remaining bits in byte are all 1: byte == mask - 1.
+  defp nullify(acc, byte, mask) when mask == 1 or byte == mask - 1, do: acc
+
+  defp nullify([_head | rest], byte, mask) when (byte &&& mask >>> 1) == 0,
+    do: [nil | nullify(rest, byte, mask >>> 1)]
+
+  defp nullify([head | rest], byte, mask),
+    do: [head | nullify(rest, byte, mask >>> 1)]
 end

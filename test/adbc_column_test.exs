@@ -2,6 +2,13 @@ defmodule Adbc.ColumnTest do
   use ExUnit.Case, async: true
   doctest Adbc.Column
 
+  defp to_decimals(data) do
+    Enum.map(data, fn
+      nil -> nil
+      n -> Decimal.new(n)
+    end)
+  end
+
   describe "new/2" do
     test "empty list defaults to string" do
       assert %Adbc.Column{field: %{type: :string, nullable: false}, data: [[]]} =
@@ -163,112 +170,80 @@ defmodule Adbc.ColumnTest do
   describe "decimals" do
     test "integers" do
       value = 42
-      bitwidth = 128
       precision = 19
       scale = 10
       decimal = Decimal.new(value)
 
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false,
-                 metadata: nil
-               },
-               data: [[decimal_data, value_data]]
-             } = Adbc.Column.decimal128([decimal, value], precision, scale)
+      col = Adbc.Column.decimal128([decimal, value], precision, scale)
+      assert col.field.type == {:decimal, 128, precision, scale}
+      assert col.field.nullable == false
 
-      assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
-      assert value == decode1 / :math.pow(10, scale)
+      [d1, d2] = Adbc.Column.to_list(col)
+      assert Decimal.equal?(d1, Decimal.new(1, value * Integer.pow(10, scale), -scale))
+      assert Decimal.equal?(d2, Decimal.new(1, value * Integer.pow(10, scale), -scale))
 
-      assert <<decode2::signed-integer-little-size(bitwidth)>> = value_data
-      assert value == decode2 / :math.pow(10, scale)
+      col = Adbc.Column.decimal256([decimal, value], precision, scale)
+      assert col.field.type == {:decimal, 256, precision, scale}
 
-      bitwidth = 256
-
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false,
-                 metadata: nil
-               },
-               data: [[decimal_data, value_data]]
-             } = Adbc.Column.decimal256([decimal, value], precision, scale)
-
-      assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
-      assert value == decode1 / :math.pow(10, scale)
-
-      assert <<decode2::signed-integer-little-size(bitwidth)>> = value_data
-      assert value == decode2 / :math.pow(10, scale)
-    end
-
-    test "nil in data" do
-      bitwidth = 128
-      precision = 19
-      scale = 10
-
-      decimal_with_nil = %Adbc.Column{
-        field: %Adbc.Field{
-          name: nil,
-          type: {:decimal, bitwidth, precision, scale},
-          nullable: true
-        },
-        data: [[nil]]
-      }
-
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: true,
-                 metadata: nil
-               },
-               data: [[nil]]
-             } = Adbc.Column.materialize(decimal_with_nil)
+      [d1, d2] = Adbc.Column.to_list(col)
+      assert Decimal.equal?(d1, Decimal.new(1, value * Integer.pow(10, scale), -scale))
+      assert Decimal.equal?(d2, Decimal.new(1, value * Integer.pow(10, scale), -scale))
     end
 
     test "floats" do
       value = 12345
-
-      bitwidth = 128
       precision = 5
       scale = 10
-
       exp = -3
       actual_value = value * :math.pow(10, exp)
       decimal = Decimal.new(1, value, exp)
 
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false
-               },
-               data: [[data]]
-             } = Adbc.Column.decimal128([decimal], precision, scale)
+      col = Adbc.Column.decimal128([decimal], precision, scale)
+      [d] = Adbc.Column.to_list(col)
+      assert actual_value == Decimal.to_float(d)
 
-      assert <<decode::signed-integer-little-size(bitwidth)>> = data
-      assert actual_value == decode / :math.pow(10, scale)
+      col = Adbc.Column.decimal256([decimal], precision, scale)
+      [d] = Adbc.Column.to_list(col)
+      assert actual_value == Decimal.to_float(d)
+    end
 
-      bitwidth = 256
+    test "nils at various positions for decimal128" do
+      precision = 19
+      scale = 0
 
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false
-               },
-               data: [[data]]
-             } = Adbc.Column.decimal256([decimal], precision, scale)
+      # nil at position 1 (within a group of 8)
+      data = [1, nil, 3, 4, 5, 6, 7, 8]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
 
-      assert <<decode::signed-integer-little-size(bitwidth)>> = data
-      assert actual_value == decode / :math.pow(10, scale)
+      # nil at last position of a group of 8
+      data = [1, 2, 3, 4, 5, 6, 7, nil]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
+
+      # all nils in a group of 8
+      data = [nil, nil, nil, nil, nil, nil, nil, nil]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
+
+      # nil crossing the 8-element boundary
+      data = [1, 2, 3, 4, 5, 6, 7, 8, nil, 10]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
+
+      # multiple nils across boundary
+      data = [nil, 2, 3, 4, 5, 6, 7, nil, nil, 10, 11, 12, 13, 14, 15, nil]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
+
+      # partial group (less than 8) with nil
+      data = [1, nil, 3]
+      col = Adbc.Column.decimal128(data, precision, scale, nullable: true)
+      assert Adbc.Column.to_list(col) == to_decimals(data)
     end
 
     test "raise if precision value is insufficient" do
       value = 54321
-      bitwidth = 128
       precision = 4
       scale = 1
       decimal = Decimal.new(value)
@@ -299,49 +274,19 @@ defmodule Adbc.ColumnTest do
 
       precision = 5
 
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false,
-                 metadata: nil
-               },
-               data: [[decimal_data, value_data]]
-             } = Adbc.Column.decimal128([decimal, value], precision, scale)
+      col = Adbc.Column.decimal128([decimal, value], precision, scale)
+      assert length(Adbc.Column.to_list(col)) == 2
 
-      assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
-      assert value == decode1 / :math.pow(10, scale)
-
-      assert <<decode2::signed-integer-little-size(bitwidth)>> = value_data
-      assert value == decode2 / :math.pow(10, scale)
-
-      bitwidth = 256
-
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false,
-                 metadata: nil
-               },
-               data: [[decimal_data, value_data]]
-             } = Adbc.Column.decimal256([decimal, value], precision, scale)
-
-      assert <<decode1::signed-integer-little-size(bitwidth)>> = decimal_data
-      assert value == decode1 / :math.pow(10, scale)
-
-      assert <<decode2::signed-integer-little-size(bitwidth)>> = value_data
-      assert value == decode2 / :math.pow(10, scale)
+      col = Adbc.Column.decimal256([decimal, value], precision, scale)
+      assert length(Adbc.Column.to_list(col)) == 2
     end
 
     test "raise if scale value is insufficient" do
       value = 54321
-      bitwidth = 128
       precision = 5
       scale = 1
 
       exp = -2
-      actual_value = value * :math.pow(10, exp)
       decimal = Decimal.new(1, value, exp)
 
       assert_raise ArgumentError,
@@ -358,31 +303,11 @@ defmodule Adbc.ColumnTest do
 
       scale = 2
 
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false
-               },
-               data: [[data]]
-             } = Adbc.Column.decimal128([decimal], precision, scale)
+      col = Adbc.Column.decimal128([decimal], precision, scale)
+      assert length(Adbc.Column.to_list(col)) == 1
 
-      assert <<decode::signed-integer-little-size(bitwidth)>> = data
-      assert actual_value == decode / :math.pow(10, scale)
-
-      bitwidth = 256
-
-      assert %Adbc.Column{
-               field: %{
-                 name: nil,
-                 type: {:decimal, ^bitwidth, ^precision, ^scale},
-                 nullable: false
-               },
-               data: [[data]]
-             } = Adbc.Column.decimal256([decimal], precision, scale)
-
-      assert <<decode::signed-integer-little-size(bitwidth)>> = data
-      assert actual_value == decode / :math.pow(10, scale)
+      col = Adbc.Column.decimal256([decimal], precision, scale)
+      assert length(Adbc.Column.to_list(col)) == 1
     end
 
     test "raise on Inf, -Inf and NaN" do

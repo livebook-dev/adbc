@@ -153,18 +153,6 @@ defmodule Adbc.Result do
   """
   @spec to_ipc_stream(t()) :: binary
   def to_ipc_stream(%Adbc.Result{data: columns}) when is_list(columns) do
-    columns =
-      Enum.map(columns, fn
-        %Adbc.Column{field: %{type: {:dictionary, _, _}}, data: [single]} = col ->
-          %{col | data: single}
-
-        %Adbc.Column{data: [first | _] = batches} = col when is_list(first) ->
-          %{col | data: :lists.append(batches)}
-
-        col ->
-          col
-      end)
-
     case Adbc.Nif.adbc_ipc_dump_stream_binary(columns) do
       {:error, reason} ->
         raise error_to_exception(reason)
