@@ -20,8 +20,8 @@ defmodule Adbc.Field do
 
   @type precision128 :: 1..38
   @type precision256 :: 1..76
-  @type decimal128 :: {:decimal, 128, precision128(), integer()}
-  @type decimal256 :: {:decimal, 256, precision256(), integer()}
+  @type decimal128 :: {:decimal128, precision128(), integer()}
+  @type decimal256 :: {:decimal256, precision256(), integer()}
   @type decimal :: decimal128 | decimal256
 
   @type time_unit :: :seconds | :milliseconds | :microseconds | :nanoseconds

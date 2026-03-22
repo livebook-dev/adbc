@@ -112,9 +112,16 @@ defmodule Adbc.Column do
         nullable: nullable,
         metadata: nil
       },
-      data: [data]
+      data: [encode_data(type, data)]
     }
   end
+
+  defp encode_data(:date32, data), do: encode_date32(data)
+  defp encode_data(:date64, data), do: encode_date64(data)
+  defp encode_data({:time32, unit}, data), do: encode_time(data, unit, 32)
+  defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
+  defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
+  defp encode_data(_type, data), do: data
 
   @float_atoms [:nan, :infinity, :neg_infinity]
 
@@ -620,11 +627,9 @@ defmodule Adbc.Column do
           t()
   def decimal128(data, precision, scale, opts \\ [])
       when is_integer(precision) and precision >= 1 and precision <= 38 do
-    bitwidth = 128
-
     %Adbc.Column{
-      field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: [preprocess_decimal(data, bitwidth, precision, scale)]
+      field: Adbc.Field.new({:decimal128, precision, scale}, opts),
+      data: [encode_decimal(data, 128, precision, scale)]
     }
   end
 
@@ -651,11 +656,9 @@ defmodule Adbc.Column do
           t()
   def decimal256(data, precision, scale, opts \\ [])
       when is_integer(precision) and precision >= 1 and precision <= 76 do
-    bitwidth = 256
-
     %Adbc.Column{
-      field: Adbc.Field.new({:decimal, bitwidth, precision, scale}, opts),
-      data: [preprocess_decimal(data, bitwidth, precision, scale)]
+      field: Adbc.Field.new({:decimal256, precision, scale}, opts),
+      data: [encode_decimal(data, 256, precision, scale)]
     }
   end
 
@@ -665,7 +668,7 @@ defmodule Adbc.Column do
   defp coef_length(0, length), do: length
   defp coef_length(coef, length), do: coef_length(Kernel.div(coef, 10), length + 1)
 
-  defp preprocess_decimal(data, bitwidth, precision, scale) do
+  defp encode_decimal(data, bitwidth, precision, scale) do
     encode_signed(data, <<>>, <<>>, 0, bitwidth, fn
       integer when is_integer(integer) ->
         if coef_length(integer) > precision do
@@ -867,7 +870,7 @@ defmodule Adbc.Column do
   """
   @spec date32([Date.t() | s32() | nil], Keyword.t()) :: t()
   def date32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: [encode_date32(data)]}
   end
 
   @doc type: :column_builder
@@ -889,7 +892,7 @@ defmodule Adbc.Column do
   """
   @spec date64([Date.t() | s64() | nil], Keyword.t()) :: t()
   def date64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: [data]}
+    %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: [encode_date64(data)]}
   end
 
   @doc type: :column_builder
@@ -927,12 +930,18 @@ defmodule Adbc.Column do
 
   def time(data, unit, opts)
       when is_list(data) and is_list(opts) and unit in [:seconds, :milliseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:time32, unit}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:time32, unit}, opts),
+      data: [encode_time(data, unit, 32)]
+    }
   end
 
   def time(data, unit, opts)
       when is_list(data) and is_list(opts) and unit in [:microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:time64, unit}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:time64, unit}, opts),
+      data: [encode_time(data, unit, 64)]
+    }
   end
 
   @doc type: :column_builder
@@ -971,7 +980,10 @@ defmodule Adbc.Column do
   def timestamp(data, unit, timezone, opts \\ [])
       when is_list(data) and is_binary(timezone) and is_list(opts) and
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:timestamp, unit, timezone}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:timestamp, unit, timezone}, opts),
+      data: [encode_timestamp(data, unit)]
+    }
   end
 
   @doc type: :column_builder
@@ -1249,15 +1261,59 @@ defmodule Adbc.Column do
     end)
   end
 
-  def to_list(%Adbc.Column{field: %{type: {:decimal, bits, _, scale}}, data: batches}) do
+  def to_list(%Adbc.Column{field: %{type: :date32}, data: batches}) do
+    decoder = &days_to_date/1
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_32(binary, bitmap, bit_offset, decoder)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: :date64}, data: batches}) do
+    decoder = &milliseconds_to_date/1
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_64(binary, bitmap, bit_offset, decoder)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:time32, unit}}, data: batches}) do
+    decoder = &int_to_time(&1, unit)
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_32(binary, bitmap, bit_offset, decoder)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:time64, unit}}, data: batches}) do
+    decoder = &int_to_time(&1, unit)
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_64(binary, bitmap, bit_offset, decoder)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:timestamp, unit, _timezone}}, data: batches}) do
+    decoder = &int_to_naive_datetime(&1, unit)
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_64(binary, bitmap, bit_offset, decoder)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:decimal128, _, scale}}, data: batches}) do
     decoder = &coef_to_decimal(&1, scale)
 
-    Enum.flat_map(batches, fn
-      {binary, bitmap, bit_offset} when bits == 128 ->
-        decode_signed_128(binary, bitmap, bit_offset, decoder)
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_128(binary, bitmap, bit_offset, decoder)
+    end)
+  end
 
-      {binary, bitmap, bit_offset} ->
-        decode_signed_256(binary, bitmap, bit_offset, decoder)
+  def to_list(%Adbc.Column{field: %{type: {:decimal256, _, scale}}, data: batches}) do
+    decoder = &coef_to_decimal(&1, scale)
+
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_256(binary, bitmap, bit_offset, decoder)
     end)
   end
 
@@ -1276,6 +1332,80 @@ defmodule Adbc.Column do
 
   def to_list(%Adbc.Column{data: batches}) do
     Enum.concat(batches)
+  end
+
+  @epoch_days Date.to_gregorian_days(~D[1970-01-01])
+  defp days_to_date(days), do: Date.from_gregorian_days(days + @epoch_days)
+  defp milliseconds_to_date(ms), do: Date.from_gregorian_days(div(ms, 86_400_000) + @epoch_days)
+
+  defp encode_date32(data) do
+    encode_signed(data, <<>>, <<>>, 0, 32, fn
+      %Date{} = date -> Date.to_gregorian_days(date) - @epoch_days
+      integer when is_integer(integer) -> integer
+    end)
+  end
+
+  defp encode_date64(data) do
+    encode_signed(data, <<>>, <<>>, 0, 64, fn
+      %Date{} = date -> (Date.to_gregorian_days(date) - @epoch_days) * 86_400_000
+      integer when is_integer(integer) -> integer
+    end)
+  end
+
+  @time_unit_multiplier %{
+    seconds: 1,
+    milliseconds: 1_000,
+    microseconds: 1_000_000,
+    nanoseconds: 1_000_000_000
+  }
+
+  defp encode_time(data, unit, bitwidth) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+
+    encode_signed(data, <<>>, <<>>, 0, bitwidth, fn
+      %Time{} = time ->
+        {seconds, microseconds} = Time.to_seconds_after_midnight(time)
+        seconds * multiplier + microseconds * div(multiplier, 1_000_000)
+
+      integer when is_integer(integer) ->
+        integer
+    end)
+  end
+
+  defp int_to_time(val, unit) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+    total_us = div(val * 1_000_000, multiplier)
+    seconds = div(total_us, 1_000_000)
+    microseconds = rem(total_us, 1_000_000)
+    Time.add(~T[00:00:00], seconds * 1_000_000 + microseconds, :microsecond)
+  end
+
+  @epoch_seconds :calendar.datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}})
+
+  defp encode_timestamp(data, unit) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+
+    encode_signed(data, <<>>, <<>>, 0, 64, fn
+      %NaiveDateTime{} = ndt ->
+        {gregorian_seconds, microseconds} = NaiveDateTime.to_gregorian_seconds(ndt)
+        unix_seconds = gregorian_seconds - @epoch_seconds
+        unix_seconds * multiplier + microseconds * div(multiplier, 1_000_000)
+
+      integer when is_integer(integer) ->
+        integer
+    end)
+  end
+
+  @unit_precision %{seconds: 0, milliseconds: 3, microseconds: 6, nanoseconds: 6}
+
+  defp int_to_naive_datetime(val, unit) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+    precision = Map.fetch!(@unit_precision, unit)
+    total_us = div(val * 1_000_000, multiplier)
+    unix_seconds = div(total_us, 1_000_000)
+    microseconds = rem(total_us, 1_000_000)
+    gregorian_seconds = unix_seconds + @epoch_seconds
+    NaiveDateTime.from_gregorian_seconds(gregorian_seconds, {microseconds, precision})
   end
 
   @decimal_zero Decimal.new(0)
@@ -1367,6 +1497,8 @@ defmodule Adbc.Column do
   ## Bit decoding
 
   for {name, specifier} <- [
+        decode_signed_32: quote(do: signed - integer - little - 32),
+        decode_signed_64: quote(do: signed - integer - little - 64),
         decode_signed_128: quote(do: signed - integer - little - 128),
         decode_signed_256: quote(do: signed - integer - little - 256)
       ] do

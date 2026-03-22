@@ -125,8 +125,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~N[2023-03-01 10:23:45.000000]]]
-               },
+                 data: [{_, _, _}]
+               } = datetime_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "datetime_usec",
@@ -134,8 +134,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~N[2023-03-01 10:23:45.123456]]]
-               },
+                 data: [{_, _, _}]
+               } = datetime_usec_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "datetime_tz_8601",
@@ -143,8 +143,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~N[2023-03-01 18:23:45.000000]]]
-               },
+                 data: [{_, _, _}]
+               } = datetime_tz_8601_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "datetime_tz_offset",
@@ -152,8 +152,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~N[2023-03-01 08:23:45.000000]]]
-               },
+                 data: [{_, _, _}]
+               } = datetime_tz_offset_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "date",
@@ -161,8 +161,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~D[2023-03-01]]]
-               },
+                 data: [{_, _, _}]
+               } = date_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "time",
@@ -170,8 +170,8 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~T[10:23:45.000000]]]
-               },
+                 data: [{_, _, _}]
+               } = time_col,
                %Adbc.Column{
                  field: %Adbc.Field{
                    name: "time_usec",
@@ -179,10 +179,18 @@ defmodule Adbc.PostgresTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[~T[10:23:45.123456]]]
-               }
+                 data: [{_, _, _}]
+               } = time_usec_col
              ]
            } = Adbc.Result.materialize(results)
+
+    assert Adbc.Column.to_list(datetime_col) == [~N[2023-03-01 10:23:45.000000]]
+    assert Adbc.Column.to_list(datetime_usec_col) == [~N[2023-03-01 10:23:45.123456]]
+    assert Adbc.Column.to_list(datetime_tz_8601_col) == [~N[2023-03-01 18:23:45.000000]]
+    assert Adbc.Column.to_list(datetime_tz_offset_col) == [~N[2023-03-01 08:23:45.000000]]
+    assert Adbc.Column.to_list(date_col) == [~D[2023-03-01]]
+    assert Adbc.Column.to_list(time_col) == [~T[10:23:45.000000]]
+    assert Adbc.Column.to_list(time_usec_col) == [~T[10:23:45.123456]]
   end
 
   test "floats (inf/-inf/nan)", %{db: _, conn: conn} do
@@ -243,11 +251,12 @@ defmodule Adbc.PostgresTest do
                    metadata: nil
                  },
                  data: generate_series
-               }
+               } = col
              ]
            } = Adbc.Result.materialize(results)
 
-    assert generate_series |> Enum.concat() |> Enum.count() == 3_506_641
+    assert length(generate_series) > 1
+    assert length(Adbc.Column.to_list(col)) == 3_506_641
   end
 
   test "query with parameters", %{db: _, conn: conn} do

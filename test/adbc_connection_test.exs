@@ -87,17 +87,19 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [[
-                     %{"string_value" => ["SQLite"]},
-                     # "3.43.2"
-                     %{"string_value" => [_]},
-                     %{"string_value" => ["ADBC SQLite Driver"]},
-                     # "(unknown)"
-                     %{"string_value" => [_]},
-                     # "0.4.0"
-                     %{"string_value" => [_]},
-                     %{"int64_value" => [1_001_000]}
-                   ]]
+                   data: [
+                     [
+                       %{"string_value" => ["SQLite"]},
+                       # "3.43.2"
+                       %{"string_value" => [_]},
+                       %{"string_value" => ["ADBC SQLite Driver"]},
+                       # "(unknown)"
+                       %{"string_value" => [_]},
+                       # "0.4.0"
+                       %{"string_value" => [_]},
+                       %{"int64_value" => [1_001_000]}
+                     ]
+                   ]
                  }
                ]
              } = Adbc.Result.materialize(results)

@@ -252,7 +252,14 @@ defmodule Adbc.PythonxTest do
                      name: "lv",
                      type: {:list_view, %Adbc.Field{name: "item", type: :s32}}
                    },
-                   data: [%{values: [10, 20, 30, 40, 50], offsets: [0, 2, 1], sizes: [2, 3, 2], validity: [true, true, true]}]
+                   data: [
+                     %{
+                       values: [10, 20, 30, 40, 50],
+                       offsets: [0, 2, 1],
+                       sizes: [2, 3, 2],
+                       validity: [true, true, true]
+                     }
+                   ]
                  }
                ]
              } = result

@@ -1087,7 +1087,8 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomValues = erlang::nif::atom(env, "values");
     kAtomRunEnds = erlang::nif::atom(env, "run_ends");
 
-    kAtomDecimal = erlang::nif::atom(env, "decimal");
+    kAtomDecimal128 = erlang::nif::atom(env, "decimal128");
+    kAtomDecimal256 = erlang::nif::atom(env, "decimal256");
     kAtomFixedSizeBinary = erlang::nif::atom(env, "fixed_size_binary");
     kAtomFixedSizeList = erlang::nif::atom(env, "fixed_size_list");
     kAtomTime32 = erlang::nif::atom(env, "time32");
@@ -1103,20 +1104,6 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomDayTime = erlang::nif::atom(env, "day_time");
     kAtomMonthDayNano = erlang::nif::atom(env, "month_day_nano");
 
-    kAtomCalendarKey = erlang::nif::atom(env, "calendar");
-    kAtomCalendarISO = erlang::nif::atom(env, "Elixir.Calendar.ISO");
-
-    kAtomDateModule = erlang::nif::atom(env, "Elixir.Date");
-    kAtomYearKey = erlang::nif::atom(env, "year");
-    kAtomMonthKey = erlang::nif::atom(env, "month");
-    kAtomDayKey = erlang::nif::atom(env, "day");
-
-    kAtomNaiveDateTimeModule = erlang::nif::atom(env, "Elixir.NaiveDateTime");
-    kAtomTimeModule = erlang::nif::atom(env, "Elixir.Time");
-    kAtomHourKey = erlang::nif::atom(env, "hour");
-    kAtomMinuteKey = erlang::nif::atom(env, "minute");
-    kAtomSecondKey = erlang::nif::atom(env, "second");
-    kAtomMicrosecondKey = erlang::nif::atom(env, "microsecond");
 
     kAtomAdbcColumnModule = erlang::nif::atom(env, "Elixir.Adbc.Column");
     kAtomAdbcFieldModule = erlang::nif::atom(env, "Elixir.Adbc.Field");

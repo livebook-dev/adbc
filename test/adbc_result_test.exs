@@ -21,22 +21,20 @@ defmodule Adbc.ResultTest do
   defp result do
     %Adbc.Result{
       data: [
-        %Adbc.Column{
-          field: %Adbc.Field{
-            name: "start_time",
-            type: {:timestamp, :seconds, "UTC"},
-            nullable: true
-          },
-          data: [[~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]]]
-        },
-        %Adbc.Column{
-          field: %Adbc.Field{
-            name: "end_time",
-            type: {:timestamp, :seconds, "UTC"},
-            nullable: true
-          },
-          data: [[~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]]]
-        },
+        Adbc.Column.timestamp(
+          [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
+          :seconds,
+          "UTC",
+          name: "start_time",
+          nullable: true
+        ),
+        Adbc.Column.timestamp(
+          [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]],
+          :seconds,
+          "UTC",
+          name: "end_time",
+          nullable: true
+        ),
         %Adbc.Column{
           field: %Adbc.Field{
             name: "time_series",
@@ -50,8 +48,7 @@ defmodule Adbc.ResultTest do
             nullable: true
           },
           data: [
-            [[[1], [2, 3], [3, 4], [4]],
-             [[3, 4], [4], [5, 6], [6]]]
+            [[[1], [2, 3], [3, 4], [4]], [[3, 4], [4], [5, 6], [6]]]
           ]
         }
       ]

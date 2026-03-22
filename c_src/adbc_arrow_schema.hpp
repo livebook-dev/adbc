@@ -435,7 +435,9 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
 
                 if (format_processed) {
                     if (bits == 0) bits = 128;
-                    type_term = kAdbcColumnTypeDecimal(bits, precision, scale);
+                    type_term = (bits == 128)
+                        ? kAdbcColumnTypeDecimal128(precision, scale)
+                        : kAdbcColumnTypeDecimal256(precision, scale);
                     children_term = make_adbc_column(env, schema, type_term, metadata);
                 }
             } else {

@@ -732,6 +732,31 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env, struct ArrowSchema * sche
     return get_arrow_array_list_view(env, schema, values, 0, -1, level, list_type, resource);
 }
 
+// Build a {data_binary, validity_bitmap | nil, bit_offset} tuple for fixed-size elements.
+ERL_NIF_TERM make_buffer_tuple(ErlNifEnv *env, struct ArrowArray * values, int64_t offset, int64_t count, size_t element_bytes, int64_t data_buffer_index, int64_t bitmap_buffer_index, void* resource) {
+    const uint8_t * value_buffer = (const uint8_t *)values->buffers[data_buffer_index];
+    const uint8_t * validity_bitmap = (const uint8_t *)values->buffers[bitmap_buffer_index];
+    size_t data_size = element_bytes * count;
+    const void * data_ptr = &value_buffer[element_bytes * offset];
+
+    ERL_NIF_TERM data_binary = enif_make_resource_binary(env, resource, data_ptr, data_size);
+
+    ERL_NIF_TERM validity_term;
+    ERL_NIF_TERM offset_term = enif_make_int(env, (int)offset);
+    if (validity_bitmap == nullptr) {
+        validity_term = kAtomNil;
+    } else {
+        size_t total_bitmap_bytes = (values->length + 7) / 8;
+        validity_term = enif_make_resource_binary(
+            env, resource,
+            validity_bitmap,
+            total_bitmap_bytes
+        );
+    }
+
+    return enif_make_tuple3(env, data_binary, validity_term, offset_term);
+}
+
 int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, int64_t level, std::vector<ERL_NIF_TERM> &out_terms, ERL_NIF_TERM &term_type, ERL_NIF_TERM &arrow_metadata, ERL_NIF_TERM &error, bool skip_dictionary_check, void* resource) {
     if (schema == nullptr) {
         error = erlang::nif::error(env, "invalid ArrowSchema (nullptr) when invoking next");
@@ -1181,71 +1206,22 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     if (unit == 'D' || unit == 'm') {
                         // NANOARROW_TYPE_DATE32
                         // NANOARROW_TYPE_DATE64
-                        ERL_NIF_TERM date_module = kAtomDateModule;
-                        ERL_NIF_TERM calendar_iso = kAtomCalendarISO;
-                        ERL_NIF_TERM keys[] = {
-                            kAtomStructKey,
-                            kAtomCalendarKey,
-                            kAtomYearKey,
-                            kAtomMonthKey,
-                            kAtomDayKey,
-                        };
-
-                        auto convert = [unit, date_module, calendar_iso, &keys](ErlNifEnv *env, uint64_t val) -> ERL_NIF_TERM {
-                            uint64_t seconds;
-                            if (unit == 'D') {
-                                seconds = val * 24 * 60 * 60; // days
-                            } else {
-                                seconds = val / 1000; // milliseconds
-                            }
-                            time_t t = (time_t)seconds;
-                            tm* time = gmtime(&t);
-                            ERL_NIF_TERM ex_date;
-                            ERL_NIF_TERM values[] = {
-                                date_module,
-                                calendar_iso,
-                                enif_make_int(env, time->tm_year + 1900),
-                                enif_make_int(env, time->tm_mon + 1),
-                                enif_make_int(env, time->tm_mday)
-                            };
-                            enif_make_map_from_arrays(env, keys, values, 5, &ex_date);
-                            return ex_date;
-                        };
+                        size_t element_bytes;
                         if (unit == 'D') {
-                            using value_type = uint32_t;
                             term_type = kAdbcColumnTypeDate32;
-                            if (count == -1) count = values->length;
-                            if (count > values->length) count = values->length - offset;
-                            if (values->n_buffers != 2) {
-                                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=tdD), values->n_buffers != 2");
-                                return 1;
-                            }
-                            current_term = values_from_buffer(
-                                env,
-                                offset,
-                                count,
-                                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                                (const value_type *)values->buffers[data_buffer_index],
-                                convert
-                            );
+                            element_bytes = 4;
                         } else {
-                            using value_type = uint64_t;
                             term_type = kAdbcColumnTypeDate64;
-                            if (count == -1) count = values->length;
-                            if (count > values->length) count = values->length - offset;
-                            if (values->n_buffers != 2) {
-                                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=tdm), values->n_buffers != 2");
-                                return 1;
-                            }
-                            current_term = values_from_buffer(
-                                env,
-                                offset,
-                                count,
-                                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                                (const value_type *)values->buffers[data_buffer_index],
-                                convert
-                            );
+                            element_bytes = 8;
                         }
+                        if (count == -1) count = values->length;
+                        if (count > values->length) count = values->length - offset;
+                        if (values->n_buffers != 2) {
+                            snprintf(err_msg_buf, 255, "invalid n_buffers value for ArrowArray (format=%s), values->n_buffers != 2", schema->format);
+                            error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+                            return 1;
+                        }
+                        current_term = make_buffer_tuple(env, values, offset, count, element_bytes, data_buffer_index, bitmap_buffer_index, resource);
                     } else {
                         format_processed = false;
                     }
@@ -1256,31 +1232,17 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     // ttm - time32 [milliseconds]
                     // ttu - time64 [microseconds]
                     // ttn - time64 [nanoseconds]
-                    uint64_t unit;
-                    uint8_t us_precision;
                     switch (format[2]) {
                         case 's': // seconds
-                            // NANOARROW_TYPE_TIME32
-                            unit = 1000000000;
-                            us_precision = 0;
                             term_type = kAdbcColumnTypeTime32Seconds;
                             break;
                         case 'm': // milliseconds
-                            // NANOARROW_TYPE_TIME32
-                            unit = 1000000;
-                            us_precision = 3;
                             term_type = kAdbcColumnTypeTime32Milliseconds;
                             break;
                         case 'u': // microseconds
-                            // NANOARROW_TYPE_TIME64
-                            unit = 1000;
-                            us_precision = 6;
                             term_type = kAdbcColumnTypeTime64Microseconds;
                             break;
                         case 'n': // nanoseconds
-                            // NANOARROW_TYPE_TIME64
-                            unit = 1;
-                            us_precision = 6;
                             term_type = kAdbcColumnTypeTime64Nanoseconds;
                             break;
                         default:
@@ -1288,7 +1250,6 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     }
 
                     if (format_processed) {
-                        using value_type = uint64_t;
                         if (count == -1) count = values->length;
                         if (count > values->length) count = values->length - offset;
                         if (values->n_buffers != 2) {
@@ -1296,44 +1257,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                             return 1;
                         }
 
-                        ERL_NIF_TERM keys[] = {
-                            kAtomStructKey,
-                            kAtomCalendarKey,
-                            kAtomHourKey,
-                            kAtomMinuteKey,
-                            kAtomSecondKey,
-                            kAtomMicrosecondKey,
-                        };
-
-                        ERL_NIF_TERM time_module = kAtomTimeModule;
-                        ERL_NIF_TERM calendar_iso = kAtomCalendarISO;
-
-                        current_term = values_from_buffer(
-                            env,
-                            offset,
-                            count,
-                            (const uint8_t *)values->buffers[bitmap_buffer_index],
-                            (const value_type *)values->buffers[data_buffer_index],
-                            [unit, us_precision, time_module, calendar_iso, &keys](ErlNifEnv *env, uint64_t val) -> ERL_NIF_TERM {
-                                // Elixir only supports microsecond precision
-                                uint64_t us = val * unit / 1000;
-                                time_t s = (time_t)(us / 1000000);
-                                tm* time = gmtime(&s);
-                                us = us % 1000000;
-
-                                ERL_NIF_TERM ex_time;
-                                ERL_NIF_TERM values[] = {
-                                    time_module,
-                                    calendar_iso,
-                                    enif_make_int(env, time->tm_hour),
-                                    enif_make_int(env, time->tm_min),
-                                    enif_make_int(env, time->tm_sec),
-                                    enif_make_tuple2(env, enif_make_int(env, us), enif_make_int(env, us_precision))
-                                };
-                                enif_make_map_from_arrays(env, keys, values, 6, &ex_time);
-                                return ex_time;
-                            }
-                    );
+                        size_t element_bytes = (format[2] == 's' || format[2] == 'm') ? 4 : 8;
+                        current_term = make_buffer_tuple(env, values, offset, count, element_bytes, data_buffer_index, bitmap_buffer_index, resource);
                     }
                 // timestamp
                 } else if (format[1] == 'D') {
@@ -1483,29 +1408,19 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                 // it should be in the format like `tsu:timezone`
 
                 // NANOARROW_TYPE_TIMESTAMP
-                uint64_t unit;
-                uint8_t us_precision;
                 ERL_NIF_TERM term_unit;
                 ERL_NIF_TERM term_timezone = kAtomNil;
                 switch (format[2]) {
                     case 's': // seconds
-                        unit = 1000000000;
-                        us_precision = 0;
                         term_unit = kAtomSeconds;
                         break;
                     case 'm': // milliseconds
-                        unit = 1000000;
-                        us_precision = 3;
                         term_unit = kAtomMilliseconds;
                         break;
                     case 'u': // microseconds
-                        unit = 1000;
-                        us_precision = 6;
                         term_unit = kAtomMicroseconds;
                         break;
                     case 'n': // nanoseconds
-                        unit = 1;
-                        us_precision = 6;
                         term_unit = kAtomNanoseconds;
                         break;
                     default:
@@ -1519,7 +1434,6 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     }
                     term_type = enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
 
-                    using value_type = int64_t;
                     if (count == -1) count = values->length;
                     if (count > values->length) count = values->length - offset;
                     if (values->n_buffers != 2) {
@@ -1527,51 +1441,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                         return 1;
                     }
 
-                    ERL_NIF_TERM naive_dt_module = kAtomNaiveDateTimeModule;
-                    ERL_NIF_TERM calendar_iso = kAtomCalendarISO;
-
-                    ERL_NIF_TERM keys[] = {
-                        kAtomStructKey,
-                        kAtomCalendarKey,
-                        kAtomYearKey,
-                        kAtomMonthKey,
-                        kAtomDayKey,
-                        kAtomHourKey,
-                        kAtomMinuteKey,
-                        kAtomSecondKey,
-                        kAtomMicrosecondKey,
-                    };
-
-                    current_term = values_from_buffer(
-                        env,
-                        offset,
-                        count,
-                        (const uint8_t *)values->buffers[bitmap_buffer_index],
-                        (const value_type *)values->buffers[data_buffer_index],
-                        [unit, us_precision, naive_dt_module, calendar_iso, &keys](ErlNifEnv *env, int64_t val) -> ERL_NIF_TERM {
-                            // Elixir only supports microsecond precision
-                            int64_t us = val * unit / 1000;
-                            time_t t = (time_t)(us / 1000000);
-                            tm* time = gmtime(&t);
-                            us = us % 1000000;
-
-                            ERL_NIF_TERM ex_dt;
-                            ERL_NIF_TERM values[] = {
-                                naive_dt_module,
-                                calendar_iso,
-                                enif_make_int(env, time->tm_year + 1900),
-                                enif_make_int(env, time->tm_mon + 1),
-                                enif_make_int(env, time->tm_mday),
-                                enif_make_int(env, time->tm_hour),
-                                enif_make_int(env, time->tm_min),
-                                enif_make_int(env, time->tm_sec),
-                                enif_make_tuple2(env, enif_make_int(env, us), enif_make_int(env, us_precision))
-                            };
-
-                            enif_make_map_from_arrays(env, keys, values, 9, &ex_dt);
-                            return ex_dt;
-                        }
-                    );
+                    current_term = make_buffer_tuple(env, values, offset, count, 8, data_buffer_index, bitmap_buffer_index, resource);
                 }
             } else {
                 format_processed = false;
@@ -1654,7 +1524,9 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
 
                 if (format_processed) {
                     if (bits == 0) bits = 128;
-                    term_type = kAdbcColumnTypeDecimal(bits, precision, scale);
+                    term_type = (bits == 128)
+                        ? kAdbcColumnTypeDecimal128(precision, scale)
+                        : kAdbcColumnTypeDecimal256(precision, scale);
                     if (count == -1) count = values->length;
                     if (count > values->length) count = values->length - offset;
                     if (values->n_buffers != 2) {
@@ -1664,31 +1536,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     }
                     {
                         size_t element_bytes = bits / 8;
-                        const uint8_t * value_buffer = (const uint8_t *)values->buffers[data_buffer_index];
-                        const uint8_t * validity_bitmap = (const uint8_t *)values->buffers[bitmap_buffer_index];
-                        size_t data_size = element_bytes * count;
-                        const void * data_ptr = &value_buffer[element_bytes * offset];
-
-                        // Create a single binary for the entire data buffer slice
-                        ERL_NIF_TERM data_binary;
-                        data_binary = enif_make_resource_binary(env, resource, data_ptr, data_size);
-
-                        // Validity: nil if no bitmap, otherwise a resource binary (Arrow LSB-first).
-                        // Offset: bit offset into the bitmap.
-                        ERL_NIF_TERM validity_term;
-                        ERL_NIF_TERM offset_term = enif_make_int(env, (int)offset);
-                        if (validity_bitmap == nullptr) {
-                            validity_term = kAtomNil;
-                        } else {
-                            size_t total_bitmap_bytes = (values->length + 7) / 8;
-                            validity_term = enif_make_resource_binary(
-                                env, resource,
-                                validity_bitmap,
-                                total_bitmap_bytes
-                            );
-                        }
-
-                        current_term = enif_make_tuple3(env, data_binary, validity_term, offset_term);
+                        current_term = make_buffer_tuple(env, values, offset, count, element_bytes, data_buffer_index, bitmap_buffer_index, resource);
                     }
                 }
             } else {

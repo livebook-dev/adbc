@@ -175,7 +175,7 @@ defmodule Adbc.ColumnTest do
       decimal = Decimal.new(value)
 
       col = Adbc.Column.decimal128([decimal, value], precision, scale)
-      assert col.field.type == {:decimal, 128, precision, scale}
+      assert col.field.type == {:decimal128, precision, scale}
       assert col.field.nullable == false
 
       [d1, d2] = Adbc.Column.to_list(col)
@@ -183,7 +183,7 @@ defmodule Adbc.ColumnTest do
       assert Decimal.equal?(d2, Decimal.new(1, value * Integer.pow(10, scale), -scale))
 
       col = Adbc.Column.decimal256([decimal, value], precision, scale)
-      assert col.field.type == {:decimal, 256, precision, scale}
+      assert col.field.type == {:decimal256, precision, scale}
 
       [d1, d2] = Adbc.Column.to_list(col)
       assert Decimal.equal?(d1, Decimal.new(1, value * Integer.pow(10, scale), -scale))

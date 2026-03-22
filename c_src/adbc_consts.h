@@ -6,6 +6,7 @@
 #include <string>
 
 static std::map<std::string, std::vector<ERL_NIF_TERM>> primitiveFormatMapping;
+
 // Atoms
 static ERL_NIF_TERM kAtomAdbcError;
 static ERL_NIF_TERM kAtomNil;
@@ -20,32 +21,14 @@ static ERL_NIF_TERM kAtomEndOfSeries;
 static ERL_NIF_TERM kAtomStructKey;
 static ERL_NIF_TERM kAtomBig;
 static ERL_NIF_TERM kAtomLittle;
-// for the data field in list views and large list views
-// %Adbc.Column{
-//   name: "sample_list_view",
-//   type: :list_view,
-//   nullable: true,
-//   metadata: nil,
-//   data: %{
-//     validity: [true, false, true, true, true],
-//     offsets: [4, 7, 0, 0, 3],
-//     sizes: [3, 0, 4, 0, 2],
-//     values: %Adbc.Column{
-//       name: "sample_list",
-//       type: :s32,
-//       nullable: false,
-//       metadata: nil,
-//       data: [0, -127, 127, 50, 12, -7, 25]
-//     }
-//   }
-// }
 static ERL_NIF_TERM kAtomValidity;
 static ERL_NIF_TERM kAtomOffsets;
 static ERL_NIF_TERM kAtomSizes;
 static ERL_NIF_TERM kAtomValues;
 static ERL_NIF_TERM kAtomRunEnds;
 
-static ERL_NIF_TERM kAtomDecimal;
+static ERL_NIF_TERM kAtomDecimal128;
+static ERL_NIF_TERM kAtomDecimal256;
 static ERL_NIF_TERM kAtomFixedSizeBinary;
 static ERL_NIF_TERM kAtomFixedSizeList;
 static ERL_NIF_TERM kAtomTime32;
@@ -61,20 +44,6 @@ static ERL_NIF_TERM kAtomMonth;
 static ERL_NIF_TERM kAtomDayTime;
 static ERL_NIF_TERM kAtomMonthDayNano;
 
-static ERL_NIF_TERM kAtomCalendarKey;
-static ERL_NIF_TERM kAtomCalendarISO;
-
-static ERL_NIF_TERM kAtomDateModule;
-static ERL_NIF_TERM kAtomYearKey;
-static ERL_NIF_TERM kAtomMonthKey;
-static ERL_NIF_TERM kAtomDayKey;
-
-static ERL_NIF_TERM kAtomNaiveDateTimeModule;
-static ERL_NIF_TERM kAtomTimeModule;
-static ERL_NIF_TERM kAtomHourKey;
-static ERL_NIF_TERM kAtomMinuteKey;
-static ERL_NIF_TERM kAtomSecondKey;
-static ERL_NIF_TERM kAtomMicrosecondKey;
 
 static ERL_NIF_TERM kAtomAdbcColumnModule;
 static ERL_NIF_TERM kAtomAdbcFieldModule;
@@ -106,7 +75,8 @@ static ERL_NIF_TERM kAdbcColumnTypeBinaryView;
 static ERL_NIF_TERM kAdbcColumnTypeString;
 static ERL_NIF_TERM kAdbcColumnTypeLargeString;
 static ERL_NIF_TERM kAdbcColumnTypeStringView;
-#define kAdbcColumnTypeDecimal(bitwidth, precision, scale) enif_make_tuple4(env, kAtomDecimal, enif_make_int(env, bitwidth), enif_make_int(env, precision), enif_make_int(env, scale))
+#define kAdbcColumnTypeDecimal128(precision, scale) enif_make_tuple3(env, kAtomDecimal128, enif_make_int(env, precision), enif_make_int(env, scale))
+#define kAdbcColumnTypeDecimal256(precision, scale) enif_make_tuple3(env, kAtomDecimal256, enif_make_int(env, precision), enif_make_int(env, scale))
 #define kAdbcColumnTypeFixedSizeBinary(nbytes) enif_make_tuple2(env, kAtomFixedSizeBinary, enif_make_int64(env, nbytes))
 static ERL_NIF_TERM kAdbcColumnTypeDate32;
 static ERL_NIF_TERM kAdbcColumnTypeDate64;
@@ -143,7 +113,6 @@ constexpr int kErrorBufferDataIsNotAMap = 6;
 constexpr int kErrorBufferUnknownType = 7;
 constexpr int kErrorBufferGetMetadataKey = 8;
 constexpr int kErrorBufferGetMetadataValue = 9;
-constexpr int kErrorExpectedCalendarISO = 10;
 constexpr int kErrorInternalError = 11;
 constexpr int kErrorNilInNonNullableColumn = 12;
 
