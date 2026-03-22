@@ -93,7 +93,14 @@ defmodule Adbc.MixProject do
       source_ref: "v#{@version}",
       source_url: @github_url,
       groups_for_docs: [
-        "Column types": &(&1[:type] == :column_type)
+        "Column builders": &(&1[:type] == :column_builder)
+      ],
+      groups_for_modules: [
+        "Result types": [
+          Adbc.Result,
+          Adbc.IngestResult,
+          Adbc.StreamResult
+        ]
       ]
     ]
   end

@@ -1,108 +1,3 @@
-defmodule Adbc.Field do
-  @moduledoc """
-  Represents the schema definition of a column.
-
-  A field describes the name, type, nullability, and metadata
-  of a column without containing any data.
-
-  Use `new/2` to create a field:
-
-      Adbc.Field.new(:s32, name: "id")
-      Adbc.Field.new({:list, Adbc.Field.new(:s32)}, name: "ids", nullable: true)
-
-  """
-  @enforce_keys [:type]
-  defstruct [:name, :type, nullable: false, metadata: nil]
-
-  @type signed_integer :: :s8 | :s16 | :s32 | :s64
-  @type unsigned_integer :: :u8 | :u16 | :u32 | :u64
-  @type floating :: :f16 | :f32 | :f64
-
-  @type precision128 :: 1..38
-  @type precision256 :: 1..76
-  @type decimal128 :: {:decimal, 128, precision128(), integer()}
-  @type decimal256 :: {:decimal, 256, precision256(), integer()}
-  @type decimal :: decimal128 | decimal256
-
-  @type time_unit :: :seconds | :milliseconds | :microseconds | :nanoseconds
-  @type time32 :: {:time32, :seconds} | {:time32, :milliseconds}
-  @type time64 :: {:time64, :microseconds} | {:time64, :nanoseconds}
-  @type time :: time32() | time64()
-
-  @type timestamp ::
-          {:timestamp, :seconds, String.t()}
-          | {:timestamp, :milliseconds, String.t()}
-          | {:timestamp, :microseconds, String.t()}
-          | {:timestamp, :nanoseconds, String.t()}
-
-  @type duration ::
-          {:duration, :seconds}
-          | {:duration, :milliseconds}
-          | {:duration, :microseconds}
-          | {:duration, :nanoseconds}
-
-  @type interval_unit :: :month | :day_time | :month_day_nano
-
-  @type interval ::
-          {:interval, :month}
-          | {:interval, :day_time}
-          | {:interval, :month_day_nano}
-
-  @type data_type ::
-          :boolean
-          | signed_integer()
-          | unsigned_integer()
-          | floating()
-          | :binary
-          | :large_binary
-          | :binary_view
-          | :string
-          | :large_string
-          | :string_view
-          | :date32
-          | :date64
-          | time()
-          | timestamp()
-          | duration()
-          | interval()
-          | decimal()
-          | {:fixed_size_binary, non_neg_integer()}
-          | {:list, t()}
-          | {:large_list, t()}
-          | {:list_view, t()}
-          | {:large_list_view, t()}
-          | {:fixed_size_list, t(), integer()}
-          | {:struct, [t()]}
-          | {:dictionary, t(), t()}
-          | {:run_end_encoded, t(), t()}
-
-  @type t :: %__MODULE__{
-          name: String.t() | nil,
-          type: data_type(),
-          nullable: boolean(),
-          metadata: map() | nil
-        }
-
-  @doc """
-  Creates a new field with the given type and options.
-
-  ## Options
-
-    * `:name` - The name of the field
-    * `:nullable` - Whether the field is nullable (default: `false`)
-    * `:metadata` - A map of metadata
-  """
-  @spec new(data_type(), Keyword.t()) :: t()
-  def new(type, opts \\ []) do
-    %Adbc.Field{
-      name: opts[:name],
-      type: type,
-      nullable: opts[:nullable] || false,
-      metadata: opts[:metadata]
-    }
-  end
-end
-
 defmodule Adbc.Column do
   @moduledoc """
   Represents columns in the table.
@@ -117,9 +12,10 @@ defmodule Adbc.Column do
   nullable or not.
 
   The other functions in this module, such as `s8`, `boolean`,
-  etc, are meant to be low-level functions which expect all
-  relevant data to be given. For example, they won't automatically
-  detect nullable, you must explicitly provide said value as argument.
+  etc, are meant to be low-level functions which expect correct
+  data to be given. For example, they won't automatically
+  detect nullable, nor validate it, you must explicitly provide
+  said value as argument.
   """
   @enforce_keys [:field]
   defstruct [:field, :data]
@@ -354,7 +250,7 @@ defmodule Adbc.Column do
     raise ArgumentError, "cannot infer type for value in column: #{inspect(value)}"
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains booleans.
 
@@ -383,7 +279,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains unsigned 8-bit integers.
 
@@ -412,7 +308,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:u8, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains unsigned 16-bit integers.
 
@@ -441,7 +337,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:u16, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains un32-bit signed integers.
 
@@ -470,7 +366,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:u32, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains un64-bit signed integers.
 
@@ -499,7 +395,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:u64, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains signed 8-bit integers.
 
@@ -528,7 +424,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:s8, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains signed 16-bit integers.
 
@@ -557,7 +453,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:s16, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 32-bit signed integers.
 
@@ -586,7 +482,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:s32, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 64-bit signed integers.
 
@@ -615,7 +511,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:s64, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 16-bit half-precision floats.
 
@@ -644,7 +540,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 32-bit single-precision floats.
 
@@ -673,7 +569,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 64-bit double-precision floats.
 
@@ -702,7 +598,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 128-bit decimals.
 
@@ -733,7 +629,7 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains 256-bit decimals.
 
@@ -823,7 +719,7 @@ defmodule Adbc.Column do
     end
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains UTF-8 encoded strings.
 
@@ -852,7 +748,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:string, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains UTF-8 encoded large strings.
 
@@ -883,7 +779,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains binary values.
 
@@ -912,7 +808,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains large binary values.
 
@@ -943,7 +839,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains fixed size binaries.
 
@@ -976,7 +872,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains date represented as 32-bit signed integers in UTC.
 
@@ -998,7 +894,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:date32, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains date represented as 64-bit signed integers in UTC.
 
@@ -1020,7 +916,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new(:date64, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains time represented as signed integers in UTC.
 
@@ -1063,7 +959,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:time64, unit}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains timestamps represented as signed integers in the given timezone.
 
@@ -1102,7 +998,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:timestamp, unit, timezone}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains durations represented as 64-bit signed integers.
 
@@ -1131,7 +1027,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:duration, unit}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that contains durations represented as signed integers.
 
@@ -1174,7 +1070,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:interval, interval_unit}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   A column that each row is a list of some type or nil.
 
@@ -1195,7 +1091,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:list, inner_field}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   Similar to `list/3`, but for large lists.
 
@@ -1216,7 +1112,7 @@ defmodule Adbc.Column do
     %Adbc.Column{field: Adbc.Field.new({:large_list, inner_field}, opts), data: data}
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   Similar to `list/3`, but the length of the list is the same.
 
@@ -1242,7 +1138,7 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_type
+  @doc type: :column_builder
   @doc """
   Construct an array using dictionary encoding.
 
