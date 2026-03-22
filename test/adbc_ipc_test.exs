@@ -31,10 +31,38 @@ defmodule Adbc.IPC.Test do
               results = %Adbc.Result{
                 num_rows: nil,
                 data: [
-                  %Adbc.Column{field: %Adbc.Field{name: "sepal_length", type: :f64, metadata: nil, nullable: true}},
-                  %Adbc.Column{field: %Adbc.Field{name: "sepal_width", type: :f64, metadata: nil, nullable: true}},
-                  %Adbc.Column{field: %Adbc.Field{name: "petal_length", type: :f64, metadata: nil, nullable: true}},
-                  %Adbc.Column{field: %Adbc.Field{name: "petal_width", type: :f64, metadata: nil, nullable: true}},
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "sepal_length",
+                      type: :f64,
+                      metadata: nil,
+                      nullable: true
+                    }
+                  },
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "sepal_width",
+                      type: :f64,
+                      metadata: nil,
+                      nullable: true
+                    }
+                  },
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "petal_length",
+                      type: :f64,
+                      metadata: nil,
+                      nullable: true
+                    }
+                  },
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "petal_width",
+                      type: :f64,
+                      metadata: nil,
+                      nullable: true
+                    }
+                  },
                   %Adbc.Column{
                     field: %Adbc.Field{
                       name: "species",
@@ -50,17 +78,20 @@ defmodule Adbc.IPC.Test do
                num_rows: nil,
                data:
                  [
-                   %Adbc.Column{field: %Adbc.Field{name: "sepal_length", type: :f64, metadata: nil, nullable: true}},
-                   %Adbc.Column{field: %Adbc.Field{name: "sepal_width", type: :f64, metadata: nil, nullable: true}},
-                   %Adbc.Column{field: %Adbc.Field{name: "petal_length", type: :f64, metadata: nil, nullable: true}},
-                   %Adbc.Column{field: %Adbc.Field{name: "petal_width", type: :f64, metadata: nil, nullable: true}},
                    %Adbc.Column{
-                     field: %Adbc.Field{
-                       name: "species",
-                       type: :large_string,
-                       metadata: nil,
-                       nullable: true
-                     }
+                     field: %Adbc.Field{name: "sepal_length", type: :f64, nullable: true}
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "sepal_width", type: :f64, nullable: true}
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "petal_length", type: :f64, nullable: true}
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "petal_width", type: :f64, nullable: true}
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "species", type: :large_string, nullable: true}
                    }
                  ] = data
              } = Adbc.Result.materialize(results)
