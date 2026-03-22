@@ -31,15 +31,17 @@ defmodule Adbc.IPC.Test do
               results = %Adbc.Result{
                 num_rows: nil,
                 data: [
-                  %Adbc.Column{name: "sepal_length", type: :f64, metadata: nil, nullable: true},
-                  %Adbc.Column{name: "sepal_width", type: :f64, metadata: nil, nullable: true},
-                  %Adbc.Column{name: "petal_length", type: :f64, metadata: nil, nullable: true},
-                  %Adbc.Column{name: "petal_width", type: :f64, metadata: nil, nullable: true},
+                  %Adbc.Column{field: %Adbc.Field{name: "sepal_length", type: :f64, metadata: nil, nullable: true}},
+                  %Adbc.Column{field: %Adbc.Field{name: "sepal_width", type: :f64, metadata: nil, nullable: true}},
+                  %Adbc.Column{field: %Adbc.Field{name: "petal_length", type: :f64, metadata: nil, nullable: true}},
+                  %Adbc.Column{field: %Adbc.Field{name: "petal_width", type: :f64, metadata: nil, nullable: true}},
                   %Adbc.Column{
-                    name: "species",
-                    type: :large_string,
-                    metadata: nil,
-                    nullable: true
+                    field: %Adbc.Field{
+                      name: "species",
+                      type: :large_string,
+                      metadata: nil,
+                      nullable: true
+                    }
                   }
                 ]
               }} = IPC.load_stream(@iris_ipc_stream)
@@ -48,15 +50,17 @@ defmodule Adbc.IPC.Test do
                num_rows: nil,
                data:
                  [
-                   %Adbc.Column{name: "sepal_length", type: :f64, metadata: nil, nullable: true},
-                   %Adbc.Column{name: "sepal_width", type: :f64, metadata: nil, nullable: true},
-                   %Adbc.Column{name: "petal_length", type: :f64, metadata: nil, nullable: true},
-                   %Adbc.Column{name: "petal_width", type: :f64, metadata: nil, nullable: true},
+                   %Adbc.Column{field: %Adbc.Field{name: "sepal_length", type: :f64, metadata: nil, nullable: true}},
+                   %Adbc.Column{field: %Adbc.Field{name: "sepal_width", type: :f64, metadata: nil, nullable: true}},
+                   %Adbc.Column{field: %Adbc.Field{name: "petal_length", type: :f64, metadata: nil, nullable: true}},
+                   %Adbc.Column{field: %Adbc.Field{name: "petal_width", type: :f64, metadata: nil, nullable: true}},
                    %Adbc.Column{
-                     name: "species",
-                     type: :large_string,
-                     metadata: nil,
-                     nullable: true
+                     field: %Adbc.Field{
+                       name: "species",
+                       type: :large_string,
+                       metadata: nil,
+                       nullable: true
+                     }
                    }
                  ] = data
              } = Adbc.Result.materialize(results)
@@ -64,7 +68,7 @@ defmodule Adbc.IPC.Test do
       for column <- data do
         expected =
           __DIR__
-          |> Path.join("iris/#{column.name}.bin")
+          |> Path.join("iris/#{column.field.name}.bin")
           |> File.read!()
           |> :erlang.binary_to_term()
 
