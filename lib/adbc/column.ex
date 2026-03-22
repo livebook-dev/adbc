@@ -4,14 +4,15 @@ defmodule Adbc.Column do
 
   It contains the column's field definition and data.
   The field (an `Adbc.Field`) describes the column's name, type,
-  nullability, and metadata. The data is a list of values of the
-  column's data type.
+  nullability, and metadata. The data field is opaque and must
+  not be access directly, use functions such as `to_list/1`
+  to get a list of values of the column's data type.
 
   You can create new columns using `new/2`, which will infer
   a base type if none is given, and detect if the columns are
   nullable or not.
 
-  The other functions in this module, such as `s8`, `boolean`,
+  The other functions in this module, such as `s8/2`, `boolean/2`,
   etc, are meant to be low-level functions which expect correct
   data to be given. For example, they won't automatically
   detect nullable, nor validate it, you must explicitly provide
