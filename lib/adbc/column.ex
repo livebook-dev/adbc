@@ -121,6 +121,11 @@ defmodule Adbc.Column do
   defp encode_data({:time32, unit}, data), do: encode_time(data, unit, 32)
   defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
+
+  defp encode_data({:duration, _unit}, data),
+    do: encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)
+
+  defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
   defp encode_data(_type, data), do: data
 
   @float_atoms [:nan, :infinity, :neg_infinity]
@@ -1012,7 +1017,10 @@ defmodule Adbc.Column do
   def duration(data, unit, opts \\ [])
       when is_list(data) and is_list(opts) and
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
-    %Adbc.Column{field: Adbc.Field.new({:duration, unit}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:duration, unit}, opts),
+      data: [encode_signed(data, <<>>, <<>>, 0, 64, &encode_integer/1)]
+    }
   end
 
   @doc type: :column_builder
@@ -1055,7 +1063,10 @@ defmodule Adbc.Column do
   def interval(data, interval_unit, opts \\ [])
       when is_list(data) and is_list(opts) and
              interval_unit in [:month, :day_time, :month_day_nano] do
-    %Adbc.Column{field: Adbc.Field.new({:interval, interval_unit}, opts), data: [data]}
+    %Adbc.Column{
+      field: Adbc.Field.new({:interval, interval_unit}, opts),
+      data: [encode_interval(data, interval_unit)]
+    }
   end
 
   @doc type: :column_builder
@@ -1301,6 +1312,30 @@ defmodule Adbc.Column do
     end)
   end
 
+  def to_list(%Adbc.Column{field: %{type: {:duration, _unit}}, data: batches}) do
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_64(binary, bitmap, bit_offset, &Function.identity/1)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:interval, :month}}, data: batches}) do
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_signed_32(binary, bitmap, bit_offset, &Function.identity/1)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:interval, :day_time}}, data: batches}) do
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_interval_day_time(binary, bitmap, bit_offset)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:interval, :month_day_nano}}, data: batches}) do
+    Enum.flat_map(batches, fn {binary, bitmap, bit_offset} ->
+      decode_interval_month_day_nano(binary, bitmap, bit_offset)
+    end)
+  end
+
   def to_list(%Adbc.Column{field: %{type: {:decimal128, _, scale}}, data: batches}) do
     decoder = &coef_to_decimal(&1, scale)
 
@@ -1396,6 +1431,20 @@ defmodule Adbc.Column do
     end)
   end
 
+  defp encode_integer(integer) when is_integer(integer), do: integer
+
+  defp encode_interval(data, :month) do
+    encode_signed(data, <<>>, <<>>, 0, 32, &encode_integer/1)
+  end
+
+  defp encode_interval(data, :day_time) do
+    encode_interval_day_time(data, <<>>, <<>>, 0)
+  end
+
+  defp encode_interval(data, :month_day_nano) do
+    encode_interval_month_day_nano(data, <<>>, <<>>, 0)
+  end
+
   @unit_precision %{seconds: 0, milliseconds: 3, microseconds: 6, nanoseconds: 6}
 
   defp int_to_naive_datetime(val, unit) do
@@ -1441,46 +1490,153 @@ defmodule Adbc.Column do
   #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
   # `bitmap` is passed explicitly for Erlang binary append optimization.
 
-  defp encode_signed([], data, bitmap, pending, _size, _encoder)
-       when is_integer(pending) and byte_size(bitmap) == 0 do
+  defp encode_signed([], data, bitmap, pending, _size, _encoder) do
+    bitmap_finish(data, bitmap, pending)
+  end
+
+  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+  end
+
+  defp encode_signed([value | rest], data, bitmap, pending, size, encoder) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    encode_signed(rest, data, bitmap, pending, size, encoder)
+  end
+
+  ## Interval encoding (custom multi-field binary, avoids big integer arithmetic)
+
+  defp encode_interval_day_time([], data, bitmap, pending) do
+    bitmap_finish(data, bitmap, pending)
+  end
+
+  defp encode_interval_day_time([nil | rest], data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    encode_interval_day_time(rest, <<data::binary, 0::64>>, bitmap, pending)
+  end
+
+  defp encode_interval_day_time([{days, ms} | rest], data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    data = <<data::binary, days::signed-integer-little-32, ms::signed-integer-little-32>>
+    encode_interval_day_time(rest, data, bitmap, pending)
+  end
+
+  defp encode_interval_month_day_nano([], data, bitmap, pending) do
+    bitmap_finish(data, bitmap, pending)
+  end
+
+  defp encode_interval_month_day_nano([nil | rest], data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    encode_interval_month_day_nano(rest, <<data::binary, 0::128>>, bitmap, pending)
+  end
+
+  defp encode_interval_month_day_nano([{months, days, ns} | rest], data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+
+    data =
+      <<data::binary, months::signed-integer-little-32, days::signed-integer-little-32,
+        ns::signed-integer-little-64>>
+
+    encode_interval_month_day_nano(rest, data, bitmap, pending)
+  end
+
+  ## Interval decoding (custom multi-field binary, avoids big integer arithmetic)
+
+  defp decode_interval_day_time(binary, nil, _offset) do
+    decode_interval_day_time(binary)
+  end
+
+  defp decode_interval_day_time(binary, bitmap, offset) do
+    <<_::bits-size(offset), bitmap::bits>> = bitmap
+    decode_interval_day_time(binary, bitmap, [], 0)
+  end
+
+  defp decode_interval_day_time(
+         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>
+       ) do
+    [{days, ms} | decode_interval_day_time(rest)]
+  end
+
+  defp decode_interval_day_time(<<>>), do: []
+
+  defp decode_interval_day_time(
+         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>,
+         bitmap,
+         acc,
+         count
+       ) do
+    acc = [{days, ms} | acc]
+    count = count + 1
+    acc = maybe_nullify_each(bitmap, count, acc)
+    decode_interval_day_time(rest, bitmap, acc, count)
+  end
+
+  defp decode_interval_day_time(<<>>, bitmap, acc, count) do
+    Enum.reverse(maybe_nullify_end(bitmap, count, acc))
+  end
+
+  defp decode_interval_month_day_nano(binary, nil, _offset) do
+    decode_interval_month_day_nano(binary)
+  end
+
+  defp decode_interval_month_day_nano(binary, bitmap, offset) do
+    <<_::bits-size(offset), bitmap::bits>> = bitmap
+    decode_interval_month_day_nano(binary, bitmap, [], 0)
+  end
+
+  defp decode_interval_month_day_nano(
+         <<months::signed-integer-little-32, days::signed-integer-little-32,
+           ns::signed-integer-little-64, rest::binary>>
+       ) do
+    [{months, days, ns} | decode_interval_month_day_nano(rest)]
+  end
+
+  defp decode_interval_month_day_nano(<<>>), do: []
+
+  defp decode_interval_month_day_nano(
+         <<months::signed-integer-little-32, days::signed-integer-little-32,
+           ns::signed-integer-little-64, rest::binary>>,
+         bitmap,
+         acc,
+         count
+       ) do
+    acc = [{months, days, ns} | acc]
+    count = count + 1
+    acc = maybe_nullify_each(bitmap, count, acc)
+    decode_interval_month_day_nano(rest, bitmap, acc, count)
+  end
+
+  defp decode_interval_month_day_nano(<<>>, bitmap, acc, count) do
+    Enum.reverse(maybe_nullify_end(bitmap, count, acc))
+  end
+
+  defp bitmap_finish(data, bitmap, pending) when is_integer(pending) and byte_size(bitmap) == 0 do
     {data, nil, 0}
   end
 
-  defp encode_signed([], data, bitmap, pending, _size, _encoder) when is_integer(pending) do
+  defp bitmap_finish(data, bitmap, pending) when is_integer(pending) do
     {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
     bitmap = if rem_bits > 0, do: <<bitmap::binary, (1 <<< rem_bits) - 1>>, else: bitmap
     {data, bitmap, 0}
   end
 
-  defp encode_signed([], data, bitmap, {byte, _bits}, _size, _encoder) do
+  defp bitmap_finish(data, bitmap, {byte, _bits}) do
     {data, <<bitmap::binary, byte>>, 0}
   end
 
-  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder)
-       when is_integer(pending) do
+  @compile {:inline,
+            bitmap_put_bit: 4, bitmap_flush_valid: 2, bitmap_mark_valid: 2, bitmap_mark_null: 2}
+  defp bitmap_mark_valid(bitmap, pending) when is_integer(pending), do: {bitmap, pending + 1}
+  defp bitmap_mark_valid(bitmap, {byte, bits}), do: bitmap_put_bit(bitmap, byte, bits, 1)
+
+  defp bitmap_mark_null(bitmap, pending) when is_integer(pending) do
     {bitmap, rem_bits} = bitmap_flush_valid(bitmap, pending)
-    {bitmap, pending} = bitmap_put_bit(bitmap, (1 <<< rem_bits) - 1, rem_bits, 0)
-    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+    bitmap_put_bit(bitmap, (1 <<< rem_bits) - 1, rem_bits, 0)
   end
 
-  defp encode_signed([nil | rest], data, bitmap, {byte, bits}, size, encoder) do
-    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 0)
-    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
-  end
+  defp bitmap_mark_null(bitmap, {byte, bits}), do: bitmap_put_bit(bitmap, byte, bits, 0)
 
-  defp encode_signed([value | rest], data, bitmap, pending, size, encoder)
-       when is_integer(pending) do
-    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
-    encode_signed(rest, data, bitmap, pending + 1, size, encoder)
-  end
-
-  defp encode_signed([value | rest], data, bitmap, {byte, bits}, size, encoder) do
-    {bitmap, pending} = bitmap_put_bit(bitmap, byte, bits, 1)
-    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
-    encode_signed(rest, data, bitmap, pending, size, encoder)
-  end
-
-  @compile {:inline, bitmap_put_bit: 4, bitmap_flush_valid: 2}
   defp bitmap_put_bit(bitmap, byte, 7, bit) do
     {<<bitmap::binary, byte ||| bit <<< 7>>, 0}
   end

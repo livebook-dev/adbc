@@ -305,6 +305,14 @@ int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTyp
     return 0;
 }
 
+// Append raw bytes directly to the Arrow data buffer (buffer index 1).
+// Used when the Elixir side has already encoded data in Arrow's native layout.
+static int append_raw(struct ArrowArray* arr, const uint8_t* element, size_t element_bytes) {
+    NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(arr, 1), element, element_bytes));
+    arr->length++;
+    return 0;
+}
+
 // Parse a {binary, validity | nil, bit_offset} tuple and iterate elements,
 // calling the callback for each valid element's bytes.
 int get_buffer_tuple(ErlNifEnv *env, ERL_NIF_TERM data_term, bool nullable, struct ArrowArray* write_array, size_t element_bytes, const std::function<int(struct ArrowArray*, const uint8_t*)> &callback) {
@@ -352,32 +360,33 @@ int get_buffer_tuple(ErlNifEnv *env, ERL_NIF_TERM data_term, bool nullable, stru
     return 0;
 }
 
-int do_get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM batches_list, bool nullable, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
-    NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDecimal(schema_out, nanoarrow_type, precision, scale));
-
+// Generic ingest for types that store data as {binary, validity | nil, bit_offset} tuples.
+// The schema must already be set up on schema_out before calling this.
+int do_get_buffer_tuples(ErlNifEnv *env, ERL_NIF_TERM batches_list, bool nullable, size_t element_bytes, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     nanoarrow::UniqueArray tmp;
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
 
-    size_t element_bytes = bitwidth / 8;
-    auto append_decimal = [nanoarrow_type, bitwidth, precision, scale](struct ArrowArray* arr, const uint8_t* element) -> int {
-        struct ArrowDecimal val{};
-        ArrowDecimalInit(&val, bitwidth, precision, scale);
-        ArrowDecimalSetBytes(&val, element);
-        return ArrowArrayAppendDecimal(arr, &val);
+    auto append = [element_bytes](struct ArrowArray* arr, const uint8_t* element) -> int {
+        return append_raw(arr, element, element_bytes);
     };
 
     ERL_NIF_TERM head, tail;
     tail = batches_list;
     while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int ret = get_buffer_tuple(env, head, nullable, write_array, element_bytes, append_decimal);
+        int ret = get_buffer_tuple(env, head, nullable, write_array, element_bytes, append);
         if (ret != 0) return ret;
     }
 
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
     ArrowArrayMove(tmp.get(), array_out);
     return 0;
+}
+
+int do_get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM batches_list, bool nullable, ArrowType nanoarrow_type, int32_t bitwidth, int32_t precision, int32_t scale, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+    NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDecimal(schema_out, nanoarrow_type, precision, scale));
+    return do_get_buffer_tuples(env, batches_list, nullable, bitwidth / 8, array_out, schema_out, error_out);
 }
 
 int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batches_list, bool nullable, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
@@ -596,223 +605,29 @@ int do_get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullab
 
 int do_get_list_date(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-
-    size_t element_bytes = (nanoarrow_type == NANOARROW_TYPE_DATE32) ? 4 : 8;
-    auto append_int = [element_bytes](struct ArrowArray* arr, const uint8_t* element) -> int {
-        int64_t val;
-        if (element_bytes == 4) {
-            int32_t v;
-            memcpy(&v, element, 4);
-            val = v;
-        } else {
-            memcpy(&val, element, 8);
-        }
-        return ArrowArrayAppendInt(arr, val);
-    };
-
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_buffer_tuple(env, batch, nullable, write_array, element_bytes, append_int);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
+    return do_get_buffer_tuples(env, list, nullable, (nanoarrow_type == NANOARROW_TYPE_DATE32) ? 4 : 8, array_out, schema_out, error_out);
 }
 
 int do_get_list_time(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, enum ArrowTimeUnit time_unit, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out, nanoarrow_type, time_unit, NULL));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-
-    size_t element_bytes = (nanoarrow_type == NANOARROW_TYPE_TIME32) ? 4 : 8;
-    auto append_int = [element_bytes](struct ArrowArray* arr, const uint8_t* element) -> int {
-        int64_t val;
-        if (element_bytes == 4) {
-            int32_t v;
-            memcpy(&v, element, 4);
-            val = v;
-        } else {
-            memcpy(&val, element, 8);
-        }
-        return ArrowArrayAppendInt(arr, val);
-    };
-
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_buffer_tuple(env, batch, nullable, write_array, element_bytes, append_int);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
+    return do_get_buffer_tuples(env, list, nullable, (nanoarrow_type == NANOARROW_TYPE_TIME32) ? 4 : 8, array_out, schema_out, error_out);
 }
 
 int do_get_list_timestamp(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, enum ArrowTimeUnit time_unit, const char * timezone, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out, nanoarrow_type, time_unit, timezone));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-
-    auto append_int64 = [](struct ArrowArray* arr, const uint8_t* element) -> int {
-        int64_t val;
-        memcpy(&val, element, 8);
-        return ArrowArrayAppendInt(arr, val);
-    };
-
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_buffer_tuple(env, batch, nullable, write_array, 8, append_int64);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
-}
-
-int get_list_duration(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, int64_t val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int64_t val;
-        if (erlang::nif::get(env, head, &val)) {
-            NANOARROW_RETURN_NOT_OK(callback(write_array, val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
+    return do_get_buffer_tuples(env, list, nullable, 8, array_out, schema_out, error_out);
 }
 
 int do_get_list_duration(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, enum ArrowTimeUnit time_unit, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeDateTime(schema_out, nanoarrow_type, time_unit, NULL));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_duration(env, batch, nullable, write_array, ArrowArrayAppendInt);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
-}
-
-int get_list_interval_month(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowInterval * val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    struct ArrowInterval val{};
-    val.type = NANOARROW_TYPE_INTERVAL_MONTHS;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int32_t months;
-        if (erlang::nif::get(env, head, &months)) {
-            val.months = months;
-            NANOARROW_RETURN_NOT_OK(callback(write_array, &val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int get_list_interval_day_time(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowInterval * val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    struct ArrowInterval val{};
-    val.type = NANOARROW_TYPE_INTERVAL_DAY_TIME;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int32_t days, milliseconds;
-        const ERL_NIF_TERM *tuple = nullptr;
-        int arity;
-        if (enif_get_tuple(env, head, &arity, &tuple) && arity == 2) {
-            if (!erlang::nif::get(env, tuple[0], &days) || !erlang::nif::get(env, tuple[1], &milliseconds)) {
-                return 1;
-            }
-            val.days = days;
-            val.ms = milliseconds;
-            NANOARROW_RETURN_NOT_OK(callback(write_array, &val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int get_list_duration_month_day_nano(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowInterval * val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    struct ArrowInterval val{};
-    val.type = NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int32_t months, days;
-        int64_t nanoseconds;
-        const ERL_NIF_TERM *tuple = nullptr;
-        int arity;
-        if (enif_get_tuple(env, head, &arity, &tuple) && arity == 3) {
-            if (!erlang::nif::get(env, tuple[0], &months) ||
-                !erlang::nif::get(env, tuple[1], &days) ||
-                !erlang::nif::get(env, tuple[2], &nanoseconds)) {
-                return 1;
-            }
-            val.months = months;
-            val.days = days;
-            val.ns = nanoseconds;
-            NANOARROW_RETURN_NOT_OK(callback(write_array, &val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
+    return do_get_buffer_tuples(env, list, nullable, 8, array_out, schema_out, error_out);
 }
 
 int do_get_list_interval(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    int(*get_list_interval)(ErlNifEnv *, ERL_NIF_TERM, bool, struct ArrowArray*, const std::function<int(struct ArrowArray*, struct ArrowInterval *)> &) = nullptr;
-
-    if (nanoarrow_type == NANOARROW_TYPE_INTERVAL_MONTHS) {
-        get_list_interval = get_list_interval_month;
-    } else if (nanoarrow_type == NANOARROW_TYPE_INTERVAL_DAY_TIME) {
-        get_list_interval = get_list_interval_day_time;
-    } else if (nanoarrow_type == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO) {
-        get_list_interval = get_list_duration_month_day_nano;
-    } else {
-        return 1;
-    }
-
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_interval(env, batch, nullable, write_array, ArrowArrayAppendInterval);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
+    size_t element_bytes = (nanoarrow_type == NANOARROW_TYPE_INTERVAL_MONTHS) ? 4 :
+                           (nanoarrow_type == NANOARROW_TYPE_INTERVAL_DAY_TIME) ? 8 : 16;
+    return do_get_buffer_tuples(env, list, nullable, element_bytes, array_out, schema_out, error_out);
 }
 
 int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, bool nullable, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {

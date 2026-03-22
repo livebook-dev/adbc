@@ -1287,7 +1287,6 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     }
 
                     if (format_processed) {
-                        using value_type = int64_t;
                         if (count == -1) count = values->length;
                         if (count > values->length) count = values->length - offset;
                         if (values->n_buffers != 2) {
@@ -1295,14 +1294,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                             return 1;
                         }
 
-                        current_term = values_from_buffer(
-                            env,
-                            offset,
-                            count,
-                            (const uint8_t *)values->buffers[bitmap_buffer_index],
-                            (const value_type *)values->buffers[data_buffer_index],
-                            enif_make_int64
-                        );
+                        current_term = make_buffer_tuple(env, values, offset, count, 8, data_buffer_index, bitmap_buffer_index, resource);
                     }
                 } else if (format[1] == 'i') {
                     // possible format strings:
@@ -1326,68 +1318,22 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     }
 
                     if (format_processed) {
+                        size_t element_bytes;
                         if (format[2] == 'M') {
-                            using value_type = int32_t;
-                            if (count == -1) count = values->length;
-                            if (count > values->length) count = values->length - offset;
-                            if (values->n_buffers != 2) {
-                                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=tiM), values->n_buffers != 2");
-                                return 1;
-                            }
-
-                            current_term = values_from_buffer(
-                                env,
-                                offset,
-                                count,
-                                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                                (const value_type *)values->buffers[data_buffer_index],
-                                enif_make_int64
-                            );
+                            element_bytes = 4;
                         } else if (format[2] == 'D') {
-                            using value_type = int64_t;
-                            if (count == -1) count = values->length;
-                            if (count > values->length) count = values->length - offset;
-                            if (values->n_buffers != 2) {
-                                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=tiD), values->n_buffers != 2");
-                                return 1;
-                            }
-
-                            current_term = values_from_buffer(
-                                env,
-                                offset,
-                                count,
-                                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                                (const value_type *)values->buffers[data_buffer_index],
-                                [](ErlNifEnv *env, int64_t val) -> ERL_NIF_TERM {
-                                    int32_t days = val & 0xFFFFFFFF;
-                                    int32_t time = val >> 32;
-                                    return enif_make_tuple2(env, enif_make_int(env, days), enif_make_int(env, time));
-                                }
-                            );
+                            element_bytes = 8;
                         } else {
-                            using value_type = struct {
-                                int64_t data[2];
-                            };
-                            if (count == -1) count = values->length;
-                            if (count > values->length) count = values->length - offset;
-                            if (values->n_buffers != 2) {
-                                error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=tin), values->n_buffers != 2");
-                                return 1;
-                            }
-
-                            current_term = values_from_buffer(
-                                env,
-                                offset,
-                                count,
-                                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                                (const value_type *)values->buffers[data_buffer_index],
-                                [](ErlNifEnv *env, value_type val) -> ERL_NIF_TERM {
-                                    int32_t months = val.data[0] & 0xFFFFFFFF;
-                                    int32_t days = val.data[0] >> 32;
-                                    return enif_make_tuple3(env, enif_make_int64(env, months), enif_make_int64(env, days), enif_make_int64(env, val.data[1]));
-                                }
-                            );
+                            element_bytes = 16;
                         }
+                        if (count == -1) count = values->length;
+                        if (count > values->length) count = values->length - offset;
+                        if (values->n_buffers != 2) {
+                            snprintf(err_msg_buf, 255, "invalid n_buffers value for ArrowArray (format=%s), values->n_buffers != 2", schema->format);
+                            error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+                            return 1;
+                        }
+                        current_term = make_buffer_tuple(env, values, offset, count, element_bytes, data_buffer_index, bitmap_buffer_index, resource);
                     }
                 } else {
                     format_processed = false;
