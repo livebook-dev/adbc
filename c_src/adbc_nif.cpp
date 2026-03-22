@@ -19,6 +19,7 @@ template<> ErlNifResourceType * NifRes<struct AdbcStatement>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct AdbcError>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStream>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStreamRecord>::type = nullptr;
+template<> ErlNifResourceType * NifRes<struct AdbcDeleteOnGC>::type = nullptr;
 
 static ERL_NIF_TERM nif_error_from_arrow_error(ErlNifEnv *env, struct ArrowError * arrow_error) {
     return erlang::nif::error(env, enif_make_tuple4(env,
@@ -110,7 +111,7 @@ static ERL_NIF_TERM adbc_get_option(ErlNifEnv *env, const ERL_NIF_TERM argv[], G
             } else {
                 code = get_bytes(&resource->val, key.c_str(), out_value, &value_len, &adbc_error);
             }
-            
+
             if (code != ADBC_STATUS_OK) {
                 return nif_error_from_adbc_error(env, &adbc_error);
             }
@@ -487,6 +488,31 @@ static ERL_NIF_TERM adbc_arrow_array_stream_get_pointer(ErlNifEnv *env, int argc
     return enif_make_uint64(env, reinterpret_cast<uint64_t>(&res->val));
 }
 
+static ERL_NIF_TERM adbc_arrow_array_stream_from_pointer(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct ArrowArrayStream>;
+    ERL_NIF_TERM error{};
+
+    ErlNifUInt64 pointer = 0;
+    if (!enif_get_uint64(env, argv[0], &pointer)) {
+        return enif_make_badarg(env);
+    }
+
+    auto array_stream = res_type::allocate_resource(env, error);
+    if (array_stream == nullptr) {
+        return error;
+    }
+
+    // We want to take full ownership of the stream, so we copy it
+    // into our resource-managed memory and we disable the release
+    // on the source, so that we are the ones responsible for
+    // releasing the stream.
+    auto source = reinterpret_cast<struct ArrowArrayStream *>(pointer);
+    memcpy(&array_stream->val, source, sizeof(struct ArrowArrayStream));
+    source->release = nullptr;
+
+    return erlang::nif::ok(env, array_stream->make_resource(env));
+}
+
 static ERL_NIF_TERM adbc_arrow_array_stream_next(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     using res_type = NifRes<struct ArrowArrayStream>;
     ERL_NIF_TERM error{};
@@ -541,7 +567,7 @@ static ERL_NIF_TERM adbc_arrow_array_stream_next(ErlNifEnv *env, int argc, const
     }
     schema = (struct ArrowSchema *)res->private_data;
     code = arrow_schema_to_nif_term(env, schema, &array, out_terms, error);
-    // the outter array should be released because we have moved the values 
+    // the outter array should be released because we have moved the values
     // for each column to the corresponding reference in `Adbc.Column.data`
     if (array.release) {
         array.release(&array);
@@ -561,26 +587,24 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
     using record_type = NifRes<struct ArrowArrayStreamRecord>;
     record_type * res = nullptr;
 
+    if (!enif_is_list(env, argv[0])) {
+        return enif_make_badarg(env);
+    }
+
     std::vector<ERL_NIF_TERM> data_ref;
-    if (enif_is_ref(env, argv[0])) {
-        data_ref.emplace_back(argv[0]);
-    } else if (enif_is_list(env, argv[0])) {
-        unsigned int length;
-        ERL_NIF_TERM list = argv[0];
-        if (!enif_get_list_length(env, list, &length)) {
+    unsigned int length;
+    ERL_NIF_TERM list = argv[0];
+    if (!enif_get_list_length(env, list, &length)) {
+        return enif_make_badarg(env);
+    }
+
+    ERL_NIF_TERM head, tail;
+    while (enif_get_list_cell(env, list, &head, &tail)) {
+        if (!enif_is_ref(env, head)) {
             return enif_make_badarg(env);
         }
-
-        ERL_NIF_TERM head, tail;
-        while (enif_get_list_cell(env, list, &head, &tail)) {
-            if (!enif_is_ref(env, head)) {
-                return enif_make_badarg(env);
-            }
-            data_ref.emplace_back(head);
-            list = tail;
-        }
-    } else {
-        return enif_make_badarg(env);
+        data_ref.emplace_back(head);
+        list = tail;
     }
 
     std::vector<ERL_NIF_TERM> materialized;
@@ -610,7 +634,7 @@ static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_
 
         materialized.emplace_back(ret);
     }
-    
+
     ERL_NIF_TERM ret = enif_make_list_from_array(env, materialized.data(), materialized.size());
     return erlang::nif::ok(env, ret);
 }
@@ -709,6 +733,29 @@ static ERL_NIF_TERM adbc_statement_execute_query(ErlNifEnv *env, int argc, const
     return enif_make_tuple3(env,
         erlang::nif::ok(env),
         ret,
+        enif_make_int64(env, rows_affected)
+    );
+}
+
+static ERL_NIF_TERM adbc_statement_execute(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct AdbcStatement>;
+
+    ERL_NIF_TERM error{};
+
+    res_type * statement = nullptr;
+    if ((statement = res_type::get_resource(env, argv[0], error)) == nullptr) {
+        return error;
+    }
+
+    int64_t rows_affected = 0;
+    struct AdbcError adbc_error{};
+    AdbcStatusCode code = AdbcStatementExecuteQuery(&statement->val, nullptr, &rows_affected, &adbc_error);
+    if (code != ADBC_STATUS_OK) {
+        return nif_error_from_adbc_error(env, &adbc_error);
+    }
+
+    return enif_make_tuple2(env,
+        erlang::nif::ok(env),
         enif_make_int64(env, rows_affected)
     );
 }
@@ -941,6 +988,34 @@ static ERL_NIF_TERM adbc_ipc_system_endianness(ErlNifEnv *env, int argc, const E
     }
 }
 
+static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct AdbcDeleteOnGC>;
+
+    ERL_NIF_TERM error{};
+
+    ErlNifPid pid;
+    if (!enif_get_local_pid(env, argv[0], &pid)) {
+        return enif_make_badarg(env);
+    }
+
+    std::string table_name;
+    if (!erlang::nif::get(env, argv[1], table_name)) {
+        return enif_make_badarg(env);
+    }
+
+    res_type *res = res_type::allocate_resource(env, error);
+    if (res == nullptr) {
+        return error;
+    }
+
+    res->val.pid = pid;
+    new (&res->val.table_name) std::string(std::move(table_name));
+
+    ERL_NIF_TERM ref = res->make_resource(env);
+    enif_release_resource(res);
+    return ref;
+}
+
 static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     ErlNifResourceType *rt;
 
@@ -986,6 +1061,13 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
         res_type::type = rt;
     }
 
+    {
+        using res_type = NifRes<struct AdbcDeleteOnGC>;
+        rt = enif_open_resource_type(env, "Elixir.Adbc.Nif", "NifResAdbcDeleteOnGC", destruct_adbc_delete_on_gc, ERL_NIF_RT_CREATE, NULL);
+        if (!rt) return -1;
+        res_type::type = rt;
+    }
+
     kAtomAdbcError = erlang::nif::atom(env, "adbc_error");
     kAtomNil = erlang::nif::atom(env, "nil");
     kAtomTrue = erlang::nif::atom(env, "true");
@@ -1004,8 +1086,6 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomSizes = erlang::nif::atom(env, "sizes");
     kAtomValues = erlang::nif::atom(env, "values");
     kAtomRunEnds = erlang::nif::atom(env, "run_ends");
-    kAtomOffset = erlang::nif::atom(env, "offset");
-    kAtomLength = erlang::nif::atom(env, "length");
 
     kAtomDecimal = erlang::nif::atom(env, "decimal");
     kAtomFixedSizeBinary = erlang::nif::atom(env, "fixed_size_binary");
@@ -1022,7 +1102,7 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomMonth = erlang::nif::atom(env, "month");
     kAtomDayTime = erlang::nif::atom(env, "day_time");
     kAtomMonthDayNano = erlang::nif::atom(env, "month_day_nano");
-    
+
     kAtomCalendarKey = erlang::nif::atom(env, "calendar");
     kAtomCalendarISO = erlang::nif::atom(env, "Elixir.Calendar.ISO");
 
@@ -1039,11 +1119,15 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomMicrosecondKey = erlang::nif::atom(env, "microsecond");
 
     kAtomAdbcColumnModule = erlang::nif::atom(env, "Elixir.Adbc.Column");
+    kAtomAdbcFieldModule = erlang::nif::atom(env, "Elixir.Adbc.Field");
+    kAtomFieldKey = erlang::nif::atom(env, "field");
     kAtomNameKey = erlang::nif::atom(env, "name");
     kAtomTypeKey = erlang::nif::atom(env, "type");
     kAtomNullableKey = erlang::nif::atom(env, "nullable");
     kAtomMetadataKey = erlang::nif::atom(env, "metadata");
     kAtomDataKey = erlang::nif::atom(env, "data");
+    kAtomLengthKey = erlang::nif::atom(env, "length");
+    kAtomOffsetKey = erlang::nif::atom(env, "offset");
 
     kAdbcColumnTypeBool = erlang::nif::atom(env, "boolean");
     kAdbcColumnTypeS8 = erlang::nif::atom(env, "s8");
@@ -1059,8 +1143,10 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAdbcColumnTypeF64 = erlang::nif::atom(env, "f64");
     kAdbcColumnTypeBinary = erlang::nif::atom(env, "binary");
     kAdbcColumnTypeLargeBinary = erlang::nif::atom(env, "large_binary");
+    kAdbcColumnTypeBinaryView = erlang::nif::atom(env, "binary_view");
     kAdbcColumnTypeString = erlang::nif::atom(env, "string");
     kAdbcColumnTypeLargeString = erlang::nif::atom(env, "large_string");
+    kAdbcColumnTypeStringView = erlang::nif::atom(env, "string_view");
     kAdbcColumnTypeDate32 = erlang::nif::atom(env, "date32");
     kAdbcColumnTypeDate64 = erlang::nif::atom(env, "date64");
     kAdbcColumnTypeList = erlang::nif::atom(env, "list");
@@ -1090,10 +1176,10 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
         {"g", {kAdbcColumnTypeF64}},
         {"z", {kAdbcColumnTypeBinary}},
         {"Z", {kAdbcColumnTypeLargeBinary}},
-        // {"vz", kAdbcColumnTypeBinaryView}, // not implemented yet
+        {"vz", {kAdbcColumnTypeBinaryView}},
         {"u", {kAdbcColumnTypeString}},
         {"U", {kAdbcColumnTypeLargeString}},
-        // {"vu", kAdbcColumnTypeStringView}, // not implemented yet
+        {"vu", {kAdbcColumnTypeStringView}},
         {"tdD", {kAdbcColumnTypeDate32}},
         {"tdm", {kAdbcColumnTypeDate64}},
         // we cannot call enif_make_tuple2 here and reuse the tuple later
@@ -1140,19 +1226,21 @@ static ErlNifFunc nif_functions[] = {
     {"adbc_statement_get_option", 3, adbc_statement_get_option, 0},
     {"adbc_statement_set_option", 4, adbc_statement_set_option, 0},
     {"adbc_statement_execute_query", 1, adbc_statement_execute_query, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"adbc_statement_execute", 1, adbc_statement_execute, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_statement_prepare", 1, adbc_statement_prepare, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_statement_set_sql_query", 2, adbc_statement_set_sql_query, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_statement_bind", 2, adbc_statement_bind, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_statement_bind_stream", 2, adbc_statement_bind_stream, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_arrow_array_stream_get_pointer", 1, adbc_arrow_array_stream_get_pointer, 0},
+    {"adbc_arrow_array_stream_from_pointer", 1, adbc_arrow_array_stream_from_pointer, 0},
     {"adbc_arrow_array_stream_next", 1, adbc_arrow_array_stream_next, ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"adbc_arrow_array_stream_release", 1, adbc_arrow_array_stream_release, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_column_materialize", 1, adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"adbc_delete_on_gc_new", 2, adbc_delete_on_gc_new, 0},
 
     {"adbc_ipc_system_endianness", 0, adbc_ipc_system_endianness, 0},
-
     {"adbc_ipc_load_stream_binary", 1, adbc_ipc_load_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"adbc_ipc_dump_stream_binary", 1, adbc_ipc_dump_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
 };

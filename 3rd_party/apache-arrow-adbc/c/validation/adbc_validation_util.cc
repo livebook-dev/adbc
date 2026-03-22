@@ -16,6 +16,11 @@
 // under the License.
 
 #include "adbc_validation_util.h"
+
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <arrow-adbc/adbc.h>
 
 #include "adbc_validation.h"
@@ -315,7 +320,7 @@ std::string GetDriverVendorVersion(struct AdbcConnection* connection) {
   reader.GetSchema();
   if (error.release) {
     error.release(&error);
-    throw std::runtime_error("error occured calling AdbcConnectionGetInfo!");
+    throw std::runtime_error("error occurred calling AdbcConnectionGetInfo!");
   }
 
   reader.Next();

@@ -1,9 +1,0 @@
-{
-    "exclude": [
-        "**/.asv/",
-        "**/_version.py",
-        "**/setup.py",
-        "**/build/",
-        "**/benchmarks/"
-    ]
-}

@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## v0.9.0
+
+Require Erlang/OTP 26+.
+
+#### Enhancements
+
+* Add `Adbc.Connection.bulk_insert`
+* Add `Adbc.Connection.py_query` for fetching Python tables
+* Add `Adbc.Result.from_py` to read data from Python
+* Allow fast data transfer across connections
+* Add support for string/binary view types
+
+## v0.8.0
+
+Require Erlang/OTP 26+.
+
+#### Enhancements
+
+* Support structs in `Adbc.Column.to_list`
+* Implement `Table.Reader` for `ADBC.Result`
+* Update to latest DuckDB
+* Allow version to be given on database start
+
+## v0.7.9
+
+#### Changes
+
+* Update to latest ADBC
+* Update to latest DuckDB
+* Update to Erlang/OTP 25+
+
+#### Fixes
+
+* Ensure all arrow fields are correctly decoded
+* Properly handle decimal fields where the bits are set
+
 ## v0.7.8
 
 #### Fixes

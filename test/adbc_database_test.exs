@@ -1,5 +1,5 @@
 defmodule Adbc.DatabaseTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   doctest Adbc.Database
   alias Adbc.Database
 

@@ -15,12 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
+
 #include <arrow-adbc/adbc.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest-matchers.h>
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
 #include <nanoarrow/nanoarrow.h>
+
 #include "validation/adbc_validation.h"
 #include "validation/adbc_validation_util.h"
 
@@ -34,7 +37,7 @@ class DremioFlightSqlQuirks : public adbc_validation::DriverQuirks {
     const char* user_raw = std::getenv("ADBC_DREMIO_FLIGHTSQL_USER");
     const char* pass_raw = std::getenv("ADBC_DREMIO_FLIGHTSQL_PASS");
     if (!uri_raw || !user_raw || !pass_raw) {
-      SetError(error, "Missing required environment variables");
+      InternalAdbcSetError(error, "Missing required environment variables");
       return ADBC_STATUS_INVALID_ARGUMENT;
     }
     EXPECT_THAT(AdbcDatabaseSetOption(database, "uri", uri_raw, error),

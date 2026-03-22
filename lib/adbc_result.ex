@@ -1,10 +1,67 @@
+defmodule Adbc.StreamResult do
+  @moduledoc """
+  Represents an unmaterialized Arrow stream from a query.
+
+  This struct can only be used within the callback passed to
+  `Adbc.Connection.query_pointer/4`. The stream can only be consumed
+  **once** - after being passed to `bulk_insert/3` or other operations,
+  it becomes invalid.
+
+  It contains:
+
+    * `:ref` - internal reference to the stream (do not use directly)
+    * `:conn` - internal connection pid (do not use directly)
+    * `:pointer` - pointer to the ArrowArrayStream (integer memory address)
+    * `:num_rows` - the number of rows affected by the query, may be `nil`
+      for queries depending on the database driver
+  """
+  defstruct [:conn, :ref, :pointer, :num_rows]
+
+  @type t :: %__MODULE__{
+          conn: pid(),
+          ref: reference(),
+          pointer: non_neg_integer(),
+          num_rows: non_neg_integer() | nil
+        }
+end
+
+defmodule Adbc.IngestResult do
+  @moduledoc """
+  Represents the result of an `Adbc.Connection.ingest/2` operation.
+
+  The data is stored in a temporary table that is automatically
+  dropped when this struct is garbage collected.
+
+  It contains:
+
+    * `:ref` - internal reference that controls the table lifetime (do not use directly)
+    * `:table` - the name of the temporary table
+    * `:num_rows` - the number of rows ingested
+
+  > ### Garbage collection {: .warning}
+  >
+  > You must always hold a whole reference to the struct,
+  > and not individual fields. For example, if you only
+  > keep a reference to `result.table`, then the struct will
+  > be GCed, and so would be the table.
+  """
+  defstruct [:ref, :table, :num_rows]
+
+  @type t :: %__MODULE__{
+          ref: reference(),
+          table: String.t(),
+          num_rows: non_neg_integer()
+        }
+end
+
 defmodule Adbc.Result do
   @moduledoc """
   A struct returned as result from queries.
 
   It has two fields:
 
-    * `:data` - a list of `Adbc.Column`
+    * `:data` - a list of `Adbc.Column`. The `Adbc.Column` may
+      not yet have been materialized
 
     * `:num_rows` - the number of rows returned, if returned
       by the database
@@ -13,7 +70,7 @@ defmodule Adbc.Result do
 
   @type t :: %Adbc.Result{
           num_rows: non_neg_integer() | nil,
-          data: [%Adbc.Column{}]
+          data: [Adbc.Column.t()]
         }
 
   @doc """
@@ -25,57 +82,65 @@ defmodule Adbc.Result do
     %{result | data: Enum.map(data, &Adbc.Column.materialize/1)}
   end
 
-  # allow for the result to be wrapped in an `{:ok, result}` tuple
-  # and also allow error tuples to pass through
-  # easier to use in pipelines
-  def materialize({:ok, %Adbc.Result{data: data} = result}) when is_list(data) do
-    {:ok, %{result | data: Enum.map(data, &Adbc.Column.materialize/1)}}
-  end
-
-  def materialize({:error, reason}), do: {:error, reason}
-
   @doc """
   Returns a map of columns as a result.
   """
   def to_map(result = %Adbc.Result{}) do
-    Map.new(to_list(materialize(result)).data, fn %Adbc.Column{name: name, type: type, data: data} ->
-      case type do
-        :list -> {name, Enum.map(data, &list_to_map/1)}
-        _ -> {name, data}
-      end
+    Map.new(result.data, fn %Adbc.Column{field: %{name: name}} = column ->
+      {name, column |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
     end)
   end
 
   @doc """
-  Convert any list view in the result set to normal lists.
+  Consumes Arrow data from a Python object that implements the
+  [ArrowStream Export interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html#arrowstream-export).
+
+  The interface is typically implemented for dataframe objects, including
+  ones from Pandas and Polars.
+
+  It returns an ok-tuple with `Adbc.Result` or an error-tuple.
+  You often want to call `Adbc.Result.materialize/1` or
+  `Adbc.Result.to_map/1` on the results to consume it.
   """
-  @spec to_list(%Adbc.Result{}) :: %Adbc.Result{}
-  def to_list(result = %Adbc.Result{data: data}) when is_list(data) do
-    %{result | data: Enum.map(data, &Adbc.Column.to_list/1)}
+  def from_py(py_object) do
+    case Adbc.Helper.from_py(py_object) do
+      {:ok, stream_ref, capsule} -> do_stream_results(stream_ref, [], capsule)
+      {:error, error} -> raise error
+    end
   end
 
-  defp list_to_map(nil), do: nil
+  defp do_stream_results(reference, acc, capsule) do
+    case Adbc.Nif.adbc_arrow_array_stream_next(reference) do
+      {:ok, result} ->
+        do_stream_results(reference, [result | acc], capsule)
 
-  defp list_to_map(%Adbc.Column{name: name, type: type, data: data}) do
-    case type do
-      :list ->
-        list = Enum.map(data, &list_to_map/1)
+      :end_of_series ->
+        {:ok, %Adbc.Result{data: merge_columns(Enum.reverse(acc)), num_rows: nil}}
 
-        if name == "item" do
-          list
-        else
-          {name, list}
-        end
-
-      :struct ->
-        Enum.map(data, &list_to_map/1)
-
-      _ ->
-        if name == "item" do
-          data
-        else
-          {name, data}
-        end
+      {:error, reason} ->
+        {:error, Adbc.Helper.error_to_exception(reason)}
     end
+  end
+
+  defp merge_columns(chucked_results) do
+    Enum.zip_with(chucked_results, fn columns ->
+      Enum.reduce(columns, fn column, merged_column ->
+        %{merged_column | data: merged_column.data ++ column.data}
+      end)
+    end)
+  end
+end
+
+defimpl Table.Reader, for: Adbc.Result do
+  def init(result) do
+    data =
+      Enum.map(result.data, fn column ->
+        column
+        |> Adbc.Column.materialize()
+        |> Adbc.Column.to_list()
+      end)
+
+    names = Enum.map(result.data, & &1.field.name)
+    {:columns, %{columns: names, count: result.num_rows}, data}
   end
 end

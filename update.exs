@@ -12,12 +12,12 @@ Mix.install([{:req, "~> 0.4"}])
 defmodule Update do
   # To update duckdb driver, just bump this version
   # https://github.com/duckdb/duckdb/releases/
-  @duckdb_version "1.1.3"
+  @duckdb_version "1.4.1"
 
   # To update ADBC drivers, bump the tag and version accordingly
   # https://github.com/apache/arrow-adbc/releases
-  @adbc_driver_version "1.4.0"
-  @adbc_tag "apache-arrow-adbc-16"
+  @adbc_driver_version "1.7.0"
+  @adbc_tag "apache-arrow-adbc-19"
   @adbc_drivers ~w(sqlite postgresql flightsql snowflake bigquery)a
 
   def versions do
@@ -45,7 +45,7 @@ defmodule Update do
 
     {aarch64_apple_darwin, zip_files} = data_for(zip_files, ["osx", "universal"])
     {x86_64_apple_darwin, zip_files} = {aarch64_apple_darwin, zip_files}
-    {aarch64_linux_gnu, zip_files} = data_for(zip_files, ["linux", "aarch64"])
+    {aarch64_linux_gnu, zip_files} = data_for(zip_files, ["linux", "arm64"])
     {x86_64_linux_gnu, zip_files} = data_for(zip_files, ["linux", "amd64"])
     {x86_64_windows_msvc, zip_files} = data_for(zip_files, ["windows", "amd64"])
     {aarch64_windows_msvc, zip_files} = data_for(zip_files, ["windows", "arm64"])

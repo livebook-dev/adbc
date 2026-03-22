@@ -16,12 +16,13 @@
 
 static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * array, uint64_t level, std::vector<ERL_NIF_TERM> &out_terms, ERL_NIF_TERM &value_type, ERL_NIF_TERM &metadata, ERL_NIF_TERM &error);
 
-static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * array, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error) {
+static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * array, uint64_t level, std::vector<ERL_NIF_TERM> &children, std::vector<ERL_NIF_TERM> &fields, ERL_NIF_TERM &error) {
     if (schema->n_children > 0 && schema->children == nullptr) {
         error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == nullptr while schema->n_children > 0");
         return 1;
     }
     children.resize(schema->n_children);
+    fields.resize(schema->n_children);
     for (int64_t child_i = 0; child_i < schema->n_children; child_i++) {
         struct ArrowSchema * child_schema = schema->children[child_i];
         std::vector<ERL_NIF_TERM> childrens;
@@ -30,6 +31,8 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema * schema, struct
         if (arrow_schema_to_nif_term(env, child_schema, nullptr, level + 1, childrens, child_type, child_metadata, error) != 0) {
             return 1;
         }
+
+        fields[child_i] = make_adbc_field(env, child_schema, child_type, child_metadata);
 
         if (level == 0) {
             using record_type = NifRes<struct ArrowArrayStreamRecord>;
@@ -49,7 +52,7 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema * schema, struct
 
             children[child_i] = make_adbc_column(env, child_schema, child_type, child_metadata, data_ref);
         } else {
-            children[child_i] = make_adbc_column(env, child_schema, child_type, child_metadata);
+            children[child_i] = fields[child_i];
         }
     }
 
@@ -79,14 +82,11 @@ static int get_run_end_encoded_schema(ErlNifEnv *env, struct ArrowSchema * schem
             return 1;
         }
 
-        children[child_i] = make_adbc_column(env, schema->children[child_i], child_type, child_metadata);
+        children[child_i] = make_adbc_field(env, schema->children[child_i], child_type, child_metadata);
     }
 
-    ERL_NIF_TERM run_ends_keys[] = { kAtomRunEnds, kAtomValues };
-    ERL_NIF_TERM run_ends_values[] = { children[0], children[1] };
-    // only fail if there are duplicated keys
-    // so we don't need to check the return value
-    enif_make_map_from_arrays(env, run_ends_keys, run_ends_values, 2, &run_ends_schema);
+    // Return type as {:run_end_encoded, run_ends_field, values_field}
+    run_ends_schema = enif_make_tuple3(env, kAdbcColumnTypeRunEndEncoded, children[0], children[1]);
     return 0;
 }
 
@@ -122,14 +122,14 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema * schema, uint64_t 
                 return 1;
             }
 
-            key_schema = make_adbc_column(env, entry_schema, child_type, child_metadata);
+            key_schema = make_adbc_field(env, entry_schema, child_type, child_metadata);
             kv |= 0x1;
         } else if (strcmp("value", entry_schema->name) == 0) {
             if (arrow_schema_to_nif_term(env, entry_schema, nullptr, level + 1, childrens, child_type, child_metadata, error) != 0) {
                 return 1;
             }
 
-            value_schema = make_adbc_column(env, entry_schema, child_type, child_metadata);
+            value_schema = make_adbc_field(env, entry_schema, child_type, child_metadata);
             kv |= 0x2;
         } else {
             return 1;
@@ -157,8 +157,8 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema * schema, 
     }
 
     struct ArrowSchema * items_schema = schema->children[0];
-    if (strcmp("item", items_schema->name) != 0) {
-        return erlang::nif::error(env, "invalid ArrowSchema (list), its single child is not named item");
+    if (!(strcmp("item", items_schema->name) == 0 || strcmp("l", items_schema->name) == 0)) {
+        return erlang::nif::error(env, "invalid ArrowSchema (list), its single child is not named 'item' or 'l'");
     }
 
     std::vector<ERL_NIF_TERM> childrens;
@@ -167,7 +167,10 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema * schema, 
     if (arrow_schema_to_nif_term(env, items_schema, nullptr, level + 1, childrens, child_type, child_metadata, error) != 0) {
         return 1;
     }
-    element_schema = make_adbc_column(env, items_schema, child_type, child_metadata);
+
+    // Always use "item" as the canonical name for list elements, regardless of what
+    // the driver provides; using "item" appears to be conventional but duckdb uses "l"
+    element_schema = make_adbc_field(env, erlang::nif::make_binary(env, "item"), child_type, items_schema->flags & ARROW_FLAG_NULLABLE, child_metadata);
     return 0;
 }
 
@@ -199,24 +202,37 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
     if (schema->dictionary != nullptr) {
         // NANOARROW_TYPE_DICTIONARY
         //
-        // For dictionary-encoded arrays, the ArrowSchema.format string 
-        // encodes the index type. The dictionary value type can be read 
+        // For dictionary-encoded arrays, the ArrowSchema.format string
+        // encodes the index type. The dictionary value type can be read
         // from the ArrowSchema.dictionary structure.
         //
-        // The same holds for ArrowArray structure: while the parent 
-        // structure points to the index data, the ArrowArray.dictionary 
+        // The same holds for ArrowArray structure: while the parent
+        // structure points to the index data, the ArrowArray.dictionary
         // points to the dictionary values array.
         type_term = kAdbcColumnTypeDictionary;
 
+        // Get the value type from schema->dictionary
         std::vector<ERL_NIF_TERM> childrens;
-        ERL_NIF_TERM child_type;
-        ERL_NIF_TERM child_metadata;
-        if (arrow_schema_to_nif_term(env, schema->dictionary, nullptr, level + 1, childrens, child_type, child_metadata, error) != 0) {
+        ERL_NIF_TERM value_type;
+        ERL_NIF_TERM value_metadata;
+        if (arrow_schema_to_nif_term(env, schema->dictionary, nullptr, level + 1, childrens, value_type, value_metadata, error) != 0) {
             return 1;
         }
 
-        type_term = enif_make_tuple2(env, kAdbcColumnTypeDictionary, child_type);
-        children_term = make_adbc_column(env, schema->dictionary, type_term, child_metadata);
+        // The parent schema's format encodes the index (key) type
+        // Build key field from the parent format and value field from dictionary schema
+        auto key_iter = primitiveFormatMapping.find(format);
+        ERL_NIF_TERM key_type_term;
+        if (key_iter != primitiveFormatMapping.end() && key_iter->second.size() == 1) {
+            key_type_term = key_iter->second[0];
+        } else {
+            key_type_term = kAdbcColumnTypeS32; // default to s32 for index
+        }
+        ERL_NIF_TERM key_field = make_adbc_field(env, erlang::nif::make_binary(env, "key"), key_type_term, false, kAtomNil);
+        ERL_NIF_TERM value_field = make_adbc_field(env, schema->dictionary, value_type, value_metadata);
+
+        type_term = enif_make_tuple3(env, kAdbcColumnTypeDictionary, key_field, value_field);
+        children_term = make_adbc_column(env, schema, type_term, metadata);
         return 0;
     }
 
@@ -236,12 +252,15 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
     } else if (format_len == 2) {
         if (strncmp("+s", format, 2) == 0) {
             // NANOARROW_TYPE_STRUCT
-            if (get_struct_schema(env, schema, array, level, children, error) != 0) {
+            std::vector<ERL_NIF_TERM> fields;
+            if (get_struct_schema(env, schema, array, level, children, fields, error) != 0) {
                 return 1;
             }
 
+            // Type always uses Fields (never Columns)
+            ERL_NIF_TERM fields_term = enif_make_list_from_array(env, fields.data(), (unsigned)fields.size());
             children_term = enif_make_list_from_array(env, children.data(), (unsigned)children.size());
-            type_term = enif_make_tuple2(env, kAdbcColumnTypeStruct, children_term);
+            type_term = enif_make_tuple2(env, kAdbcColumnTypeStruct, fields_term);
         } else if (strncmp("+r", format, 2) == 0) {
             // NANOARROW_TYPE_RUN_END_ENCODED (maybe in nanoarrow v0.6.0)
             // https://github.com/apache/arrow-nanoarrow/pull/507
@@ -250,7 +269,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                 return 1;
             }
 
-            type_term = enif_make_tuple2(env, kAdbcColumnTypeRunEndEncoded, run_ends_schema);
+            type_term = run_ends_schema;
             children_term = make_adbc_column(env, schema, type_term, metadata);
         } else if (strncmp("+m", format, 2) == 0) {
             // NANOARROW_TYPE_MAP
@@ -279,6 +298,11 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
 
             type_term = enif_make_tuple2(env, kAdbcColumnTypeLargeList, elem_schema);
             children_term = make_adbc_column(env, schema, type_term, metadata);
+        } else if (strncmp("vu", format, 2) == 0 || strncmp("vz", format, 2) == 0) {
+            // NANOARROW_TYPE_STRING_VIEW
+            // NANOARROW_TYPE_BINARY_VIEW
+            // type_term and children_term already set via primitiveFormatMapping above
+            format_processed = iter != primitiveFormatMapping.end();
         } else {
             format_processed = false;
         }
@@ -290,10 +314,10 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                 format_processed = iter != primitiveFormatMapping.end();
             } else if (format_len >= 4 && format[1] == 's' && format[3] == ':') {
                 // according to the arrow spec:
-                //   The timezone string is appended as-is after the colon character :, 
+                //   The timezone string is appended as-is after the colon character :,
                 //   without any quotes. If the timezone is empty, the colon : must still be included.
                 // so the format length for timestamps must be >= 4
-            
+
                 // possible format strings:
                 // tss: - timestamp [seconds]
                 // tsm: - timestamp [milliseconds]
@@ -359,7 +383,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                     n_items = n_items * 10 + (format[i] - '0');
                 }
                 type_term = kAdbcColumnTypeFixedSizeList(n_items);
-                
+
                 ERL_NIF_TERM elem_schema;
                 if (get_list_element_schema(env, schema, level, elem_schema, error) != 0) {
                     return 1;
@@ -392,7 +416,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                 // N is optional and defaults to 128
                 int precision = 0;
                 int scale = 0;
-                int bits = 128;
+                int bits = 0;
                 int * d[3] = {&precision, &scale, &bits};
                 int index = 0;
                 for (size_t i = 2; i < format_len; i++) {
@@ -410,6 +434,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
                 }
 
                 if (format_processed) {
+                    if (bits == 0) bits = 128;
                     type_term = kAdbcColumnTypeDecimal(bits, precision, scale);
                     children_term = make_adbc_column(env, schema, type_term, metadata);
                 }

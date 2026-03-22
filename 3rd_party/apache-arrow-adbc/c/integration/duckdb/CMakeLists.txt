@@ -20,7 +20,7 @@ include(FetchContent)
 if(ADBC_BUILD_TESTS)
   fetchcontent_declare(duckdb
                        GIT_REPOSITORY https://github.com/duckdb/duckdb.git
-                       GIT_TAG 0d84ccf478578278b2d1168675b8b93c60f78a5e # v0.9.0
+                       GIT_TAG 8e52ec43959ab363643d63cb78ee214577111da4 # v1.2.1
                        GIT_PROGRESS TRUE
                        USES_TERMINAL_DOWNLOAD TRUE)
   set(BUILD_JEMALLOC_EXTENSION
@@ -63,13 +63,11 @@ if(ADBC_BUILD_TESTS)
                 adbc_driver_common
                 adbc_driver_manager_static
                 adbc_validation
-                duckdb
-                nanoarrow)
+                duckdb)
   add_dependencies(adbc-integration-duckdb-test duckdb)
   target_compile_features(adbc-integration-duckdb-test PRIVATE cxx_std_17)
   target_include_directories(adbc-integration-duckdb-test SYSTEM
                              PRIVATE ${REPOSITORY_ROOT}/c/ ${REPOSITORY_ROOT}/c/include/
-                                     ${REPOSITORY_ROOT}/c/vendor
                                      ${REPOSITORY_ROOT}/c/driver)
   adbc_configure_target(adbc-integration-duckdb-test)
 endif()

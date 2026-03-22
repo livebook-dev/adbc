@@ -1,18 +1,19 @@
 # Release steps:
-# 1. Push tag
-# 2. Once CI finishes, run MIX_ENV=prod mix elixir_make.checksum --all
-# 3. Publish to Hex
+# 1. mix deps.update ex_doc
+# 2. Update version, CHANGELOG, commit, and push tag
+# 3. Once CI finishes, run MIX_ENV=prod mix elixir_make.checksum --all
+# 4. Publish to Hex with MIX_ENV=docs mix hex.publish
 defmodule Adbc.MixProject do
   use Mix.Project
 
-  @version "0.7.9-dev"
+  @version "0.9.1-dev"
   @github_url "https://github.com/elixir-explorer/adbc"
 
   def project do
     [
       app: :adbc,
       version: @version,
-      elixir: "~> 1.12",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
@@ -38,7 +39,7 @@ defmodule Adbc.MixProject do
           "lib",
           "include"
         ],
-        make_precompiler_nif_versions: [versions: ["2.16"]],
+        make_precompiler_nif_versions: [versions: ["2.17"]],
         cc_precompiler: [
           cleanup: "clean",
           compilers: %{
@@ -74,11 +75,12 @@ defmodule Adbc.MixProject do
     [
       # compilation
       {:cc_precompiler, "~> 0.1.8 or ~> 0.2", runtime: false},
-      {:elixir_make, "~> 0.8", runtime: false},
+      {:elixir_make, "~> 0.9", runtime: false},
 
       # runtime
-      {:castore, "~> 1.0", optional: true},
       {:decimal, "~> 2.1"},
+      {:table, "~> 0.1.2"},
+      {:pythonx, "~> 0.4.0", optional: true},
 
       # docs
       {:ex_doc, "~> 0.29", only: :docs, runtime: false}
@@ -89,7 +91,10 @@ defmodule Adbc.MixProject do
     [
       main: "Adbc.Database",
       source_ref: "v#{@version}",
-      source_url: @github_url
+      source_url: @github_url,
+      groups_for_docs: [
+        "Column types": &(&1[:type] == :column_type)
+      ]
     ]
   end
 

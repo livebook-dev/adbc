@@ -69,6 +69,8 @@ This project ships with precompiled artifacts. You can force the artifacts to be
 config :elixir_make, :force_build, adbc: true
 ```
 
+This does require you have `cmake` installed.
+
 ## License
 
 Copyright 2023 Cocoa Xu, José Valim

@@ -1,7 +1,6 @@
 defmodule Adbc.Helper do
   @moduledoc false
 
-  @doc false
   def error_to_exception(string) when is_binary(string) do
     ArgumentError.exception(string)
   end
@@ -43,6 +42,57 @@ defmodule Adbc.Helper do
     case option(callee, func, args) do
       :ok -> {:cont, :ok}
       {:error, _} = error -> {:halt, error}
+    end
+  end
+
+  # Use to avoid premature GC of capsules
+  def noop(value), do: value
+
+  if Code.ensure_loaded?(Pythonx) do
+    def from_py(py_object) when is_struct(py_object, Pythonx.Object) do
+      {_, globals} =
+        Pythonx.eval(
+          """
+          if hasattr(object, "__arrow_c_stream__"):
+            import ctypes
+
+            has_stream = True
+            capsule = object.__arrow_c_stream__()
+            ctypes.pythonapi.PyCapsule_GetPointer.restype = ctypes.c_void_p
+            ctypes.pythonapi.PyCapsule_GetPointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
+            pointer = ctypes.pythonapi.PyCapsule_GetPointer(capsule, b"arrow_array_stream")
+
+          else:
+            has_stream = False
+            capsule = None
+            pointer = None
+          """,
+          %{"object" => py_object}
+        )
+
+      if Pythonx.decode(globals["has_stream"]) do
+        capsule = globals["capsule"]
+        pointer = Pythonx.decode(globals["pointer"])
+
+        case Adbc.Nif.adbc_arrow_array_stream_from_pointer(pointer) do
+          {:ok, stream_ref} -> {:ok, stream_ref, capsule}
+          {:error, reason} -> {:error, error_to_exception(reason)}
+        end
+      else
+        {:error,
+         ArgumentError.exception("""
+         the given Python object does not support ArrowStream Export interface (__arrow_c_stream__ method is missing)\
+         """)}
+      end
+    end
+  else
+    def from_py(_py_object) do
+      {:error,
+       RuntimeError.exception("""
+       Adbc.Helper.from_py/1 requires pythonx to be available, add it to your mix.exs:
+
+           {:pythonx, "~> 0.4.0"}
+       """)}
     end
   end
 
@@ -97,9 +147,6 @@ defmodule Adbc.Helper do
       certs = otp_cacerts() ->
         [cacerts: certs]
 
-      Application.spec(:castore, :vsn) ->
-        [cacertfile: Application.app_dir(:castore, "priv/cacerts.pem")]
-
       true ->
         IO.warn("""
         No certificate trust store was found.
@@ -110,11 +157,9 @@ defmodule Adbc.Helper do
         installed certificate trust store one of the
         following actions may be taken:
 
-        1. Use OTP 25+ on an OS that has built-in certificate
-           trust store.
+        1. Use OTP 25+ on an OS that has built-in certificate trust store.
 
-        2. Install the hex package `castore`. It will
-           be automatically detected after recompilation.
+        2. Set ADBC_CACERTS_PATH environment variable pointing to a certificate.
 
         """)
 
@@ -122,13 +167,9 @@ defmodule Adbc.Helper do
     end
   end
 
-  if System.otp_release() >= "25" do
-    defp otp_cacerts do
-      :public_key.cacerts_get()
-    rescue
-      _ -> nil
-    end
-  else
-    defp otp_cacerts, do: nil
+  defp otp_cacerts do
+    :public_key.cacerts_get()
+  rescue
+    _ -> nil
   end
 end

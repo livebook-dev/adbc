@@ -17,7 +17,8 @@ defmodule Adbc do
       config :adbc, :drivers, [:sqlite]
 
   If you are using a notebook or scripting, you can also use
-  `Adbc.download_driver!/1` to dynamically download one.
+  `Adbc.download_driver!/1` to dynamically download one. See
+  the function for more information on downloading drivers.
 
   Then start the database and the relevant connection processes
   in your supervision tree:
@@ -54,11 +55,22 @@ defmodule Adbc do
 
   ### DuckDB
 
-  The DuckDB driver provides access to in-memory DuckDB databases.
+  The DuckDB driver provides access to DuckDB databases. See their
+  [documentation](https://duckdb.org/docs/stable/clients/adbc) for more details.
 
   #### Examples
 
+  For in memory;
+
       {Adbc.Database, driver: :duckdb}
+
+  To use an existing file:
+
+      {Adbc.Database, driver: :duckdb, path: "duck.duckdb"}
+
+  Note if you are pointing to your own build of duckdb you will need to set the entrypoint like so:
+
+      {Adbc.Database, driver: "/usr/local/lib/libduckdb.so", entrypoint: "duckdb_adbc_init"}
 
   ### PostgreSQL
 
@@ -94,9 +106,24 @@ defmodule Adbc do
 
   #### Examples
 
+  Snowflake recommends PKCS8 key pair authentication, using `auth_jwt` as shown below:
+
+      {Adbc.Database, driver: :snowflake,
+       uri:
+        "<user>@<account>.<region>.snowflakecomputing.com/<database>?warehouse=<warehouse>&role=<role>&authenticator=SNOWFLAKE_JWT",
+       "adbc.snowflake.sql.auth_type": "auth_jwt",
+       "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_value":
+         File.read!(System.fetch_env!("SNOWFLAKE_ENCRYPTED_KEY_FILE")),
+       "adbc.snowflake.sql.client_option.jwt_private_key_pkcs8_password":
+         System.fetch_env!("SNOWFLAKE_KEY_PASSWORD")}
+
+  See [Account identifiers](https://docs.snowflake.com/en/user-guide/admin-account-identifier) for more information.
+
+  For backwards compatibility, you may also use username+password as shown below:
+
       {Adbc.Database, driver: :snowflake, uri: "..."}
 
-  The Snowflake URI should be of one of the following formats:
+  where Snowflake URI should be of one of the following formats:
 
       user[:password]@account/database/schema[?param1=value1&paramN=valueN]
       user[:password]@account/database[?param1=value1&paramN=valueN]
@@ -104,14 +131,13 @@ defmodule Adbc do
       host:port/database/schema?account=user_account[&param1=value1&paramN=valueN]
 
   The first two are the most recommended formats. The schema, database and parameters are optional.
-  See [Account identifiers](https://docs.snowflake.com/en/user-guide/admin-account-identifier) for more information.
   """
 
   @doc """
-  Downloads a driver.
+  Downloads a driver and returns the download status.
 
-  See `Adbc` module doc for all supports drivers.
-  It returns `:ok` or `{:error, binary}`.
+  It returns `:ok` or `{:error, binary}`. See `download_driver!/1`
+  for more information.
   """
   @spec download_driver(atom, keyword) :: :ok | {:error, binary}
   def download_driver(driver, opts \\ []) when is_atom(driver) and is_list(opts) do
@@ -121,8 +147,35 @@ defmodule Adbc do
   @doc """
   Downloads a driver and raises in case of errors.
 
-  See `Adbc` module doc for all supports drivers.
   It returns `:ok`.
+
+  See `Adbc` module documentation for all supported drivers.
+
+  ## Options
+
+    * `:version` - the version of the asset being downloaded
+    * `:url` - the url to find the precompiled asset
+
+  For example, to download the latest DuckDB driver, you must find its
+  [latest release on GitHub](https://github.com/duckdb/duckdb/releases/),
+  and pass the version and the precompiled asset to your OS. For example,
+  if the latest version is v1.3.0, you can invoke:
+
+      Adbc.download_driver!(:duckdb,
+        version: "1.3.0",
+        url: "https://github.com/duckdb/duckdb/releases/download/v1.3.0/libduckdb-osx-universal.zip"
+      )
+
+  And then start the driver passing the version option:
+
+      {Adbc.Database, driver: :duckdb, version: "1.3.0"}
+
+  Note you can also configure the `:adbc` application to download
+  a custom driver during compilation too:
+
+      config :adbc, :drivers,
+        [{:duckdb, version: ..., url: ...}]
+
   """
   @spec download_driver!(atom, keyword) :: :ok
   def download_driver!(driver, opts \\ []) when is_atom(driver) and is_list(opts) do
@@ -134,5 +187,8 @@ defmodule Adbc do
 end
 
 for driver <- Application.compile_env(:adbc, :drivers, []) do
-  Adbc.download_driver!(driver)
+  case driver do
+    {driver, opts} -> Adbc.download_driver!(driver, opts)
+    driver -> Adbc.download_driver!(driver)
+  end
 end

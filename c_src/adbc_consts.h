@@ -44,8 +44,6 @@ static ERL_NIF_TERM kAtomOffsets;
 static ERL_NIF_TERM kAtomSizes;
 static ERL_NIF_TERM kAtomValues;
 static ERL_NIF_TERM kAtomRunEnds;
-static ERL_NIF_TERM kAtomOffset;
-static ERL_NIF_TERM kAtomLength;
 
 static ERL_NIF_TERM kAtomDecimal;
 static ERL_NIF_TERM kAtomFixedSizeBinary;
@@ -79,11 +77,15 @@ static ERL_NIF_TERM kAtomSecondKey;
 static ERL_NIF_TERM kAtomMicrosecondKey;
 
 static ERL_NIF_TERM kAtomAdbcColumnModule;
+static ERL_NIF_TERM kAtomAdbcFieldModule;
+static ERL_NIF_TERM kAtomFieldKey;
 static ERL_NIF_TERM kAtomNameKey;
 static ERL_NIF_TERM kAtomTypeKey;
 static ERL_NIF_TERM kAtomNullableKey;
 static ERL_NIF_TERM kAtomMetadataKey;
 static ERL_NIF_TERM kAtomDataKey;
+static ERL_NIF_TERM kAtomLengthKey;
+static ERL_NIF_TERM kAtomOffsetKey;
 
 // https://arrow.apache.org/docs/format/CDataInterface.html
 static ERL_NIF_TERM kAdbcColumnTypeBool;
@@ -100,8 +102,10 @@ static ERL_NIF_TERM kAdbcColumnTypeF32;
 static ERL_NIF_TERM kAdbcColumnTypeF64;
 static ERL_NIF_TERM kAdbcColumnTypeBinary;
 static ERL_NIF_TERM kAdbcColumnTypeLargeBinary;
+static ERL_NIF_TERM kAdbcColumnTypeBinaryView;
 static ERL_NIF_TERM kAdbcColumnTypeString;
 static ERL_NIF_TERM kAdbcColumnTypeLargeString;
+static ERL_NIF_TERM kAdbcColumnTypeStringView;
 #define kAdbcColumnTypeDecimal(bitwidth, precision, scale) enif_make_tuple4(env, kAtomDecimal, enif_make_int(env, bitwidth), enif_make_int(env, precision), enif_make_int(env, scale))
 #define kAdbcColumnTypeFixedSizeBinary(nbytes) enif_make_tuple2(env, kAtomFixedSizeBinary, enif_make_int64(env, nbytes))
 static ERL_NIF_TERM kAdbcColumnTypeDate32;
@@ -141,5 +145,6 @@ constexpr int kErrorBufferGetMetadataKey = 8;
 constexpr int kErrorBufferGetMetadataValue = 9;
 constexpr int kErrorExpectedCalendarISO = 10;
 constexpr int kErrorInternalError = 11;
+constexpr int kErrorNilInNonNullableColumn = 12;
 
 #endif  // ADBC_CONSTS_H

@@ -2,7 +2,7 @@ defmodule Adbc.Database do
   @moduledoc """
   Documentation for `Adbc.Database`.
 
-  Databases are modelled as processes. They required
+  Databases are modelled as processes. They require
   a driver to be started.
   """
 
@@ -41,6 +41,7 @@ defmodule Adbc.Database do
   """
   def start_link(opts \\ []) do
     {driver, opts} = Keyword.pop(opts, :driver, nil)
+    {driver_opts, opts} = Keyword.split(opts, [:version])
 
     unless driver do
       raise ArgumentError, ":driver option must be specified"
@@ -50,7 +51,7 @@ defmodule Adbc.Database do
     opts = Keyword.merge(driver_default_options(driver), opts)
 
     with {:ok, ref} <- Adbc.Nif.adbc_database_new(),
-         :ok <- init_driver(ref, driver),
+         :ok <- init_driver(ref, driver, driver_opts),
          :ok <- init_options(ref, opts),
          :ok <- Adbc.Nif.adbc_database_init(ref) do
       GenServer.start_link(__MODULE__, {driver, ref}, process_options)
@@ -153,8 +154,8 @@ defmodule Adbc.Database do
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp init_driver(ref, driver) do
-    case Adbc.Driver.so_path(driver) do
+  defp init_driver(ref, driver, driver_opts) do
+    case Adbc.Driver.so_path(driver, driver_opts) do
       {:ok, path} -> Adbc.Helper.option(ref, :adbc_database_set_option, [:string, "driver", path])
       {:error, reason} -> {:error, reason}
     end

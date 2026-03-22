@@ -52,6 +52,8 @@ defmodule Adbc.Nif do
 
   def adbc_statement_execute_query(_self), do: :erlang.nif_error(:not_loaded)
 
+  def adbc_statement_execute(_self), do: :erlang.nif_error(:not_loaded)
+
   def adbc_statement_prepare(_self), do: :erlang.nif_error(:not_loaded)
 
   def adbc_statement_set_sql_query(_self, _query), do: :erlang.nif_error(:not_loaded)
@@ -61,6 +63,8 @@ defmodule Adbc.Nif do
   def adbc_statement_bind_stream(_self, _stream), do: :erlang.nif_error(:not_loaded)
 
   def adbc_arrow_array_stream_get_pointer(_arrow_array_stream), do: :erlang.nif_error(:not_loaded)
+
+  def adbc_arrow_array_stream_from_pointer(_pointer), do: :erlang.nif_error(:not_loaded)
 
   def adbc_arrow_array_stream_next(_arrow_array_stream), do: :erlang.nif_error(:not_loaded)
 
@@ -73,4 +77,6 @@ defmodule Adbc.Nif do
   def adbc_ipc_load_stream_binary(_binary), do: :erlang.nif_error(:not_loaded)
 
   def adbc_ipc_dump_stream_binary(_data), do: :erlang.nif_error(:not_loaded)
+
+  def adbc_delete_on_gc_new(_pid, _table_name), do: :erlang.nif_error(:not_loaded)
 end

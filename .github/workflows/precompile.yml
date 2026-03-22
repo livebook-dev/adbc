@@ -14,12 +14,9 @@ permissions:
 
 jobs:
   linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       MIX_ENV: prod
-    strategy:
-      matrix:
-        otp_version: [25]
 
     name: Linux GNU - OTP ${{ matrix.otp_version }}
 
@@ -27,17 +24,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: ${{ matrix.otp_version }}
-          elixir-version: 1.15
-
       - name: Install system dependecies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential automake autoconf pkg-config bc m4 unzip zip \
             gcc g++ \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26.2"
+          elixir-version: "1.15.8"
 
       - name: Precompile
         run: |
@@ -54,11 +51,11 @@ jobs:
             cache/adbc*.sha256
 
   macos:
-    runs-on: macos-13
+    runs-on: macos-14
     env:
       MIX_ENV: prod
-      ELIXIR_VERSION: "1.16.2"
-      OTP_VERSION: "25.3.2.8"
+      OTP_VERSION: "26.2"
+      ELIXIR_VERSION: "1.15.8"
 
     name: macOS
 
@@ -93,12 +90,9 @@ jobs:
             cache/adbc*.sha256
 
   windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       MIX_ENV: prod
-    strategy:
-      matrix:
-        otp_version: [25]
 
     name: Windows - OTP ${{ matrix.otp_version }}
 
@@ -108,7 +102,7 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp_version }}
+          otp-version: 26
           elixir-version: 1.15
 
       - uses: ilammy/msvc-dev-cmd@v1
