@@ -146,6 +146,7 @@ int get(ErlNifEnv *env, ERL_NIF_TERM term, double *var);
 // Standard types
 
 int get(ErlNifEnv *env, ERL_NIF_TERM term, std::string &var);
+int get(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *var);
 
 ERL_NIF_TERM make(ErlNifEnv *env, bool var);
 ERL_NIF_TERM make(ErlNifEnv *env, long var);

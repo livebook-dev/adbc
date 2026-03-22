@@ -1,9 +1,11 @@
 #include <cstdbool>
 #include <cstdio>
 #include <climits>
+#include <nanoarrow/nanoarrow.h>
+#include <nanoarrow/nanoarrow_ipc.h>
+#include <nanoarrow/nanoarrow_ipc.hpp>
 #include <arrow-adbc/adbc.h>
 #include <erl_nif.h>
-#include <nanoarrow/nanoarrow.h>
 #include "adbc_nif_resource.hpp"
 #include "nif_utils.hpp"
 #include "adbc_consts.h"
@@ -18,6 +20,15 @@ template<> ErlNifResourceType * NifRes<struct AdbcError>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStream>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStreamRecord>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct AdbcDeleteOnGC>::type = nullptr;
+
+static ERL_NIF_TERM nif_error_from_arrow_error(ErlNifEnv *env, struct ArrowError * arrow_error) {
+    return erlang::nif::error(env, enif_make_tuple4(env,
+        kAtomAdbcError,
+        erlang::nif::make_binary(env, arrow_error->message),
+        kAtomNil,
+        kAtomNil
+    ));
+}
 
 static ERL_NIF_TERM nif_error_from_adbc_error(ErlNifEnv *env, struct AdbcError * adbc_error) {
     char const* message = (adbc_error->message == nullptr) ? "unknown error" : adbc_error->message;
@@ -857,6 +868,126 @@ static ERL_NIF_TERM adbc_statement_bind_stream(ErlNifEnv *env, int argc, const E
     return erlang::nif::ok(env);
 }
 
+static ERL_NIF_TERM adbc_ipc_load_stream_binary(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using array_stream_type = NifRes<struct ArrowArrayStream>;
+
+    nanoarrow::UniqueBuffer input_buffer;
+    ERL_NIF_TERM error{};
+    std::vector<ERL_NIF_TERM> out_terms;
+
+    ErlNifBinary binary{};
+    if (!erlang::nif::get(env, argv[0], &binary)) return enif_make_badarg(env);
+
+    ArrowErrorCode code = ArrowBufferAppend(input_buffer.get(), binary.data, binary.size);
+    if (code != NANOARROW_OK) {
+        return erlang::nif::error(env, "Failed to append binary data to Arrow IPC input buffer");
+    }
+
+    struct ArrowIpcInputStream input;
+    code = ArrowIpcInputStreamInitBuffer(&input, input_buffer.get());
+    if (code != NANOARROW_OK) {
+        return erlang::nif::error(env, "Failed to initialize Arrow IPC array stream");
+    }
+
+    auto array_stream = array_stream_type::allocate_resource(env, error);
+    if (array_stream == nullptr) {
+        return error;
+    }
+
+    code = ArrowIpcArrayStreamReaderInit(&array_stream->val, &input, nullptr);
+    if (code != NANOARROW_OK) {
+        return erlang::nif::error(env, "Failed to initialize Arrow IPC array stream reader");
+    }
+
+    return array_stream->make_resource(env);
+}
+
+static ERL_NIF_TERM adbc_ipc_dump_stream_binary(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    if (!enif_is_list(env, argv[0])) {
+        return enif_make_badarg(env);
+    }
+
+    AdbcStatusCode code{};
+    struct ArrowSchema schema{};
+    struct ArrowError arrow_error{};
+    nanoarrow::UniqueBuffer output;
+    nanoarrow::ipc::UniqueOutputStream stream;
+    code = ArrowIpcOutputStreamInitBuffer(stream.get(), output.get());
+    if (code != NANOARROW_OK) {
+        return erlang::nif::error(env, "Failed to initialize Arrow IPC output stream and buffer");
+    }
+
+    nanoarrow::ipc::UniqueWriter writer;
+    code = ArrowIpcWriterInit(writer.get(), stream.get());
+    if (code != NANOARROW_OK) {
+        return erlang::nif::error(env, "Failed to initialize Arrow IPC writer");
+    }
+
+    schema.release = nullptr;
+    nanoarrow::UniqueArray array;
+    nanoarrow::UniqueArrayView array_view;
+
+    ERL_NIF_TERM ret{};
+    if (adbc_column_to_arrow_type_struct(env, argv[0], array.get(), &schema, &arrow_error)) {
+        ret = erlang::nif::error(env, arrow_error.message);
+        goto cleanup;
+    }
+
+    code = ArrowArrayViewInitFromSchema(array_view.get(), &schema, &arrow_error);
+    if (code != NANOARROW_OK) {
+        ret = nif_error_from_arrow_error(env, &arrow_error);
+        goto cleanup;
+    }
+    
+    code = ArrowArrayViewSetArray(array_view.get(), array.get(), &arrow_error);
+    if (code != NANOARROW_OK) {
+        ret = nif_error_from_arrow_error(env, &arrow_error);
+        goto cleanup;
+    }
+
+    code = ArrowIpcWriterWriteSchema(writer.get(), &schema, &arrow_error);
+    if (code != NANOARROW_OK) {
+        ret = nif_error_from_arrow_error(env, &arrow_error);
+        goto cleanup;
+    }
+
+    code = ArrowIpcWriterWriteArrayView(writer.get(), array_view.get(), &arrow_error);
+    if (code != NANOARROW_OK) {
+        ret = nif_error_from_arrow_error(env, &arrow_error);
+        goto cleanup;
+    }
+
+    // write `nullptr` to end the stream
+    code = ArrowIpcWriterWriteArrayView(writer.get(), nullptr, &arrow_error);
+    if (code != NANOARROW_OK) {
+        ret = nif_error_from_arrow_error(env, &arrow_error);
+        goto cleanup;
+    }
+
+    ErlNifBinary binary;
+    if (!enif_alloc_binary(output->size_bytes, &binary)) {
+        ret = erlang::nif::error(env, "out of memory");
+        goto cleanup;
+    }
+
+    memcpy(binary.data, output->data, output->size_bytes);
+    ArrowIpcWriterReset(writer.get());
+
+    ret = erlang::nif::ok(env, enif_make_binary(env, &binary));
+
+cleanup:
+    if (schema.release) schema.release(&schema);
+    return ret;
+}
+
+static ERL_NIF_TERM adbc_ipc_system_endianness(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    if (ArrowIpcSystemEndianness() == NANOARROW_IPC_ENDIANNESS_BIG) {
+        return kAtomBig;
+    } else {
+        return kAtomLittle;
+    }
+}
+
 static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     using res_type = NifRes<struct AdbcDeleteOnGC>;
 
@@ -946,6 +1077,8 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomInfinity = erlang::nif::atom(env, "infinity");
     kAtomNegInfinity = erlang::nif::atom(env, "neg_infinity");
     kAtomNaN = erlang::nif::atom(env, "nan");
+    kAtomBig = erlang::nif::atom(env, "big");
+    kAtomLittle = erlang::nif::atom(env, "little");
     kAtomEndOfSeries = erlang::nif::atom(env, "end_of_series");
     kAtomStructKey = erlang::nif::atom(env, "__struct__");
     kAtomValidity = erlang::nif::atom(env, "validity");
@@ -1105,8 +1238,11 @@ static ErlNifFunc nif_functions[] = {
     {"adbc_arrow_array_stream_release", 1, adbc_arrow_array_stream_release, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_column_materialize", 1, adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-
     {"adbc_delete_on_gc_new", 2, adbc_delete_on_gc_new, 0},
+
+    {"adbc_ipc_system_endianness", 0, adbc_ipc_system_endianness, 0},
+    {"adbc_ipc_load_stream_binary", 1, adbc_ipc_load_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"adbc_ipc_dump_stream_binary", 1, adbc_ipc_dump_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
 };
 
 ERL_NIF_INIT(Elixir.Adbc.Nif, nif_functions, on_load, on_reload, on_upgrade, NULL);

@@ -143,6 +143,12 @@ int get(ErlNifEnv *env, ERL_NIF_TERM term, std::string &var) {
     return ret;
 }
 
+int get(ErlNifEnv *env, ERL_NIF_TERM term, ErlNifBinary *var) {
+    int code = enif_inspect_binary(env, term, var);
+    if (!code) return enif_inspect_iolist_as_binary(env, term, var);
+    return code;
+}
+
 ERL_NIF_TERM make(ErlNifEnv *env, bool var) {
     if (var) {
         return atom(env, "true");

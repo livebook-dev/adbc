@@ -4,7 +4,7 @@ defmodule Adbc.Error do
 
   @type t :: %Adbc.Error{
           message: String.t(),
-          vendor_code: integer(),
-          state: <<_::40>>
+          vendor_code: integer() | nil,
+          state: <<_::40>> | nil
         }
 end

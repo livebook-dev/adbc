@@ -18,6 +18,8 @@ static ERL_NIF_TERM kAtomNegInfinity;
 static ERL_NIF_TERM kAtomNaN;
 static ERL_NIF_TERM kAtomEndOfSeries;
 static ERL_NIF_TERM kAtomStructKey;
+static ERL_NIF_TERM kAtomBig;
+static ERL_NIF_TERM kAtomLittle;
 // for the data field in list views and large list views
 // %Adbc.Column{
 //   name: "sample_list_view",

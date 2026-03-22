@@ -6,6 +6,7 @@ PRIV_DIR = $(MIX_APP_PATH)/priv
 NIF_SO = $(PRIV_DIR)/adbc_nif.dll
 THIRD_PARTY_DIR = $(MAKEDIR)\3rd_party
 ADBC_SRC = $(THIRD_PARTY_DIR)\apache-arrow-adbc
+NANOARROW_SRC = $(THIRD_PARTY_DIR)\nanoarrow
 ADBC_C_SRC = $(ADBC_SRC)\c
 C_SRC = $(MAKEDIR)\c_src
 !IFDEF CMAKE_TOOLCHAIN_FILE
@@ -80,6 +81,7 @@ $(NIF_SO): adbc priv_dir c_src\adbc_nif_resource.hpp c_src\adbc_nif.cpp c_src\ni
         --no-warn-unused-cli \
         -D C_SRC="$(C_SRC)" \
         -D ADBC_SRC="$(ADBC_SRC)" \
+				-D NANOARROW_SRC="$(NANOARROW_SRC)" \
         -D MIX_APP_PATH="$(MIX_APP_PATH)" \
         -D PRIV_DIR="$(PRIV_DIR)" \
         -D ERTS_INCLUDE_DIR="$(ERTS_INCLUDE_DIR)" \

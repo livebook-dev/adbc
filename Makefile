@@ -9,6 +9,7 @@ NIF_SO = $(PRIV_DIR)/adbc_nif.so
 NIF_SO_REL = $(NIF_SO:$(shell pwd)/%=%)
 THIRD_PARTY_DIR = $(shell pwd)/3rd_party
 ADBC_SRC = $(THIRD_PARTY_DIR)/apache-arrow-adbc
+NANOARROW_SRC = $(THIRD_PARTY_DIR)/nanoarrow
 ADBC_C_SRC = $(ADBC_SRC)/c
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -94,6 +95,7 @@ $(NIF_SO_REL): priv_dir adbc $(C_SRC_REL)/adbc_nif_resource.hpp $(C_SRC_REL)/adb
 		-D CMAKE_BUILD_TYPE="$(CMAKE_BUILD_TYPE)" \
 		-D C_SRC="$(C_SRC)" \
 		-D ADBC_SRC="$(ADBC_SRC)" \
+		-D NANOARROW_SRC="$(NANOARROW_SRC)" \
 		-D MIX_APP_PATH="$(MIX_APP_PATH)" \
 		-D PRIV_DIR="$(PRIV_DIR)" \
 		-D ERTS_INCLUDE_DIR="$(ERTS_INCLUDE_DIR)" \

@@ -42,6 +42,7 @@ include_directories("${PRIV_DIR}/include")
 
 if(WIN32)
     string(REPLACE "\\" "/" C_SRC "${C_SRC}")
+    string(REPLACE "\\" "/" NANOARROW_SRC "${NANOARROW_SRC}")
 endif()
 set(SOURCE_FILES
     "${C_SRC}/nif_utils.cpp"
@@ -50,15 +51,15 @@ set(SOURCE_FILES
 
 include_directories("${ERTS_INCLUDE_DIR}")
 include_directories("${ADBC_SRC}/c/include")
-
-add_subdirectory("${ADBC_SRC}/c/vendor/nanoarrow")
-include_directories("${ADBC_SRC}/c/vendor")
+include_directories("${NANOARROW_SRC}")
 
 add_library(adbc_nif SHARED
+    "${NANOARROW_SRC}/nanoarrow.c"
+    "${NANOARROW_SRC}/flatcc.c"
+    "${NANOARROW_SRC}/nanoarrow_ipc.c"
     ${SOURCE_FILES}
 )
 target_link_libraries(adbc_nif PUBLIC AdbcDriverManager::adbc_driver_manager_shared)
-target_link_libraries(adbc_nif PUBLIC nanoarrow)
 install(
     TARGETS adbc_nif
     RUNTIME DESTINATION "${PRIV_DIR}"
