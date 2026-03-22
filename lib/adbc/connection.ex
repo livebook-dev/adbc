@@ -265,12 +265,16 @@ defmodule Adbc.Connection do
       end)
 
   """
-  @spec bulk_insert(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object), Keyword.t()) ::
+  @spec bulk_insert(
+          t(),
+          [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object),
+          Keyword.t()
+        ) ::
           {:ok, non_neg_integer()} | {:error, Exception.t()}
   def bulk_insert(conn, columns_or_stream, opts \\ [])
 
   def bulk_insert(conn, %Adbc.StreamResult{} = stream, opts) when is_list(opts) do
-    if stream.conn == GenServer.whereis(conn) do
+    if stream.conn && stream.conn == GenServer.whereis(conn) do
       raise ArgumentError, "cannot use bulk_insert to transfer results over the same connection"
     end
 
@@ -300,7 +304,11 @@ defmodule Adbc.Connection do
   @doc """
   Same as `bulk_insert/3` but raises an exception on error.
   """
-  @spec bulk_insert!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object), Keyword.t()) ::
+  @spec bulk_insert!(
+          t(),
+          [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object),
+          Keyword.t()
+        ) ::
           non_neg_integer()
   def bulk_insert!(conn, columns_or_stream, opts \\ []) do
     case bulk_insert(conn, columns_or_stream, opts) do
@@ -339,7 +347,7 @@ defmodule Adbc.Connection do
   @spec ingest(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) ::
           {:ok, Adbc.IngestResult.t()} | {:error, Exception.t()}
   def ingest(conn, %Adbc.StreamResult{} = stream) do
-    if stream.conn == GenServer.whereis(conn) do
+    if stream.conn && stream.conn == GenServer.whereis(conn) do
       raise ArgumentError, "cannot use ingest to transfer results over the same connection"
     end
 
@@ -362,7 +370,8 @@ defmodule Adbc.Connection do
   @doc """
   Same as `ingest/2` but raises an exception on error.
   """
-  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) :: Adbc.IngestResult.t()
+  @spec ingest!(t(), [Adbc.Column.t()] | Adbc.StreamResult.t() | unquote(python_object)) ::
+          Adbc.IngestResult.t()
   def ingest!(conn, columns_or_stream) do
     case ingest(conn, columns_or_stream) do
       {:ok, result} -> result
@@ -436,7 +445,9 @@ defmodule Adbc.Connection do
     |> Enum.map(fn
       {%Adbc.Column{field: %{name: nil} = field} = col, i} ->
         %{col | field: %{field | name: "col#{i}"}}
-      {col, _i} -> col
+
+      {col, _i} ->
+        col
     end)
   end
 

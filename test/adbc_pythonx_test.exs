@@ -12,7 +12,7 @@ defmodule Adbc.PythonxTest do
     test "with invalid object" do
       assert_raise ArgumentError, fn ->
         {py_list, %{}} = Pythonx.eval("[]", %{})
-        Result.from_py(py_list)
+        Result.from_py!(py_list)
       end
     end
 

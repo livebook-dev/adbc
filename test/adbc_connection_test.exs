@@ -1201,6 +1201,30 @@ defmodule Adbc.ConnectionTest do
       assert error_message =~ "materialize"
     end
 
+    test "bulk inserts from IPC stream", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      # Build IPC stream data from columns
+      result = %Adbc.Result{
+        data: [
+          Adbc.Column.s64([1, 2, 3], name: "id"),
+          Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+        ],
+        num_rows: 3
+      }
+
+      ipc_data = Adbc.Result.to_ipc_stream(result)
+      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(ipc_data)
+
+      assert {:ok, 3} = Connection.bulk_insert(conn, stream, table: "ipc_users")
+
+      {:ok, verify} = Connection.query(conn, "SELECT * FROM ipc_users ORDER BY id")
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+      assert map["id"] == [1, 2, 3]
+      assert map["name"] == ["Alice", "Bob", "Charlie"]
+    end
+
     test "error: stream-based bulk insert on same connection", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
@@ -1309,6 +1333,32 @@ defmodule Adbc.ConnectionTest do
       # Verify the data in destination
       {:ok, verify} =
         Connection.query(dest_conn, "SELECT * FROM #{ingest_result.table} ORDER BY id")
+
+      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      assert map["id"] == [10, 20, 30]
+      assert map["code"] == ["X", "Y", "Z"]
+    end
+
+    test "IPC stream-based ingest", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      # Build IPC stream data from columns
+      result = %Adbc.Result{
+        data: [
+          Adbc.Column.s64([10, 20, 30], name: "id"),
+          Adbc.Column.string(["X", "Y", "Z"], name: "code")
+        ],
+        num_rows: 3
+      }
+
+      ipc_data = Adbc.Result.to_ipc_stream(result)
+      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(ipc_data)
+
+      assert {:ok, %Adbc.IngestResult{} = ingest_result} = Connection.ingest(conn, stream)
+      assert ingest_result.num_rows == 3
+
+      {:ok, verify} =
+        Connection.query(conn, "SELECT * FROM #{ingest_result.table} ORDER BY id")
 
       map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
       assert map["id"] == [10, 20, 30]

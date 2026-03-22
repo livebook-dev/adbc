@@ -134,6 +134,14 @@ defmodule Adbc do
   """
 
   @doc """
+  Return IPC endianness.
+  """
+  @spec ipc_endianness() :: :big | :little
+  def ipc_endianness do
+    Adbc.Nif.adbc_ipc_system_endianness()
+  end
+
+  @doc """
   Downloads a driver and returns the download status.
 
   It returns `:ok` or `{:error, binary}`. See `download_driver!/1`
