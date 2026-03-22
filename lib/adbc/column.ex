@@ -134,6 +134,10 @@ defmodule Adbc.Column do
     do: encode_signed(data, 64, &encode_integer/1)
 
   defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
+  defp encode_data(:string, data), do: encode_string(data, 32)
+  defp encode_data(:binary, data), do: encode_string(data, 32)
+  defp encode_data(:large_string, data), do: encode_string(data, 64)
+  defp encode_data(:large_binary, data), do: encode_string(data, 64)
   defp encode_data(_type, data), do: data
 
   @float_atoms [:nan, :infinity, :neg_infinity]
@@ -766,17 +770,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.string(["a", "ab", "abc"])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :string, nullable: false, metadata: nil},
-        data: [["a", "ab", "abc"]],
-        size: 3
-      }
+      iex> col = Adbc.Column.string(["a", "ab", "abc"])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :string, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      ["a", "ab", "abc"]
 
   """
   @spec string([String.t() | nil], Keyword.t()) :: t()
   def string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:string, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:string, opts),
+      data: [encode_string(data, 32)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -798,17 +805,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.large_string(["a", "ab", "abc"])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :large_string, nullable: false, metadata: nil},
-        data: [["a", "ab", "abc"]],
-        size: 3
-      }
+      iex> col = Adbc.Column.large_string(["a", "ab", "abc"])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :large_string, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      ["a", "ab", "abc"]
 
   """
   @spec large_string([String.t() | nil], Keyword.t()) :: t()
   def large_string(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_string, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:large_string, opts),
+      data: [encode_string(data, 64)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -828,17 +838,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.binary([<<0>>, <<1>>, <<2>>])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :binary, nullable: false, metadata: nil},
-        data: [[<<0>>, <<1>>, <<2>>]],
-        size: 3
-      }
+      iex> col = Adbc.Column.binary([<<0>>, <<1>>, <<2>>])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :binary, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [<<0>>, <<1>>, <<2>>]
 
   """
   @spec binary([iodata() | nil], Keyword.t()) :: t()
   def binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:binary, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:binary, opts),
+      data: [encode_string(data, 32)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -860,17 +873,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.large_binary([<<0>>, <<1>>, <<2>>])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :large_binary, nullable: false, metadata: nil},
-        data: [[<<0>>, <<1>>, <<2>>]],
-        size: 3
-      }
+      iex> col = Adbc.Column.large_binary([<<0>>, <<1>>, <<2>>])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :large_binary, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [<<0>>, <<1>>, <<2>>]
 
   """
   @spec large_binary([iodata() | nil], Keyword.t()) :: t()
   def large_binary(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:large_binary, opts), data: [data], size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:large_binary, opts),
+      data: [encode_string(data, 64)],
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -1489,6 +1505,20 @@ defmodule Adbc.Column do
     end
   end
 
+  def to_list(%Adbc.Column{field: %{type: type}, data: batches})
+      when type in [:string, :binary] do
+    Enum.flat_map(batches, fn {offsets, data, bitmap, bit_offset} ->
+      decode_string_32(offsets, data, bitmap, bit_offset)
+    end)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: type}, data: batches})
+      when type in [:large_string, :large_binary] do
+    Enum.flat_map(batches, fn {offsets, data, bitmap, bit_offset} ->
+      decode_string_64(offsets, data, bitmap, bit_offset)
+    end)
+  end
+
   def to_list(%Adbc.Column{data: batches}) do
     Enum.concat(batches)
   end
@@ -1524,6 +1554,28 @@ defmodule Adbc.Column do
     batches = Enum.reverse(data, batches)
     offsets = <<offsets::binary, new_offset::signed-integer-little-size(offset_size)>>
     encode_list(rest, batches, offsets, bitmap, pending, new_offset, offset_size)
+  end
+
+  defp encode_string(data, offset_size) do
+    encode_string(data, [], <<0::size(offset_size)>>, <<>>, 0, 0, offset_size)
+  end
+
+  defp encode_string([], iodata, offsets, bitmap, pending, _offset, _offset_size) do
+    {_data, bitmap, bit_offset} = bitmap_finish(<<>>, bitmap, pending)
+    {offsets, IO.iodata_to_binary(Enum.reverse(iodata)), bitmap, bit_offset}
+  end
+
+  defp encode_string([nil | rest], iodata, offsets, bitmap, pending, offset, offset_size) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    offsets = <<offsets::binary, offset::signed-integer-little-size(offset_size)>>
+    encode_string(rest, iodata, offsets, bitmap, pending, offset, offset_size)
+  end
+
+  defp encode_string([value | rest], iodata, offsets, bitmap, pending, offset, offset_size) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    offset = offset + byte_size(value)
+    offsets = <<offsets::binary, offset::signed-integer-little-size(offset_size)>>
+    encode_string(rest, [value | iodata], offsets, bitmap, pending, offset, offset_size)
   end
 
   @epoch_days Date.to_gregorian_days(~D[1970-01-01])
@@ -1834,6 +1886,32 @@ defmodule Adbc.Column do
     end
 
     defp unquote(name)(<<>>, _validity, _offset, _index, _decoder), do: []
+  end
+
+  for {name, offset_specifier} <- [
+        decode_string_32: quote(do: signed - integer - little - 32),
+        decode_string_64: quote(do: signed - integer - little - 64)
+      ] do
+    defp unquote(name)(offsets, data, validity, bit_offset) do
+      <<first::unquote(offset_specifier), rest::binary>> = offsets
+      unquote(name)(rest, data, validity, bit_offset, first, 0)
+    end
+
+    defp unquote(name)(
+           <<next::unquote(offset_specifier), rest::binary>>,
+           data,
+           validity,
+           bit_offset,
+           prev,
+           index
+         ) do
+      value =
+        if bitmap_valid?(validity, index, bit_offset), do: binary_part(data, prev, next - prev)
+
+      [value | unquote(name)(rest, data, validity, bit_offset, next, index + 1)]
+    end
+
+    defp unquote(name)(<<>>, _data, _validity, _bit_offset, _prev, _index), do: []
   end
 
   @compile {:inline, bitmap_valid?: 3}

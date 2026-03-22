@@ -699,6 +699,31 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env, struct ArrowSchema * sche
     return get_arrow_array_list_view(env, schema, values, 0, -1, level, list_type, resource);
 }
 
+// Build a {offsets, data, validity_bitmap | nil, bit_offset} tuple for variable-size elements (strings/binaries).
+template <typename OffsetT>
+ERL_NIF_TERM make_string_buffer_tuple(ErlNifEnv *env, struct ArrowArray * values, int64_t offset, int64_t count, int64_t offset_buffer_index, int64_t data_buffer_index, int64_t bitmap_buffer_index, void* resource) {
+    const OffsetT * offsets_ptr = (const OffsetT *)values->buffers[offset_buffer_index];
+    const uint8_t * data_ptr = (const uint8_t *)values->buffers[data_buffer_index];
+    const uint8_t * validity_bitmap = (const uint8_t *)values->buffers[bitmap_buffer_index];
+
+    ERL_NIF_TERM offsets_term = enif_make_resource_binary(env, resource, &offsets_ptr[offset], (count + 1) * sizeof(OffsetT));
+
+    OffsetT data_start = offsets_ptr[offset];
+    OffsetT data_end = offsets_ptr[offset + count];
+    ERL_NIF_TERM data_term = enif_make_resource_binary(env, resource, data_ptr + data_start, data_end - data_start);
+
+    ERL_NIF_TERM validity_term;
+    ERL_NIF_TERM offset_term = enif_make_int(env, (int)offset);
+    if (validity_bitmap == nullptr) {
+        validity_term = kAtomNil;
+    } else {
+        size_t total_bitmap_bytes = (values->length + 7) / 8;
+        validity_term = enif_make_resource_binary(env, resource, validity_bitmap, total_bitmap_bytes);
+    }
+
+    return enif_make_tuple4(env, offsets_term, data_term, validity_term, offset_term);
+}
+
 // Build a {data_binary, validity_bitmap | nil, bit_offset} tuple for fixed-size elements.
 ERL_NIF_TERM make_buffer_tuple(ErlNifEnv *env, struct ArrowArray * values, int64_t offset, int64_t count, size_t element_bytes, int64_t data_buffer_index, int64_t bitmap_buffer_index, void* resource) {
     const uint8_t * value_buffer = (const uint8_t *)values->buffers[data_buffer_index];
@@ -942,17 +967,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                 error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=u or format=z), values->n_buffers != 3");
                 return 1;
             }
-            current_term = strings_from_buffer(
-                env,
-                offset,
-                count,
-                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                (const int32_t *)values->buffers[offset_buffer_index],
-                (const uint8_t *)values->buffers[data_buffer_index],
-                [](ErlNifEnv *env, const uint8_t * string_buffers, int32_t offset, size_t nbytes) -> ERL_NIF_TERM {
-                    return erlang::nif::make_binary(env, (const char *)(string_buffers + offset), nbytes);
-                }
-            );
+            current_term = make_string_buffer_tuple<int32_t>(env, values, offset, count, offset_buffer_index, data_buffer_index, bitmap_buffer_index, resource);
         } else if (format[0] == 'U' || format[0] == 'Z') {
             // NANOARROW_TYPE_LARGE_STRING
             // NANOARROW_TYPE_LARGE_BINARY
@@ -969,17 +984,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                 error = erlang::nif::error(env, "invalid n_buffers value for ArrowArray (format=U or format=Z), values->n_buffers != 3");
                 return 1;
             }
-            current_term = strings_from_buffer(
-                env,
-                offset,
-                count,
-                (const uint8_t *)values->buffers[bitmap_buffer_index],
-                (const int64_t *)values->buffers[offset_buffer_index],
-                (const uint8_t *)values->buffers[data_buffer_index],
-                [](ErlNifEnv *env, const uint8_t * string_buffers, int64_t offset, size_t nbytes) -> ERL_NIF_TERM {
-                    return erlang::nif::make_binary(env, (const char *)(string_buffers + offset), nbytes);
-                }
-            );
+            current_term = make_string_buffer_tuple<int64_t>(env, values, offset, count, offset_buffer_index, data_buffer_index, bitmap_buffer_index, resource);
         } else {
             format_processed = false;
         }

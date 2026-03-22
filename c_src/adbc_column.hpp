@@ -465,36 +465,43 @@ failed:
     return ret;
 }
 
-int get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray * write_array, const std::function<int(struct ArrowArray *, struct ArrowStringView val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        ErlNifBinary bytes;
-        struct ArrowStringView val{};
-        if (enif_inspect_iolist_as_binary(env, head, &bytes)) {
-            val.data = (const char *)bytes.data;
-            val.size_bytes = static_cast<int64_t>(bytes.size);
-            NANOARROW_RETURN_NOT_OK(callback(write_array, val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
 
+    size_t offset_size = (nanoarrow_type == NANOARROW_TYPE_LARGE_STRING || nanoarrow_type == NANOARROW_TYPE_LARGE_BINARY) ? 8 : 4;
+
     nanoarrow::UniqueArray tmp;
     struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromType(write_array, nanoarrow_type));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
+    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
+
+    // Buffers: 0 = validity, 1 = offsets, 2 = data
     ERL_NIF_TERM batch, batch_tail = list;
     while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_string(env, batch, nullable, write_array, ArrowArrayAppendString);
-        if (ret != 0) return ret;
+        int arity;
+        const ERL_NIF_TERM *tuple;
+        if (!enif_get_tuple(env, batch, &arity, &tuple) || arity != 4) return 1;
+
+        ErlNifBinary offsets_bin, data_bin;
+        if (!enif_inspect_binary(env, tuple[0], &offsets_bin)) return 1;
+        if (!enif_inspect_binary(env, tuple[1], &data_bin)) return 1;
+        if (offsets_bin.size < offset_size) return 1;
+        size_t count = (offsets_bin.size / offset_size) - 1;
+
+        // Append offsets and data buffers directly
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 1), offsets_bin.data, offsets_bin.size));
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 2), data_bin.data, data_bin.size));
+
+        // Append validity bitmap (already in Arrow LSB-first format, bit_offset is always 0 from Elixir encoding)
+        bool has_validity = !enif_is_identical(tuple[2], kAtomNil);
+        if (has_validity) {
+            ErlNifBinary validity_bin;
+            if (!enif_inspect_binary(env, tuple[2], &validity_bin)) return 1;
+            size_t validity_bytes = (count + 7) / 8;
+            NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 0), validity_bin.data, validity_bytes));
+            write_array->null_count += count - ArrowBitCountSet(validity_bin.data, 0, count);
+        }
+
+        write_array->length += count;
     }
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
     ArrowArrayMove(tmp.get(), array_out);

@@ -11,8 +11,10 @@ defmodule Adbc.ColumnTest do
 
   describe "new/2" do
     test "empty list defaults to string" do
-      assert %Adbc.Column{field: %{type: :string, nullable: false}, data: [[]]} =
-               Adbc.Column.new([])
+      col = Adbc.Column.new([])
+      assert col.field.type == :string
+      assert col.field.nullable == false
+      assert Adbc.Column.to_list(col) == []
     end
 
     test "booleans" do

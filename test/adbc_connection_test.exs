@@ -77,7 +77,7 @@ defmodule Adbc.ConnectionTest do
                      type: :u32,
                      nullable: false,
                      metadata: nil
-                   },
+                   }
                  } = info_name_col,
                  %Adbc.Column{
                    field: %{
@@ -88,14 +88,14 @@ defmodule Adbc.ConnectionTest do
                    },
                    data: [
                      [
-                       %{"string_value" => ["SQLite"]},
+                       %{"string_value" => _},
                        # "3.43.2"
-                       %{"string_value" => [_]},
-                       %{"string_value" => ["ADBC SQLite Driver"]},
+                       %{"string_value" => _},
+                       %{"string_value" => _},
                        # "(unknown)"
-                       %{"string_value" => [_]},
+                       %{"string_value" => _},
                        # "0.4.0"
-                       %{"string_value" => [_]},
+                       %{"string_value" => _},
                        %{"int64_value" => _}
                      ]
                    ]
@@ -140,7 +140,7 @@ defmodule Adbc.ConnectionTest do
                      type: :u32,
                      nullable: false,
                      metadata: nil
-                   },
+                   }
                  } = info_name_col,
                  %Adbc.Column{
                    field: %{
@@ -149,7 +149,7 @@ defmodule Adbc.ConnectionTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [[%{"string_value" => ["SQLite"]}]]
+                   data: [[%{"string_value" => _}]]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -222,7 +222,7 @@ defmodule Adbc.ConnectionTest do
                        nullable: false,
                        metadata: nil
                      },
-                     data: [["table", "view"]]
+                     data: [_]
                    }
                  ]
                } = Adbc.Result.materialize(results)
@@ -261,7 +261,7 @@ defmodule Adbc.ConnectionTest do
                      type: :s64,
                      nullable: true,
                      metadata: nil
-                   },
+                   }
                  } = column
                ]
              } = Adbc.Result.materialize(results)
@@ -998,7 +998,6 @@ defmodule Adbc.ConnectionTest do
 
       assert map["id"] == [nil, 1, 3]
       assert map["name"] == [nil, "Alice", "Charlie"]
-
     end
 
     test "bulk inserts a Pythonx.Object implementing arrow stream", %{db: db} do

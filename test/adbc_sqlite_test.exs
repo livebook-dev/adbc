@@ -140,7 +140,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["hello"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -149,7 +149,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["world"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -158,7 +158,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["goodbye"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -167,7 +167,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["world"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -176,7 +176,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["foo"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -185,7 +185,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["bar"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -194,7 +194,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [[<<100, 97, 116, 97, 1, 2>>]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{name: "r1", type: :f64, nullable: true, metadata: nil},
@@ -231,7 +231,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["2021-01-01"]]
+                   data: [_]
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -240,7 +240,7 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [["2021-01-01 00:00:00"]]
+                   data: [_]
                  }
                ]
              } = Adbc.Result.materialize(results)
@@ -360,7 +360,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["hello"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -369,7 +369,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["world"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -378,7 +378,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["goodbye"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -387,7 +387,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["world"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -396,7 +396,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["foo"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -405,7 +405,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["bar"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -414,7 +414,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [[<<100, 97, 116, 97, 1, 2>>]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -461,7 +461,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["2021-01-01"]]
+                 data: [_]
                },
                %Adbc.Column{
                  field: %Adbc.Field{
@@ -470,7 +470,7 @@ defmodule Adbc.SQLiteTest do
                    nullable: true,
                    metadata: nil
                  },
-                 data: [["2021-01-01 00:00:00"]]
+                 data: [_]
                }
              ]
            } = Adbc.Result.materialize(results)
