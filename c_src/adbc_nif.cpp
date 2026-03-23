@@ -1094,6 +1094,12 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
 
     kAtomAdbcColumnModule = erlang::nif::atom(env, "Elixir.Adbc.Column");
     kAtomAdbcFieldModule = erlang::nif::atom(env, "Elixir.Adbc.Field");
+    kAtomAdbcDictionaryDataModule = erlang::nif::atom(env, "Elixir.Adbc.DictionaryData");
+    kAtomAdbcRunEndEncodedDataModule = erlang::nif::atom(env, "Elixir.Adbc.RunEndEncodedData");
+    kAtomAdbcListViewDataModule = erlang::nif::atom(env, "Elixir.Adbc.ListViewData");
+    kAtomAdbcListDataModule = erlang::nif::atom(env, "Elixir.Adbc.ListData");
+    kAtomAdbcBufferDataModule = erlang::nif::atom(env, "Elixir.Adbc.BufferData");
+    kAtomAdbcBinaryDataModule = erlang::nif::atom(env, "Elixir.Adbc.BinaryData");
     kAtomFieldKey = erlang::nif::atom(env, "field");
     kAtomNameKey = erlang::nif::atom(env, "name");
     kAtomTypeKey = erlang::nif::atom(env, "type");
@@ -1103,6 +1109,7 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomSizeKey = erlang::nif::atom(env, "size");
     kAtomLengthKey = erlang::nif::atom(env, "length");
     kAtomOffsetKey = erlang::nif::atom(env, "offset");
+    kAtomBitOffsetKey = erlang::nif::atom(env, "bit_offset");
 
     kAdbcColumnTypeBool = erlang::nif::atom(env, "boolean");
     kAdbcColumnTypeS8 = erlang::nif::atom(env, "s8");

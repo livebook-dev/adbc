@@ -44,6 +44,38 @@ defmodule Adbc.Column do
   @type interval_day_xime :: {s32(), s32()}
   @type interval_month_day_nano :: {s32(), s32(), s64()}
 
+  @time_unit_multiplier %{
+    seconds: 1,
+    milliseconds: 1_000,
+    microseconds: 1_000_000,
+    nanoseconds: 1_000_000_000
+  }
+
+  @unit_precision %{seconds: 0, milliseconds: 3, microseconds: 6, nanoseconds: 6}
+  @epoch_days Date.to_gregorian_days(~D[1970-01-01])
+  @epoch_seconds :calendar.datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}})
+
+  @doc """
+  Converts a column's data from reference type to regular Elixir terms.
+
+  The `size` field is `nil` for unmaterialized columns and is set to the
+  number of elements after materialization (or when built from Elixir).
+  You can use `size` to check whether a column has been materialized.
+  """
+  @spec materialize(t()) :: t()
+  def materialize(%Adbc.Column{field: field, data: data_ref} = column)
+      when is_reference(data_ref) do
+    case Adbc.Nif.adbc_column_materialize(data_ref) do
+      {:ok, {data, size}} ->
+        %{column | data: data, size: size}
+
+      {:error, reason} ->
+        raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
+    end
+  end
+
+  def materialize(%Adbc.Column{} = column), do: column
+
   @doc """
   Creates a column by inferring the type from the data.
 
@@ -89,7 +121,7 @@ defmodule Adbc.Column do
       iex> col.field
       %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil}
       iex> Adbc.Column.to_list(col)
-      [1, nil, 3.0]
+      [1.0, nil, 3.0]
 
       iex> col = Adbc.Column.new([1, 2, 3], type: :u32)
       iex> col.field
@@ -118,27 +150,26 @@ defmodule Adbc.Column do
     }
   end
 
-  @integer_types %{s8: 8, s16: 16, s32: 32, s64: 64, u8: 8, u16: 16, u32: 32, u64: 64}
-
-  defp encode_data(type, data) when is_map_key(@integer_types, type) do
-    encode_signed(data, Map.fetch!(@integer_types, type), &encode_integer/1)
+  for {type, size} <- [s8: 8, s16: 16, s32: 32, s64: 64, u8: 8, u16: 16, u32: 32, u64: 64] do
+    defp encode_data(unquote(type), data),
+      do: encode_buffer(data, unquote(size), &encode_integer/1)
   end
 
+  defp encode_data(:boolean, data), do: encode_boolean(data)
+  defp encode_data(:f16, data), do: encode_float(data, 16)
+  defp encode_data(:f32, data), do: encode_float(data, 32)
+  defp encode_data(:f64, data), do: encode_float(data, 64)
   defp encode_data(:date32, data), do: encode_date32(data)
   defp encode_data(:date64, data), do: encode_date64(data)
+  defp encode_data({:duration, _unit}, data), do: encode_buffer(data, 64, &encode_integer/1)
   defp encode_data({:time32, unit}, data), do: encode_time(data, unit, 32)
   defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
-
-  defp encode_data({:duration, _unit}, data),
-    do: encode_signed(data, 64, &encode_integer/1)
-
   defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
   defp encode_data(:string, data), do: encode_string(data, 32)
   defp encode_data(:binary, data), do: encode_string(data, 32)
   defp encode_data(:large_string, data), do: encode_string(data, 64)
   defp encode_data(:large_binary, data), do: encode_string(data, 64)
-  defp encode_data(_type, data), do: data
 
   @float_atoms [:nan, :infinity, :neg_infinity]
 
@@ -290,17 +321,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.boolean([true, false, true])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :boolean, nullable: false, metadata: nil},
-        data: [true, false, true],
-        size: 3
-      }
+      iex> col = Adbc.Column.boolean([true, false, true])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :boolean, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [true, false, true]
 
   """
   @spec boolean([boolean()], Keyword.t()) :: t()
   def boolean(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:boolean, opts), data: data, size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:boolean, opts),
+      data: encode_boolean(data),
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -331,7 +365,7 @@ defmodule Adbc.Column do
   def u8(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:u8, opts),
-      data: encode_data(:u8, data),
+      data: encode_buffer(data, 8, &encode_integer/1),
       size: length(data)
     }
   end
@@ -364,7 +398,7 @@ defmodule Adbc.Column do
   def u16(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:u16, opts),
-      data: encode_data(:u16, data),
+      data: encode_buffer(data, 16, &encode_integer/1),
       size: length(data)
     }
   end
@@ -397,7 +431,7 @@ defmodule Adbc.Column do
   def u32(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:u32, opts),
-      data: encode_data(:u32, data),
+      data: encode_buffer(data, 32, &encode_integer/1),
       size: length(data)
     }
   end
@@ -430,7 +464,7 @@ defmodule Adbc.Column do
   def u64(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:u64, opts),
-      data: encode_data(:u64, data),
+      data: encode_buffer(data, 64, &encode_integer/1),
       size: length(data)
     }
   end
@@ -463,7 +497,7 @@ defmodule Adbc.Column do
   def s8(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:s8, opts),
-      data: encode_data(:s8, data),
+      data: encode_buffer(data, 8, &encode_integer/1),
       size: length(data)
     }
   end
@@ -496,7 +530,7 @@ defmodule Adbc.Column do
   def s16(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:s16, opts),
-      data: encode_data(:s16, data),
+      data: encode_buffer(data, 16, &encode_integer/1),
       size: length(data)
     }
   end
@@ -529,7 +563,7 @@ defmodule Adbc.Column do
   def s32(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:s32, opts),
-      data: encode_data(:s32, data),
+      data: encode_buffer(data, 32, &encode_integer/1),
       size: length(data)
     }
   end
@@ -562,7 +596,7 @@ defmodule Adbc.Column do
   def s64(data, opts \\ []) when is_list(data) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new(:s64, opts),
-      data: encode_data(:s64, data),
+      data: encode_buffer(data, 64, &encode_integer/1),
       size: length(data)
     }
   end
@@ -584,17 +618,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.f16([1.0, 2.0, 3.0])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :f16, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0],
-        size: 3
-      }
+      iex> col = Adbc.Column.f16([1.0, 2.0, 3.0])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :f16, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1.0, 2.0, 3.0]
 
   """
   @spec f16([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f16(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f16, opts), data: data, size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:f16, opts),
+      data: encode_float(data, 16),
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -614,17 +651,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.f32([1.0, 2.0, 3.0])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :f32, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0],
-        size: 3
-      }
+      iex> col = Adbc.Column.f32([1.0, 2.0, 3.0])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :f32, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1.0, 2.0, 3.0]
 
   """
   @spec f32([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f32(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f32, opts), data: data, size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:f32, opts),
+      data: encode_float(data, 32),
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -644,17 +684,20 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.f64([1.0, 2.0, 3.0])
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: :f64, nullable: false, metadata: nil},
-        data: [1.0, 2.0, 3.0],
-        size: 3
-      }
+      iex> col = Adbc.Column.f64([1.0, 2.0, 3.0])
+      iex> col.field
+      %Adbc.Field{name: nil, type: :f64, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [1.0, 2.0, 3.0]
 
   """
   @spec f64([integer | float | nil | :infinity | :neg_infinity | :nan], Keyword.t()) :: t()
   def f64(data, opts \\ []) when is_list(data) and is_list(opts) do
-    %Adbc.Column{field: Adbc.Field.new(:f64, opts), data: data, size: length(data)}
+    %Adbc.Column{
+      field: Adbc.Field.new(:f64, opts),
+      data: encode_float(data, 64),
+      size: length(data)
+    }
   end
 
   @doc type: :column_builder
@@ -724,7 +767,7 @@ defmodule Adbc.Column do
   defp coef_length(coef, length), do: coef_length(Kernel.div(coef, 10), length + 1)
 
   defp encode_decimal(data, bitwidth, precision, scale) do
-    encode_signed(data, bitwidth, fn
+    encode_buffer(data, bitwidth, fn
       integer when is_integer(integer) ->
         if coef_length(integer) > precision do
           raise ArgumentError,
@@ -1101,7 +1144,7 @@ defmodule Adbc.Column do
              unit in [:seconds, :milliseconds, :microseconds, :nanoseconds] do
     %Adbc.Column{
       field: Adbc.Field.new({:duration, unit}, opts),
-      data: encode_signed(data, 64, &encode_integer/1),
+      data: encode_buffer(data, 64, &encode_integer/1),
       size: length(data)
     }
   end
@@ -1283,208 +1326,9 @@ defmodule Adbc.Column do
       when index_type in [:s8, :u8, :s16, :u16, :s32, :u32, :s64, :u64] do
     %Adbc.Column{
       field: Adbc.Field.new({:dictionary, key.field, value.field}, opts),
-      data: %{key: key.data, value: value.data},
+      data: %Adbc.DictionaryData{key: key.data, value: value.data},
       size: key.size
     }
-  end
-
-  @doc """
-  Converts a column's data from reference type to regular Elixir terms.
-
-  The `size` field is `nil` for unmaterialized columns and is set to the
-  number of elements after materialization (or when built from Elixir).
-  You can use `size` to check whether a column has been materialized.
-  """
-  @spec materialize(t()) :: t()
-  def materialize(%Adbc.Column{size: size} = column) when is_integer(size), do: column
-
-  def materialize(%Adbc.Column{field: field, data: data_ref} = column)
-      when is_reference(data_ref) do
-    case Adbc.Nif.adbc_column_materialize(data_ref) do
-      {:ok, {data, size}} ->
-        %{column | data: data, size: size}
-
-      {:error, reason} ->
-        raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
-    end
-  end
-
-  @doc """
-  Converts a column's data to a plain Elixir list.
-
-  For primitive columns, returns the data as-is. For composite
-  types (dictionary, list, struct, list_view, run_end_encoded),
-  expands the data into its logical representation.
-
-  ## Examples
-
-      iex> Adbc.Column.s32([1, 2, 3]) |> Adbc.Column.to_list()
-      [1, 2, 3]
-
-      iex> col = Adbc.Column.dictionary(
-      ...>   Adbc.Column.s32([0, 1, 0, 2]),
-      ...>   Adbc.Column.string(["a", "b", "c"])
-      ...> )
-      iex> Adbc.Column.to_list(col)
-      ["a", "b", "a", "c"]
-
-  """
-  @spec to_list(t()) :: [term()]
-  def to_list(%Adbc.Column{
-        field: %{type: {:dictionary, key_field, value_field}},
-        data: %{key: key_data, value: value_data}
-      }) do
-    value_list = to_list(%Adbc.Column{field: value_field, data: value_data})
-
-    to_list(%Adbc.Column{field: key_field, data: key_data})
-    |> Enum.map(fn
-      index when is_integer(index) -> Enum.at(value_list, index)
-      nil -> nil
-    end)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:run_end_encoded, run_ends_field, values_field}},
-        data: batch
-      }) do
-    values = to_list(%Adbc.Column{field: values_field, data: batch.values})
-    run_ends = to_list(%Adbc.Column{field: run_ends_field, data: batch.run_ends, size: 0})
-    expand_runs(run_ends, values, batch.offset, batch.offset + batch.length)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {type, inner_field}}, data: batch})
-      when type in [:list_view, :large_list_view] do
-    values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
-
-    Enum.zip_with([batch.offsets, batch.sizes, batch.validity], fn
-      [offset, size, true] -> Enum.slice(values, offset, size)
-      [_offset, _size, false] -> nil
-    end)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batch}) do
-    columns =
-      Enum.zip_with(fields, batch, fn field, col_data ->
-        %Adbc.Column{field: field, data: col_data, size: 0}
-      end)
-
-    %Adbc.Result{data: [columns], num_rows: nil}
-    |> Table.to_rows()
-    |> Enum.to_list()
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: %{} = batch}) do
-    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
-    <<first::signed-integer-little-32, rest::binary>> = batch.offsets
-    decode_list_32(rest, batch.validity, batch.offset, values, first, 0)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {:large_list, inner_field}}, data: %{} = batch}) do
-    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
-    <<first::signed-integer-little-64, rest::binary>> = batch.offsets
-    decode_list_64(rest, batch.validity, batch.offset, values, first, 0)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:fixed_size_list, inner_field, fixed_size}},
-        data: %{} = batch
-      }) do
-    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
-    decode_fixed_size_list(values, batch.validity, batch.offset, fixed_size, 0)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: :date32}, data: {binary, bitmap, bit_offset}}) do
-    decode_signed_32(binary, bitmap, bit_offset, &days_to_date/1)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: :date64}, data: {binary, bitmap, bit_offset}}) do
-    decode_signed_64(binary, bitmap, bit_offset, &milliseconds_to_date/1)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {:time32, unit}}, data: {binary, bitmap, bit_offset}}) do
-    decode_signed_32(binary, bitmap, bit_offset, &int_to_time(&1, unit))
-  end
-
-  def to_list(%Adbc.Column{field: %{type: {:time64, unit}}, data: {binary, bitmap, bit_offset}}) do
-    decode_signed_64(binary, bitmap, bit_offset, &int_to_time(&1, unit))
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:timestamp, unit, _timezone}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_signed_64(binary, bitmap, bit_offset, &int_to_naive_datetime(&1, unit))
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:duration, _unit}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_signed_64(binary, bitmap, bit_offset, &Function.identity/1)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:interval, :month}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_signed_32(binary, bitmap, bit_offset, &Function.identity/1)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:interval, :day_time}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_interval_day_time(binary, bitmap, bit_offset)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:interval, :month_day_nano}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_interval_month_day_nano(binary, bitmap, bit_offset)
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:decimal128, _, scale}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_signed_128(binary, bitmap, bit_offset, &coef_to_decimal(&1, scale))
-  end
-
-  def to_list(%Adbc.Column{
-        field: %{type: {:decimal256, _, scale}},
-        data: {binary, bitmap, bit_offset}
-      }) do
-    decode_signed_256(binary, bitmap, bit_offset, &coef_to_decimal(&1, scale))
-  end
-
-  for {type, decode_fun} <- [
-        s8: :decode_signed_8,
-        s16: :decode_signed_16,
-        s32: :decode_signed_32,
-        s64: :decode_signed_64,
-        u8: :decode_unsigned_8,
-        u16: :decode_unsigned_16,
-        u32: :decode_unsigned_32,
-        u64: :decode_unsigned_64
-      ] do
-    def to_list(%Adbc.Column{field: %{type: unquote(type)}, data: {binary, bitmap, bit_offset}}) do
-      unquote(decode_fun)(binary, bitmap, bit_offset, &Function.identity/1)
-    end
-  end
-
-  def to_list(%Adbc.Column{field: %{type: type}, data: {offsets, data, bitmap, bit_offset}})
-      when type in [:string, :binary] do
-    decode_string_32(offsets, data, bitmap, bit_offset)
-  end
-
-  def to_list(%Adbc.Column{field: %{type: type}, data: {offsets, data, bitmap, bit_offset}})
-      when type in [:large_string, :large_binary] do
-    decode_string_64(offsets, data, bitmap, bit_offset)
-  end
-
-  def to_list(%Adbc.Column{data: data}) do
-    data
   end
 
   defp encode_list(data, offset_size) do
@@ -1493,14 +1337,87 @@ defmodule Adbc.Column do
 
     # While values is a single array in Arrow,
     # we keep it as a list so we concat buffers in C
-    %{offsets: offsets, validity: bitmap, values: values, offset: bit_offset}
+    %Adbc.ListData{offsets: offsets, validity: bitmap, values: values, bit_offset: bit_offset}
+  end
+
+  defp encode_boolean(data) do
+    encode_boolean(data, 0, <<>>, 0, 0, <<>>, 0)
+  end
+
+  defp encode_boolean([], count, data, byte, bits, bitmap, validity_pending) do
+    {_data, validity, bit_offset} = bitmap_finish(<<>>, bitmap, validity_pending)
+    data = if bits > 0, do: <<data::binary, byte>>, else: data
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset, size: count}
+  end
+
+  defp encode_boolean([nil | rest], count, data, byte, bits, bitmap, validity_pending) do
+    {bitmap, validity_pending} = bitmap_mark_null(bitmap, validity_pending)
+    {data, byte, bits} = boolean_put_bit(data, byte, bits, 0)
+    encode_boolean(rest, count + 1, data, byte, bits, bitmap, validity_pending)
+  end
+
+  defp encode_boolean([bool | rest], count, data, byte, bits, bitmap, validity_pending)
+       when is_boolean(bool) do
+    {bitmap, validity_pending} = bitmap_mark_valid(bitmap, validity_pending)
+    bit = if bool == true, do: 1, else: 0
+    {data, byte, bits} = boolean_put_bit(data, byte, bits, bit)
+    encode_boolean(rest, count + 1, data, byte, bits, bitmap, validity_pending)
+  end
+
+  defp boolean_put_bit(data, byte, 7, bit), do: {<<data::binary, byte ||| bit <<< 7>>, 0, 0}
+  defp boolean_put_bit(data, byte, bits, bit), do: {data, byte ||| bit <<< bits, bits + 1}
+
+  @float_nan %{16 => 0x7E00, 32 => 0x7FC00000, 64 => 0x7FF8000000000000}
+  @float_infinity %{16 => 0x7C00, 32 => 0x7F800000, 64 => 0x7FF0000000000000}
+  @float_neg_infinity %{16 => 0xFC00, 32 => 0xFF800000, 64 => 0xFFF0000000000000}
+
+  defp encode_float(data, size) do
+    encode_float(data, size, <<>>, <<>>, 0)
+  end
+
+  defp encode_float([], _size, data, bitmap, pending) do
+    {_data, validity, bit_offset} = bitmap_finish(<<>>, bitmap, pending)
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset}
+  end
+
+  defp encode_float([nil | rest], size, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    encode_float(rest, size, <<data::binary, 0::size(size)>>, bitmap, pending)
+  end
+
+  defp encode_float([:nan | rest], size, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    data = <<data::binary, Map.fetch!(@float_nan, size)::integer-little-size(size)>>
+    encode_float(rest, size, data, bitmap, pending)
+  end
+
+  defp encode_float([:infinity | rest], size, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    data = <<data::binary, Map.fetch!(@float_infinity, size)::integer-little-size(size)>>
+    encode_float(rest, size, data, bitmap, pending)
+  end
+
+  defp encode_float([:neg_infinity | rest], size, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    data = <<data::binary, Map.fetch!(@float_neg_infinity, size)::integer-little-size(size)>>
+    encode_float(rest, size, data, bitmap, pending)
+  end
+
+  defp encode_float([value | rest], size, data, bitmap, pending) when is_number(value) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    encode_float(rest, size, <<data::binary, value::float-little-size(size)>>, bitmap, pending)
   end
 
   defp encode_string(data, offset_size) do
     {offsets, values, bitmap, bit_offset} =
       encode_offset(data, offset_size, fn value -> {value, byte_size(value)} end)
 
-    {offsets, IO.iodata_to_binary(values), bitmap, bit_offset}
+    %Adbc.BinaryData{
+      offsets: offsets,
+      data: IO.iodata_to_binary(values),
+      validity: bitmap,
+      bit_offset: bit_offset
+    }
   end
 
   defp encode_offset(data, offset_size, encoder) do
@@ -1526,35 +1443,24 @@ defmodule Adbc.Column do
     encode_offset(rest, [data | acc], offsets, bitmap, pending, offset, offset_size, encoder)
   end
 
-  @epoch_days Date.to_gregorian_days(~D[1970-01-01])
-  defp days_to_date(days), do: Date.from_gregorian_days(days + @epoch_days)
-  defp milliseconds_to_date(ms), do: Date.from_gregorian_days(div(ms, 86_400_000) + @epoch_days)
-
   defp encode_date32(data) do
-    encode_signed(data, 32, fn
+    encode_buffer(data, 32, fn
       %Date{} = date -> Date.to_gregorian_days(date) - @epoch_days
       integer when is_integer(integer) -> integer
     end)
   end
 
   defp encode_date64(data) do
-    encode_signed(data, 64, fn
+    encode_buffer(data, 64, fn
       %Date{} = date -> (Date.to_gregorian_days(date) - @epoch_days) * 86_400_000
       integer when is_integer(integer) -> integer
     end)
   end
 
-  @time_unit_multiplier %{
-    seconds: 1,
-    milliseconds: 1_000,
-    microseconds: 1_000_000,
-    nanoseconds: 1_000_000_000
-  }
-
   defp encode_time(data, unit, bitwidth) do
     multiplier = Map.fetch!(@time_unit_multiplier, unit)
 
-    encode_signed(data, bitwidth, fn
+    encode_buffer(data, bitwidth, fn
       %Time{} = time ->
         {seconds, microseconds} = Time.to_seconds_after_midnight(time)
         seconds * multiplier + microseconds * div(multiplier, 1_000_000)
@@ -1564,20 +1470,10 @@ defmodule Adbc.Column do
     end)
   end
 
-  defp int_to_time(val, unit) do
-    multiplier = Map.fetch!(@time_unit_multiplier, unit)
-    total_us = div(val * 1_000_000, multiplier)
-    seconds = div(total_us, 1_000_000)
-    microseconds = rem(total_us, 1_000_000)
-    Time.add(~T[00:00:00], seconds * 1_000_000 + microseconds, :microsecond)
-  end
-
-  @epoch_seconds :calendar.datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}})
-
   defp encode_timestamp(data, unit) do
     multiplier = Map.fetch!(@time_unit_multiplier, unit)
 
-    encode_signed(data, 64, fn
+    encode_buffer(data, 64, fn
       %NaiveDateTime{} = ndt ->
         {gregorian_seconds, microseconds} = NaiveDateTime.to_gregorian_seconds(ndt)
         unix_seconds = gregorian_seconds - @epoch_seconds
@@ -1591,7 +1487,7 @@ defmodule Adbc.Column do
   defp encode_integer(integer) when is_integer(integer), do: integer
 
   defp encode_interval(data, :month) do
-    encode_signed(data, 32, &encode_integer/1)
+    encode_buffer(data, 32, &encode_integer/1)
   end
 
   defp encode_interval(data, :day_time) do
@@ -1600,40 +1496,6 @@ defmodule Adbc.Column do
 
   defp encode_interval(data, :month_day_nano) do
     encode_interval_month_day_nano(data, <<>>, <<>>, 0)
-  end
-
-  @unit_precision %{seconds: 0, milliseconds: 3, microseconds: 6, nanoseconds: 6}
-
-  defp int_to_naive_datetime(val, unit) do
-    multiplier = Map.fetch!(@time_unit_multiplier, unit)
-    precision = Map.fetch!(@unit_precision, unit)
-    total_us = div(val * 1_000_000, multiplier)
-    unix_seconds = div(total_us, 1_000_000)
-    microseconds = rem(total_us, 1_000_000)
-    gregorian_seconds = unix_seconds + @epoch_seconds
-    NaiveDateTime.from_gregorian_seconds(gregorian_seconds, {microseconds, precision})
-  end
-
-  defp coef_to_decimal(coef, scale) when coef < 0, do: Decimal.new(-1, -coef, -scale)
-  defp coef_to_decimal(coef, scale), do: Decimal.new(1, coef, -scale)
-
-  defp expand_runs([run_end | run_ends], [_ | values], pos, stop)
-       when run_end <= pos do
-    expand_runs(run_ends, values, pos, stop)
-  end
-
-  defp expand_runs([run_end | run_ends], [value | values], pos, stop) do
-    duplicate_runs(value, min(run_end, stop) - pos, run_ends, values, min(run_end, stop), stop)
-  end
-
-  defp expand_runs(_, _, _, _), do: []
-
-  defp duplicate_runs(_value, 0, run_ends, values, pos, stop) do
-    expand_runs(run_ends, values, pos, stop)
-  end
-
-  defp duplicate_runs(value, n, run_ends, values, pos, stop) do
-    [value | duplicate_runs(value, n - 1, run_ends, values, pos, stop)]
   end
 
   ## Bit encoding
@@ -1645,29 +1507,31 @@ defmodule Adbc.Column do
   #   - {byte, bits}: partial byte being built LSB-first, bits is 1-7
   # `bitmap` is passed explicitly for Erlang binary append optimization.
 
-  defp encode_signed(list, size, encoder) do
-    encode_signed(list, <<>>, <<>>, 0, size, encoder)
+  defp encode_buffer(list, size, encoder) do
+    encode_buffer(list, <<>>, <<>>, 0, size, encoder)
   end
 
-  defp encode_signed([], data, bitmap, pending, _size, _encoder) do
-    bitmap_finish(data, bitmap, pending)
+  defp encode_buffer([], data, bitmap, pending, _size, _encoder) do
+    {data, validity, bit_offset} = bitmap_finish(data, bitmap, pending)
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset}
   end
 
-  defp encode_signed([nil | rest], data, bitmap, pending, size, encoder) do
+  defp encode_buffer([nil | rest], data, bitmap, pending, size, encoder) do
     {bitmap, pending} = bitmap_mark_null(bitmap, pending)
-    encode_signed(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
+    encode_buffer(rest, <<data::binary, 0::size(size)>>, bitmap, pending, size, encoder)
   end
 
-  defp encode_signed([value | rest], data, bitmap, pending, size, encoder) do
+  defp encode_buffer([value | rest], data, bitmap, pending, size, encoder) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
     data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
-    encode_signed(rest, data, bitmap, pending, size, encoder)
+    encode_buffer(rest, data, bitmap, pending, size, encoder)
   end
 
   ## Interval encoding (custom multi-field binary, avoids big integer arithmetic)
 
   defp encode_interval_day_time([], data, bitmap, pending) do
-    bitmap_finish(data, bitmap, pending)
+    {data, validity, bit_offset} = bitmap_finish(data, bitmap, pending)
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset}
   end
 
   defp encode_interval_day_time([nil | rest], data, bitmap, pending) do
@@ -1682,7 +1546,8 @@ defmodule Adbc.Column do
   end
 
   defp encode_interval_month_day_nano([], data, bitmap, pending) do
-    bitmap_finish(data, bitmap, pending)
+    {data, validity, bit_offset} = bitmap_finish(data, bitmap, pending)
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset}
   end
 
   defp encode_interval_month_day_nano([nil | rest], data, bitmap, pending) do
@@ -1739,7 +1604,284 @@ defmodule Adbc.Column do
     {<<bitmap::binary, -1::size(full_size)>>, rem(pending, 8)}
   end
 
-  ## Decoding
+  @doc """
+  Converts a column's data to a plain Elixir list.
+
+  For primitive columns, returns the data as-is. For composite
+  types (dictionary, list, struct, list_view, run_end_encoded),
+  expands the data into its logical representation.
+
+  ## Examples
+
+      iex> Adbc.Column.s32([1, 2, 3]) |> Adbc.Column.to_list()
+      [1, 2, 3]
+
+      iex> col = Adbc.Column.dictionary(
+      ...>   Adbc.Column.s32([0, 1, 0, 2]),
+      ...>   Adbc.Column.string(["a", "b", "c"])
+      ...> )
+      iex> Adbc.Column.to_list(col)
+      ["a", "b", "a", "c"]
+
+  """
+  @spec to_list(t()) :: [term()]
+  def to_list(%Adbc.Column{
+        field: %{type: {:dictionary, key_field, value_field}},
+        data: %Adbc.DictionaryData{key: key_data, value: value_data}
+      }) do
+    value_list = to_list(%Adbc.Column{field: value_field, data: value_data})
+    decoder = &Enum.at(value_list, &1)
+    %Adbc.BufferData{data: binary, validity: validity, bit_offset: bit_offset} = key_data
+
+    case key_field.type do
+      :s8 -> decode_signed_8(binary, validity, bit_offset, 0, decoder)
+      :s16 -> decode_signed_16(binary, validity, bit_offset, 0, decoder)
+      :s32 -> decode_signed_32(binary, validity, bit_offset, 0, decoder)
+      :s64 -> decode_signed_64(binary, validity, bit_offset, 0, decoder)
+      :u8 -> decode_unsigned_8(binary, validity, bit_offset, 0, decoder)
+      :u16 -> decode_unsigned_16(binary, validity, bit_offset, 0, decoder)
+      :u32 -> decode_unsigned_32(binary, validity, bit_offset, 0, decoder)
+      :u64 -> decode_unsigned_64(binary, validity, bit_offset, 0, decoder)
+    end
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:run_end_encoded, run_ends_field, values_field}},
+        data: %Adbc.RunEndEncodedData{} = batch
+      }) do
+    values = to_list(%Adbc.Column{field: values_field, data: batch.values})
+    run_ends = to_list(%Adbc.Column{field: run_ends_field, data: batch.run_ends})
+    decode_runs(run_ends, values, batch.offset, batch.offset + batch.length)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:list_view, inner_field}},
+        data: %Adbc.ListViewData{} = batch
+      }) do
+    values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
+    decode_list_view_32(batch.offsets, batch.sizes, batch.validity, batch.bit_offset, values, 0)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:large_list_view, inner_field}},
+        data: %Adbc.ListViewData{} = batch
+      }) do
+    values = to_list(%Adbc.Column{field: inner_field, data: batch.values})
+    decode_list_view_64(batch.offsets, batch.sizes, batch.validity, batch.bit_offset, values, 0)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batch}) do
+    columns =
+      Enum.zip_with(fields, batch, fn field, col_data ->
+        %Adbc.Column{field: field, data: col_data}
+      end)
+
+    %Adbc.Result{data: [columns], num_rows: nil}
+    |> Table.to_rows()
+    |> Enum.to_list()
+  end
+
+  def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: %Adbc.ListData{} = batch}) do
+    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
+    <<first::signed-integer-little-32, rest::binary>> = batch.offsets
+    decode_list_32(rest, batch.validity, batch.bit_offset, values, first, 0)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:large_list, inner_field}},
+        data: %Adbc.ListData{} = batch
+      }) do
+    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
+    <<first::signed-integer-little-64, rest::binary>> = batch.offsets
+    decode_list_64(rest, batch.validity, batch.bit_offset, values, first, 0)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:fixed_size_list, inner_field, fixed_size}},
+        data: %Adbc.ListData{} = batch
+      }) do
+    values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
+    decode_fixed_size_list(values, batch.validity, batch.bit_offset, fixed_size, 0)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: :date32},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_32(binary, bitmap, bit_offset, &days_to_date/1)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: :date64},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_64(binary, bitmap, bit_offset, &milliseconds_to_date/1)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:time32, unit}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_32(binary, bitmap, bit_offset, &int_to_time(&1, unit))
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:time64, unit}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_64(binary, bitmap, bit_offset, &int_to_time(&1, unit))
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:timestamp, unit, _timezone}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_64(binary, bitmap, bit_offset, &int_to_naive_datetime(&1, unit))
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:duration, _unit}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_64(binary, bitmap, bit_offset, &Function.identity/1)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:interval, :month}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_32(binary, bitmap, bit_offset, &Function.identity/1)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:interval, :day_time}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_interval_day_time(binary, bitmap, bit_offset)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:interval, :month_day_nano}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_interval_month_day_nano(binary, bitmap, bit_offset)
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:decimal128, _, scale}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_128(binary, bitmap, bit_offset, &coef_to_decimal(&1, scale))
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:decimal256, _, scale}},
+        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+      }) do
+    decode_signed_256(binary, bitmap, bit_offset, &coef_to_decimal(&1, scale))
+  end
+
+  for {type, decode_fun} <- [
+        s8: :decode_signed_8,
+        s16: :decode_signed_16,
+        s32: :decode_signed_32,
+        s64: :decode_signed_64,
+        u8: :decode_unsigned_8,
+        u16: :decode_unsigned_16,
+        u32: :decode_unsigned_32,
+        u64: :decode_unsigned_64
+      ] do
+    def to_list(%Adbc.Column{
+          field: %{type: unquote(type)},
+          data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+        }) do
+      unquote(decode_fun)(binary, bitmap, bit_offset, &Function.identity/1)
+    end
+  end
+
+  def to_list(%Adbc.Column{field: %{type: :f16}, data: %Adbc.BufferData{} = buffer}) do
+    decode_float_16(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: :f32}, data: %Adbc.BufferData{} = buffer}) do
+    decode_float_32(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: :f64}, data: %Adbc.BufferData{} = buffer}) do
+    decode_float_64(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: :boolean}, data: %Adbc.BufferData{} = buffer}) do
+    decode_boolean(buffer.data, buffer.validity, buffer.bit_offset, buffer.size, 0)
+  end
+
+  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = binary_data})
+      when type in [:string, :binary] do
+    decode_string_32(
+      binary_data.offsets,
+      binary_data.data,
+      binary_data.validity,
+      binary_data.bit_offset
+    )
+  end
+
+  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = binary_data})
+      when type in [:large_string, :large_binary] do
+    decode_string_64(
+      binary_data.offsets,
+      binary_data.data,
+      binary_data.validity,
+      binary_data.bit_offset
+    )
+  end
+
+  def to_list(%Adbc.Column{field: %{type: type}, data: data})
+      when type in [:string_view, :binary_view] do
+    data
+  end
+
+  defp int_to_naive_datetime(val, unit) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+    precision = Map.fetch!(@unit_precision, unit)
+    total_us = div(val * 1_000_000, multiplier)
+    unix_seconds = div(total_us, 1_000_000)
+    microseconds = rem(total_us, 1_000_000)
+    gregorian_seconds = unix_seconds + @epoch_seconds
+    NaiveDateTime.from_gregorian_seconds(gregorian_seconds, {microseconds, precision})
+  end
+
+  defp coef_to_decimal(coef, scale) when coef < 0, do: Decimal.new(-1, -coef, -scale)
+  defp coef_to_decimal(coef, scale), do: Decimal.new(1, coef, -scale)
+
+  defp days_to_date(days), do: Date.from_gregorian_days(days + @epoch_days)
+  defp milliseconds_to_date(ms), do: Date.from_gregorian_days(div(ms, 86_400_000) + @epoch_days)
+
+  defp int_to_time(val, unit) do
+    multiplier = Map.fetch!(@time_unit_multiplier, unit)
+    total_us = div(val * 1_000_000, multiplier)
+    seconds = div(total_us, 1_000_000)
+    microseconds = rem(total_us, 1_000_000)
+    Time.add(~T[00:00:00], seconds * 1_000_000 + microseconds, :microsecond)
+  end
+
+  defp decode_runs([run_end | run_ends], [_ | values], pos, stop)
+       when run_end <= pos do
+    decode_runs(run_ends, values, pos, stop)
+  end
+
+  defp decode_runs([run_end | run_ends], [value | values], pos, stop) do
+    duplicate_runs(value, min(run_end, stop) - pos, run_ends, values, min(run_end, stop), stop)
+  end
+
+  defp decode_runs(_, _, _, _), do: []
+
+  defp duplicate_runs(_value, 0, run_ends, values, pos, stop) do
+    decode_runs(run_ends, values, pos, stop)
+  end
+
+  defp duplicate_runs(value, n, run_ends, values, pos, stop) do
+    [value | duplicate_runs(value, n - 1, run_ends, values, pos, stop)]
+  end
 
   defp decode_fixed_size_list([], _validity, _bit_offset, _fixed_size, _index) do
     []
@@ -1784,6 +1926,57 @@ defmodule Adbc.Column do
 
   defp decode_interval_month_day_nano(<<>>, _validity, _offset, _index), do: []
 
+  # Float decoding with non-finite value detection
+
+  for {name, size, infinity, neg_infinity} <- [
+        {:decode_float_16, 16, 0x7C00, 0xFC00},
+        {:decode_float_32, 32, 0x7F800000, 0xFF800000},
+        {:decode_float_64, 64, 0x7FF0000000000000, 0xFFF0000000000000}
+      ] do
+    defp unquote(name)(<<>>, _validity, _bit_offset, _index), do: []
+
+    defp unquote(name)(
+           <<n::float-little-size(unquote(size)), rest::binary>>,
+           validity,
+           bit_offset,
+           index
+         ) do
+      value = if bitmap_valid?(validity, index, bit_offset), do: n
+      [value | unquote(name)(rest, validity, bit_offset, index + 1)]
+    end
+
+    defp unquote(name)(
+           <<unquote(infinity)::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           validity,
+           bit_offset,
+           index
+         ) do
+      value = if bitmap_valid?(validity, index, bit_offset), do: :infinity
+      [value | unquote(name)(rest, validity, bit_offset, index + 1)]
+    end
+
+    defp unquote(name)(
+           <<unquote(neg_infinity)::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           validity,
+           bit_offset,
+           index
+         ) do
+      value = if bitmap_valid?(validity, index, bit_offset), do: :neg_infinity
+      [value | unquote(name)(rest, validity, bit_offset, index + 1)]
+    end
+
+    # NaN: float match above fails for NaN, so this catch-all handles it
+    defp unquote(name)(
+           <<_::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           validity,
+           bit_offset,
+           index
+         ) do
+      value = if bitmap_valid?(validity, index, bit_offset), do: :nan
+      [value | unquote(name)(rest, validity, bit_offset, index + 1)]
+    end
+  end
+
   for {name, specifier} <- [
         decode_list_32: quote(do: signed - integer - little - 32),
         decode_list_64: quote(do: signed - integer - little - 64)
@@ -1803,6 +1996,30 @@ defmodule Adbc.Column do
       {chunk, values} = Enum.split(values, next - prev)
       element = if bitmap_valid?(validity, index, bit_offset), do: chunk
       [element | unquote(name)(rest, validity, bit_offset, values, next, index + 1)]
+    end
+  end
+
+  for {name, specifier} <- [
+        decode_list_view_32: quote(do: signed - integer - little - 32),
+        decode_list_view_64: quote(do: signed - integer - little - 64)
+      ] do
+    defp unquote(name)(<<>>, <<>>, _validity, _bit_offset, _values, _index) do
+      []
+    end
+
+    defp unquote(name)(
+           <<offset::unquote(specifier), offsets_rest::binary>>,
+           <<size::unquote(specifier), sizes_rest::binary>>,
+           validity,
+           bit_offset,
+           values,
+           index
+         ) do
+      element =
+        if bitmap_valid?(validity, index, bit_offset),
+          do: Enum.slice(values, offset, size)
+
+      [element | unquote(name)(offsets_rest, sizes_rest, validity, bit_offset, values, index + 1)]
     end
   end
 
@@ -1860,6 +2077,19 @@ defmodule Adbc.Column do
     end
 
     defp unquote(name)(<<>>, _data, _validity, _bit_offset, _prev, _index), do: []
+  end
+
+  defp decode_boolean(_data, _validity, _bit_offset, count, index) when index >= count, do: []
+
+  defp decode_boolean(data, validity, bit_offset, count, index) do
+    value =
+      if bitmap_valid?(validity, index, bit_offset) do
+        bit_pos = index + bit_offset
+        byte = :binary.at(data, div(bit_pos, 8))
+        (byte &&& 1 <<< rem(bit_pos, 8)) != 0
+      end
+
+    [value | decode_boolean(data, validity, bit_offset, count, index + 1)]
   end
 
   @compile {:inline, bitmap_valid?: 3}

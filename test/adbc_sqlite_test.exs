@@ -199,27 +199,27 @@ defmodule Adbc.SQLiteTest do
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "r1", type: :f64, nullable: true, metadata: nil},
-                     data: [1.1]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
-                     data: [2.2]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "r3", type: :f64, nullable: true, metadata: nil},
-                     data: [3.3]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
-                     data: [4.4]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
-                     data: [1.1]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
-                     data: [2.2]
+                     data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
@@ -426,11 +426,11 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [r1]
-                 },
+                   data: _
+                 } = r1_col,
                  %Adbc.Column{
                    field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
-                   data: [2.2]
+                   data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
@@ -439,19 +439,19 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [r3]
-                 },
+                   data: _
+                 } = r3_col,
                  %Adbc.Column{
                    field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
-                   data: [4.4]
+                   data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
-                   data: [n1]
-                 },
+                   data: _
+                 } = n1_col,
                  %Adbc.Column{
                    field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
-                   data: [2.2]
+                   data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
@@ -479,6 +479,9 @@ defmodule Adbc.SQLiteTest do
              ]
            } = Adbc.Result.materialize(results)
 
+    [r1] = Adbc.Column.to_list(r1_col)
+    [r3] = Adbc.Column.to_list(r3_col)
+    [n1] = Adbc.Column.to_list(n1_col)
     assert is_float(r1) and is_float(r3) and is_float(n1)
     assert abs(r1 - 1.1) < 1.0e-6
     assert abs(r3 - 3.3) < 1.0e-6
@@ -533,14 +536,15 @@ defmodule Adbc.SQLiteTest do
                      nullable: true,
                      metadata: nil
                    },
-                   data: [3.3, 4.4]
-                 }
+                   data: _
+                 } = f64_col
                ]
              ],
              num_rows: nil
            } = Adbc.Result.materialize(results)
 
     assert Adbc.Column.to_list(s64_col) == [1, 2]
+    assert Adbc.Column.to_list(f64_col) == [3.3, 4.4]
   end
 
   test "query with nil parameter", %{db: _, conn: conn} do

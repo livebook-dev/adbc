@@ -47,6 +47,12 @@ static ERL_NIF_TERM kAtomMonthDayNano;
 
 static ERL_NIF_TERM kAtomAdbcColumnModule;
 static ERL_NIF_TERM kAtomAdbcFieldModule;
+static ERL_NIF_TERM kAtomAdbcDictionaryDataModule;
+static ERL_NIF_TERM kAtomAdbcRunEndEncodedDataModule;
+static ERL_NIF_TERM kAtomAdbcListViewDataModule;
+static ERL_NIF_TERM kAtomAdbcListDataModule;
+static ERL_NIF_TERM kAtomAdbcBufferDataModule;
+static ERL_NIF_TERM kAtomAdbcBinaryDataModule;
 static ERL_NIF_TERM kAtomFieldKey;
 static ERL_NIF_TERM kAtomNameKey;
 static ERL_NIF_TERM kAtomTypeKey;
@@ -56,6 +62,7 @@ static ERL_NIF_TERM kAtomDataKey;
 static ERL_NIF_TERM kAtomSizeKey;
 static ERL_NIF_TERM kAtomLengthKey;
 static ERL_NIF_TERM kAtomOffsetKey;
+static ERL_NIF_TERM kAtomBitOffsetKey;
 
 // https://arrow.apache.org/docs/format/CDataInterface.html
 static ERL_NIF_TERM kAdbcColumnTypeBool;
