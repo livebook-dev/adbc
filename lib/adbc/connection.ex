@@ -840,23 +840,15 @@ defmodule Adbc.Connection do
 
   defp do_stream_results(reference, acc, num_rows) do
     case Adbc.Nif.adbc_arrow_array_stream_next(reference) do
-      {:ok, result} ->
-        do_stream_results(reference, [result | acc], num_rows)
+      {:ok, columns} ->
+        do_stream_results(reference, [columns | acc], num_rows)
 
       :end_of_series ->
-        {:ok, %Adbc.Result{data: merge_columns(Enum.reverse(acc)), num_rows: num_rows}}
+        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
 
       {:error, reason} ->
         {:error, error_to_exception(reason)}
     end
-  end
-
-  defp merge_columns(chucked_results) do
-    Enum.zip_with(chucked_results, fn columns ->
-      Enum.reduce(columns, fn column, merged_column ->
-        %{merged_column | data: merged_column.data ++ column.data}
-      end)
-    end)
   end
 
   ## Callbacks

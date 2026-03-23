@@ -45,8 +45,10 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{field: %{name: "strings", type: :string_view}},
-                 %Adbc.Column{field: %{name: "blobs", type: :binary_view}}
+                 [
+                   %Adbc.Column{field: %{name: "strings", type: :string_view}},
+                   %Adbc.Column{field: %{name: "blobs", type: :binary_view}}
+                 ]
                ]
              } = result
 
@@ -68,12 +70,14 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "lists",
-                     type: {:list, %Adbc.Field{name: "item", type: :s32}}
-                   }
-                 } = col
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "lists",
+                       type: {:list, %Adbc.Field{name: "item", type: :s32}}
+                     }
+                   } = col
+                 ]
                ]
              } = result
 
@@ -90,12 +94,14 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "lists",
-                     type: {:large_list, %Adbc.Field{name: "item", type: :s32}}
-                   }
-                 } = col
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "lists",
+                       type: {:large_list, %Adbc.Field{name: "item", type: :s32}}
+                     }
+                   } = col
+                 ]
                ]
              } = result
 
@@ -112,12 +118,14 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "lists",
-                     type: {:fixed_size_list, %Adbc.Field{name: "item", type: :s32}, 3}
-                   }
-                 } = col
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "lists",
+                       type: {:fixed_size_list, %Adbc.Field{name: "item", type: :s32}, 3}
+                     }
+                   } = col
+                 ]
                ]
              } = result
 
@@ -138,17 +146,19 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "dict",
-                     type: {:dictionary, %Adbc.Field{type: key_type}, %Adbc.Field{type: :string}}
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "dict",
+                       type: {:dictionary, %Adbc.Field{type: key_type}, %Adbc.Field{type: :string}}
+                     }
                    }
-                 }
+                 ]
                ]
              } = result
 
       assert key_type in [:s8, :s16, :s32, :s64]
-      assert Adbc.Column.to_list(hd(result.data)) == ["foo", "bar", "foo", "baz", "bar"]
+      assert Adbc.Column.to_list(hd(hd(result.data))) == ["foo", "bar", "foo", "baz", "bar"]
     end
 
     test "materializes dictionary with nulls" do
@@ -161,7 +171,7 @@ defmodule Adbc.PythonxTest do
         pyarrow.Table.from_arrays([data], names=["dict"])
         """)
 
-      assert Adbc.Column.to_list(hd(result.data)) == ["foo", nil, "bar", "baz", nil]
+      assert Adbc.Column.to_list(hd(hd(result.data))) == ["foo", nil, "bar", "baz", nil]
     end
 
     test "materializes dictionary with struct values" do
@@ -182,7 +192,7 @@ defmodule Adbc.PythonxTest do
         pyarrow.Table.from_arrays([data], names=["dict"])
         """)
 
-      assert Adbc.Column.to_list(hd(result.data)) == [
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [
                %{"x" => 1, "y" => "a"},
                %{"x" => 3, "y" => "c"},
                %{"x" => 2, "y" => "b"},
@@ -205,24 +215,26 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "structs",
-                     type:
-                       {:struct,
-                        [
-                          %Adbc.Field{name: "x", type: :s32},
-                          %Adbc.Field{name: "y", type: :string}
-                        ]}
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "structs",
+                       type:
+                         {:struct,
+                          [
+                            %Adbc.Field{name: "x", type: :s32},
+                            %Adbc.Field{name: "y", type: :string}
+                          ]}
+                     }
                    }
-                 }
+                 ]
                ]
              } = result
 
       # Note: pyarrow represents null structs as structs with placeholder values
       # in children (0 for integers, "" for strings) since the null is at the
       # struct level, not the child level
-      assert Adbc.Column.to_list(hd(result.data)) == [
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [
                %{"x" => 1, "y" => "a"},
                %{"x" => 2, "y" => "b"},
                %{"x" => 0, "y" => ""}
@@ -244,19 +256,21 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "ree",
-                     type:
-                       {:run_end_encoded, %Adbc.Field{name: "run_ends", type: :s32},
-                        %Adbc.Field{name: "values", type: :string}}
-                   },
-                   data: [%{offset: 0, length: 7, values: _, run_ends: {_, _, _}}]
-                 }
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "ree",
+                       type:
+                         {:run_end_encoded, %Adbc.Field{name: "run_ends", type: :s32},
+                          %Adbc.Field{name: "values", type: :string}}
+                     },
+                     data: %{offset: 0, length: 7, values: _, run_ends: {_, _, _}}
+                   }
+                 ]
                ]
              } = result
 
-      assert Adbc.Column.to_list(hd(result.data)) == ["a", "a", "a", "b", "b", "c", "c"]
+      assert Adbc.Column.to_list(hd(hd(result.data))) == ["a", "a", "a", "b", "b", "c", "c"]
     end
 
     test "materializes run-end encoded column with dictionary values" do
@@ -271,7 +285,7 @@ defmodule Adbc.PythonxTest do
         pyarrow.Table.from_arrays([data], names=["ree"])
         """)
 
-      assert Adbc.Column.to_list(hd(result.data)) ==
+      assert Adbc.Column.to_list(hd(hd(result.data))) ==
                ["foo", "foo", "foo", "bar", "bar", "baz", "baz"]
     end
   end
@@ -291,24 +305,24 @@ defmodule Adbc.PythonxTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "lv",
-                     type: {:list_view, %Adbc.Field{name: "item", type: :s32}}
-                   },
-                   data: [
-                     %{
-                       values: {_, _, _},
-                       offsets: [0, 2, 1],
-                       sizes: [2, 3, 2],
-                       validity: [true, true, true]
-                     }
-                   ]
-                 }
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "lv",
+                       type: {:list_view, %Adbc.Field{name: "item", type: :s32}}
+                     },
+                     data: %{
+                         values: {_, _, _},
+                         offsets: [0, 2, 1],
+                         sizes: [2, 3, 2],
+                         validity: [true, true, true]
+                       }
+                   }
+                 ]
                ]
              } = result
 
-      assert Adbc.Column.to_list(hd(result.data)) == [[10, 20], [30, 40, 50], [20, 30]]
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [[10, 20], [30, 40, 50], [20, 30]]
     end
 
     test "materializes list_view column with dictionary inner type" do
@@ -324,7 +338,7 @@ defmodule Adbc.PythonxTest do
         pyarrow.Table.from_arrays([data], names=["lv"])
         """)
 
-      assert Adbc.Column.to_list(hd(result.data)) ==
+      assert Adbc.Column.to_list(hd(hd(result.data))) ==
                [["foo", "bar"], ["baz", "foo", "bar"], ["bar", "baz"]]
     end
   end

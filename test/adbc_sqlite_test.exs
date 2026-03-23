@@ -82,166 +82,168 @@ defmodule Adbc.SQLiteTest do
     assert list_result =
              %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "i7",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "i8",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "i9",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t1",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t2",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t3",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t4",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "i7",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t5",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "i8",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "t6",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "i9",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "b1",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t1",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "r1", type: :f64, nullable: true, metadata: nil},
-                   data: [[1.1]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
-                   data: [[2.2]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "r3", type: :f64, nullable: true, metadata: nil},
-                   data: [[3.3]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
-                   data: [[4.4]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
-                   data: [[1.1]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
-                   data: [[2.2]]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "n4",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t2",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 },
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "n5",
-                     type: :string,
-                     nullable: true,
-                     metadata: nil
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t3",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
                    },
-                   data: [_]
-                 }
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t4",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t5",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "t6",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "b1",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "r1", type: :f64, nullable: true, metadata: nil},
+                     data: [1.1]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
+                     data: [2.2]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "r3", type: :f64, nullable: true, metadata: nil},
+                     data: [3.3]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
+                     data: [4.4]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
+                     data: [1.1]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
+                     data: [2.2]
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "n4",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   },
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "n5",
+                       type: :string,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: _
+                   }
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -317,161 +319,163 @@ defmodule Adbc.SQLiteTest do
     assert %Adbc.Result{
              num_rows: nil,
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i7", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i8", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "i9", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t1",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t2",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t3",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t4",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t5",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "t6",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "b1",
-                   type: :binary,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i7", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "r1",
-                   type: :f64,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i8", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [[r1]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
-                 data: [[2.2]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "r3",
-                   type: :f64,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "i9", type: :s64, nullable: true, metadata: nil},
+                   data: _
                  },
-                 data: [[r3]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
-                 data: [[4.4]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
-                 data: [[n1]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
-                 data: [[2.2]]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "n4",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t1",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
                  },
-                 data: [_]
-               },
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "n5",
-                   type: :string,
-                   nullable: true,
-                   metadata: nil
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t2",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
                  },
-                 data: [_]
-               }
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t3",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t4",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t5",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "t6",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "b1",
+                     type: :binary,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "r1",
+                     type: :f64,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: [r1]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
+                   data: [2.2]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "r3",
+                     type: :f64,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: [r3]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
+                   data: [4.4]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
+                   data: [n1]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
+                   data: [2.2]
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "n4",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 },
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "n5",
+                     type: :string,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 }
+               ]
              ]
            } = Adbc.Result.materialize(results)
 
@@ -485,22 +489,24 @@ defmodule Adbc.SQLiteTest do
     assert {:ok,
             results = %Adbc.Result{
               data: [
-                %Adbc.Column{
-                  field: %Adbc.Field{
-                    name: "S64",
-                    type: :s64,
-                    metadata: nil,
-                    nullable: true
+                [
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "S64",
+                      type: :s64,
+                      metadata: nil,
+                      nullable: true
+                    }
+                  },
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "F64",
+                      type: :f64,
+                      metadata: nil,
+                      nullable: true
+                    }
                   }
-                },
-                %Adbc.Column{
-                  field: %Adbc.Field{
-                    name: "F64",
-                    type: :f64,
-                    metadata: nil,
-                    nullable: true
-                  }
-                }
+                ]
               ]
             }} =
              Connection.query(conn, "SELECT ? AS S64, ? AS F64", [
@@ -510,24 +516,26 @@ defmodule Adbc.SQLiteTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "S64",
-                   type: :s64,
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = s64_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "F64",
-                   type: :f64,
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [[3.3, 4.4]]
-               }
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "S64",
+                     type: :s64,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = s64_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "F64",
+                     type: :f64,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: [3.3, 4.4]
+                 }
+               ]
              ],
              num_rows: nil
            } = Adbc.Result.materialize(results)
@@ -540,14 +548,16 @@ defmodule Adbc.SQLiteTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "name",
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = name_col
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "name",
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = name_col
+               ]
              ]
            } = Adbc.Result.materialize(results)
 

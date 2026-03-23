@@ -21,7 +21,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([true, false, true])
       assert col.field.type == :boolean
       assert col.field.nullable == false
-      assert col.data == [[true, false, true]]
+      assert col.data == [true, false, true]
     end
 
     test "integers infer as s64" do
@@ -40,7 +40,7 @@ defmodule Adbc.ColumnTest do
       col = Adbc.Column.new([1, 2.5, 3])
       assert col.field.type == :f64
       assert col.field.nullable == false
-      assert col.data == [[1, 2.5, 3]]
+      assert col.data == [1, 2.5, 3]
     end
 
     test "nan, infinity, neg_infinity infer as f64" do

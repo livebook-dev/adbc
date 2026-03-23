@@ -152,8 +152,8 @@ defmodule Adbc.Result do
   Dump an `Adbc.Result` to in-memory IPC stream data.
   """
   @spec to_ipc_stream(t()) :: binary
-  def to_ipc_stream(%Adbc.Result{data: columns}) when is_list(columns) do
-    case Adbc.Nif.adbc_ipc_dump_stream_binary(columns) do
+  def to_ipc_stream(%Adbc.Result{data: batches}) when is_list(batches) do
+    case Adbc.Nif.adbc_ipc_dump_stream_binary(batches) do
       {:error, reason} ->
         raise error_to_exception(reason)
 
@@ -167,17 +167,22 @@ defmodule Adbc.Result do
   """
   @spec materialize(%Adbc.Result{} | {:ok, %Adbc.Result{}} | {:error, String.t()}) ::
           %Adbc.Result{} | {:ok, %Adbc.Result{}} | {:error, String.t()}
-  def materialize(%Adbc.Result{data: data} = result) when is_list(data) do
-    %{result | data: Enum.map(data, &Adbc.Column.materialize/1)}
+  def materialize(%Adbc.Result{data: batches} = result) when is_list(batches) do
+    %{
+      result
+      | data: Enum.map(batches, fn columns -> Enum.map(columns, &Adbc.Column.materialize/1) end)
+    }
   end
 
   @doc """
   Returns a map of columns as a result.
   """
-  def to_map(result = %Adbc.Result{}) do
-    Map.new(result.data, fn %Adbc.Column{field: %{name: name}} = column ->
-      {name, column |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
+  def to_map(%Adbc.Result{data: batches}) do
+    batches
+    |> Enum.zip_with(fn [%{field: %{name: name}} | _] = columns ->
+      {name, Enum.flat_map(columns, &(&1 |> Adbc.Column.materialize() |> Adbc.Column.to_list()))}
     end)
+    |> Map.new()
   end
 
   @doc """
@@ -217,36 +222,34 @@ defmodule Adbc.Result do
 
   defp stream_results(reference, acc, num_rows) do
     case Adbc.Nif.adbc_arrow_array_stream_next(reference) do
-      {:ok, result} ->
-        stream_results(reference, [result | acc], num_rows)
+      {:ok, columns} ->
+        stream_results(reference, [columns | acc], num_rows)
 
       :end_of_series ->
-        {:ok, %Adbc.Result{data: merge_columns(Enum.reverse(acc)), num_rows: num_rows}}
+        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
 
       {:error, reason} ->
         {:error, error_to_exception(reason)}
     end
   end
-
-  defp merge_columns(chucked_results) do
-    Enum.zip_with(chucked_results, fn columns ->
-      Enum.reduce(columns, fn column, merged_column ->
-        %{merged_column | data: merged_column.data ++ column.data}
-      end)
-    end)
-  end
 end
 
 defimpl Table.Reader, for: Adbc.Result do
-  def init(result) do
+  def init(%Adbc.Result{data: batches, num_rows: num_rows}) do
+    # Group columns across batches by position, materialize and concatenate
+    names =
+      case batches do
+        [first_batch | _] -> Enum.map(first_batch, & &1.field.name)
+        [] -> []
+      end
+
     data =
-      Enum.map(result.data, fn column ->
-        column
-        |> Adbc.Column.materialize()
-        |> Adbc.Column.to_list()
+      Enum.zip_with(batches, fn columns_at_pos ->
+        Enum.flat_map(columns_at_pos, fn column ->
+          column |> Adbc.Column.materialize() |> Adbc.Column.to_list()
+        end)
       end)
 
-    names = Enum.map(result.data, & &1.field.name)
-    {:columns, %{columns: names, count: result.num_rows}, data}
+    {:columns, %{columns: names, count: num_rows}, data}
   end
 end

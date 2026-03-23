@@ -585,61 +585,30 @@ static ERL_NIF_TERM adbc_arrow_array_stream_next(ErlNifEnv *env, int argc, const
 
 static ERL_NIF_TERM adbc_column_materialize(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     using record_type = NifRes<struct ArrowArrayStreamRecord>;
-    record_type * res = nullptr;
 
-    if (!enif_is_list(env, argv[0])) {
+    if (!enif_is_ref(env, argv[0])) {
         return enif_make_badarg(env);
     }
 
-    std::vector<ERL_NIF_TERM> data_ref;
-    unsigned int length;
-    ERL_NIF_TERM list = argv[0];
-    if (!enif_get_list_length(env, list, &length)) {
-        return enif_make_badarg(env);
-    }
-
-    ERL_NIF_TERM head, tail;
-    while (enif_get_list_cell(env, list, &head, &tail)) {
-        if (!enif_is_ref(env, head)) {
-            return enif_make_badarg(env);
-        }
-        data_ref.emplace_back(head);
-        list = tail;
-    }
-
-    std::vector<ERL_NIF_TERM> materialized;
-    int64_t total_size = 0;
     ERL_NIF_TERM error{};
-    for (auto& ref : data_ref) {
-        if ((res = record_type::get_resource(env, ref, error)) == nullptr) {
-            return error;
-        }
-        if (res->val.schema == nullptr || res->val.values == nullptr) {
-            return enif_make_badarg(env);
-        }
-
-        total_size += res->val.values->length;
-
-        std::vector<ERL_NIF_TERM> out_terms;
-        constexpr int level = 0;
-        ERL_NIF_TERM out_type;
-        ERL_NIF_TERM out_metadata;
-        if (arrow_array_to_nif_term(env, res->val.schema, res->val.values, level, out_terms, out_type, out_metadata, error, false, (void*)res) != 0) {
-            return error;
-        }
-
-        ERL_NIF_TERM ret{};
-        if (out_terms.size() == 1) {
-            ret = out_terms[0];
-        } else {
-            ret = out_terms[1];
-        }
-
-        materialized.emplace_back(ret);
+    record_type * res = record_type::get_resource(env, argv[0], error);
+    if (res == nullptr) {
+        return error;
+    }
+    if (res->val.schema == nullptr || res->val.values == nullptr) {
+        return enif_make_badarg(env);
     }
 
-    ERL_NIF_TERM data_list = enif_make_list_from_array(env, materialized.data(), materialized.size());
-    return erlang::nif::ok(env, enif_make_tuple2(env, data_list, enif_make_int64(env, total_size)));
+    std::vector<ERL_NIF_TERM> out_terms;
+    constexpr int level = 0;
+    ERL_NIF_TERM out_type;
+    ERL_NIF_TERM out_metadata;
+    if (arrow_array_to_nif_term(env, res->val.schema, res->val.values, level, out_terms, out_type, out_metadata, error, false, (void*)res) != 0) {
+        return error;
+    }
+
+    ERL_NIF_TERM ret = (out_terms.size() == 1) ? out_terms[0] : out_terms[1];
+    return erlang::nif::ok(env, enif_make_tuple2(env, ret, enif_make_int64(env, res->val.values->length)));
 }
 
 static ERL_NIF_TERM adbc_arrow_array_stream_release(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
@@ -905,6 +874,7 @@ static ERL_NIF_TERM adbc_ipc_load_stream_binary(ErlNifEnv *env, int argc, const 
     return array_stream->make_resource(env);
 }
 
+// argv[0] is a list of batches, each batch is a list of columns
 static ERL_NIF_TERM adbc_ipc_dump_stream_binary(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     if (!enif_is_list(env, argv[0])) {
         return enif_make_badarg(env);
@@ -927,37 +897,50 @@ static ERL_NIF_TERM adbc_ipc_dump_stream_binary(ErlNifEnv *env, int argc, const 
     }
 
     schema.release = nullptr;
-    nanoarrow::UniqueArray array;
-    nanoarrow::UniqueArrayView array_view;
-
+    bool schema_written = false;
     ERL_NIF_TERM ret{};
-    if (adbc_column_to_arrow_type_struct(env, argv[0], array.get(), &schema, &arrow_error)) {
-        ret = erlang::nif::error(env, arrow_error.message);
-        goto cleanup;
-    }
 
-    code = ArrowArrayViewInitFromSchema(array_view.get(), &schema, &arrow_error);
-    if (code != NANOARROW_OK) {
-        ret = nif_error_from_arrow_error(env, &arrow_error);
-        goto cleanup;
-    }
-    
-    code = ArrowArrayViewSetArray(array_view.get(), array.get(), &arrow_error);
-    if (code != NANOARROW_OK) {
-        ret = nif_error_from_arrow_error(env, &arrow_error);
-        goto cleanup;
-    }
+    ERL_NIF_TERM batch_head, batch_tail = argv[0];
+    while (enif_get_list_cell(env, batch_tail, &batch_head, &batch_tail)) {
+        nanoarrow::UniqueArray array;
+        if (adbc_column_to_arrow_type_struct(env, batch_head, array.get(), &schema, &arrow_error)) {
+            ret = erlang::nif::error(env, arrow_error.message);
+            goto cleanup;
+        }
 
-    code = ArrowIpcWriterWriteSchema(writer.get(), &schema, &arrow_error);
-    if (code != NANOARROW_OK) {
-        ret = nif_error_from_arrow_error(env, &arrow_error);
-        goto cleanup;
-    }
+        if (!schema_written) {
+            code = ArrowIpcWriterWriteSchema(writer.get(), &schema, &arrow_error);
+            if (code != NANOARROW_OK) {
+                ret = nif_error_from_arrow_error(env, &arrow_error);
+                goto cleanup;
+            }
+            schema_written = true;
+        }
 
-    code = ArrowIpcWriterWriteArrayView(writer.get(), array_view.get(), &arrow_error);
-    if (code != NANOARROW_OK) {
-        ret = nif_error_from_arrow_error(env, &arrow_error);
-        goto cleanup;
+        nanoarrow::UniqueArrayView array_view;
+        code = ArrowArrayViewInitFromSchema(array_view.get(), &schema, &arrow_error);
+        if (code != NANOARROW_OK) {
+            ret = nif_error_from_arrow_error(env, &arrow_error);
+            goto cleanup;
+        }
+
+        code = ArrowArrayViewSetArray(array_view.get(), array.get(), &arrow_error);
+        if (code != NANOARROW_OK) {
+            ret = nif_error_from_arrow_error(env, &arrow_error);
+            goto cleanup;
+        }
+
+        code = ArrowIpcWriterWriteArrayView(writer.get(), array_view.get(), &arrow_error);
+        if (code != NANOARROW_OK) {
+            ret = nif_error_from_arrow_error(env, &arrow_error);
+            goto cleanup;
+        }
+
+        // Release schema from this batch (will be rebuilt for next batch)
+        if (schema.release) {
+            schema.release(&schema);
+            schema.release = nullptr;
+        }
     }
 
     // write `nullptr` to end the stream
@@ -967,16 +950,17 @@ static ERL_NIF_TERM adbc_ipc_dump_stream_binary(ErlNifEnv *env, int argc, const 
         goto cleanup;
     }
 
-    ErlNifBinary binary;
-    if (!enif_alloc_binary(output->size_bytes, &binary)) {
-        ret = erlang::nif::error(env, "out of memory");
-        goto cleanup;
+    {
+        ErlNifBinary binary;
+        if (!enif_alloc_binary(output->size_bytes, &binary)) {
+            ret = erlang::nif::error(env, "out of memory");
+            goto cleanup;
+        }
+
+        memcpy(binary.data, output->data, output->size_bytes);
+        ArrowIpcWriterReset(writer.get());
+        ret = erlang::nif::ok(env, enif_make_binary(env, &binary));
     }
-
-    memcpy(binary.data, output->data, output->size_bytes);
-    ArrowIpcWriterReset(writer.get());
-
-    ret = erlang::nif::ok(env, enif_make_binary(env, &binary));
 
 cleanup:
     if (schema.release) schema.release(&schema);

@@ -21,15 +21,17 @@ defmodule Adbc.PostgresTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "num",
-                   type: :s32,
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = num_col
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "num",
+                     type: :s32,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = num_col
+               ]
              ]
            } = Adbc.Result.materialize(results)
 
@@ -47,7 +49,7 @@ defmodule Adbc.PostgresTest do
              )
 
     result = result |> Adbc.Result.materialize()
-    assert [col] = result.data
+    assert [[col]] = result.data
 
     assert col.field.type ==
              {:list, %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}}
@@ -58,7 +60,7 @@ defmodule Adbc.PostgresTest do
   test "list of ints", %{conn: conn} do
     assert {:ok, results} = Connection.query(conn, "SELECT ARRAY[1, 2, 3, null, 5] as num")
     result = Adbc.Result.materialize(results)
-    assert [col] = result.data
+    assert [[col]] = result.data
     assert col.field.name == "num"
     assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5]]
   end
@@ -71,7 +73,7 @@ defmodule Adbc.PostgresTest do
              )
 
     result = Adbc.Result.materialize(results)
-    assert [col] = result.data
+    assert [[col]] = result.data
     assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]
   end
 
@@ -91,69 +93,71 @@ defmodule Adbc.PostgresTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "datetime",
-                   type: {:timestamp, :microseconds, nil},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = datetime_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "datetime_usec",
-                   type: {:timestamp, :microseconds, nil},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = datetime_usec_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "datetime_tz_8601",
-                   type: {:timestamp, :microseconds, "UTC"},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = datetime_tz_8601_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "datetime_tz_offset",
-                   type: {:timestamp, :microseconds, "UTC"},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = datetime_tz_offset_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "date",
-                   type: :date32,
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = date_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "time",
-                   type: {:time64, :microseconds},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = time_col,
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "time_usec",
-                   type: {:time64, :microseconds},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: [_]
-               } = time_usec_col
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "datetime",
+                     type: {:timestamp, :microseconds, nil},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = datetime_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "datetime_usec",
+                     type: {:timestamp, :microseconds, nil},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = datetime_usec_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "datetime_tz_8601",
+                     type: {:timestamp, :microseconds, "UTC"},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = datetime_tz_8601_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "datetime_tz_offset",
+                     type: {:timestamp, :microseconds, "UTC"},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = datetime_tz_offset_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "date",
+                     type: :date32,
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = date_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "time",
+                     type: {:time64, :microseconds},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = time_col,
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "time_usec",
+                     type: {:time64, :microseconds},
+                     nullable: true,
+                     metadata: nil
+                   },
+                   data: _
+                 } = time_usec_col
+               ]
              ]
            } = Adbc.Result.materialize(results)
 
@@ -174,7 +178,7 @@ defmodule Adbc.PostgresTest do
              )
 
     result = Adbc.Result.materialize(results)
-    assert [col] = result.data
+    assert [[col]] = result.data
     assert Adbc.Column.to_list(col) == [["inf", "-inf", "4.2", "nan"]]
   end
 
@@ -186,33 +190,24 @@ defmodule Adbc.PostgresTest do
     assert results =
              %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "generate_series",
-                     type: {:timestamp, :microseconds, nil},
-                     metadata: nil,
-                     nullable: true
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "generate_series",
+                       type: {:timestamp, :microseconds, nil},
+                       metadata: nil,
+                       nullable: true
+                     }
                    }
-                 }
+                 ] | _
                ]
              } = Connection.query!(conn, query)
 
-    assert %Adbc.Result{
-             data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "generate_series",
-                   type: {:timestamp, :microseconds, nil},
-                   nullable: true,
-                   metadata: nil
-                 },
-                 data: generate_series
-               } = col
-             ]
-           } = Adbc.Result.materialize(results)
-
-    assert length(generate_series) > 1
-    assert length(Adbc.Column.to_list(col)) == 3_506_641
+    materialized = Adbc.Result.materialize(results)
+    cols = Enum.map(materialized.data, fn [col] -> col end)
+    assert length(cols) > 1
+    total = cols |> Enum.flat_map(&Adbc.Column.to_list/1) |> length()
+    assert total == 3_506_641
   end
 
   test "query with parameters", %{db: _, conn: conn} do
@@ -227,14 +222,16 @@ defmodule Adbc.PostgresTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "x",
-                   type: :s32,
-                   metadata: nil,
-                   nullable: true
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "x",
+                     type: :s32,
+                     metadata: nil,
+                     nullable: true
+                   }
                  }
-               }
+               ] | _
              ]
            } = result
 
@@ -260,15 +257,17 @@ defmodule Adbc.PostgresTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "int4",
-                     type: :s32,
-                     metadata: nil,
-                     nullable: true
-                   },
-                   data: [_]
-                 } = col
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "int4",
+                       type: :s32,
+                       metadata: nil,
+                       nullable: true
+                     },
+                     data: _
+                   } = col
+                 ]
                ]
              } = result
 
@@ -291,15 +290,17 @@ defmodule Adbc.PostgresTest do
 
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "int4",
-                   type: :s32,
-                   metadata: nil,
-                   nullable: true
-                 },
-                 data: [_]
-               } = col
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "int4",
+                     type: :s32,
+                     metadata: nil,
+                     nullable: true
+                   },
+                   data: _
+                 } = col
+               ]
              ]
            } = result
 

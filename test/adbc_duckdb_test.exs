@@ -22,27 +22,29 @@ defmodule Adbc.DuckDBTest do
   test "structs", %{conn: conn} do
     assert %Adbc.Result{
              data: [
-               %Adbc.Column{
-                 field: %Adbc.Field{
-                   name: "struct_pack(col1 := 1, col2 := 2)",
-                   type:
-                     {:struct,
-                      [
-                        %Adbc.Field{
-                          name: "col1",
-                          type: :s32,
-                          nullable: true,
-                          metadata: nil
-                        },
-                        %Adbc.Field{
-                          name: "col2",
-                          type: :s32,
-                          nullable: true,
-                          metadata: nil
-                        }
-                      ]}
+               [
+                 %Adbc.Column{
+                   field: %Adbc.Field{
+                     name: "struct_pack(col1 := 1, col2 := 2)",
+                     type:
+                       {:struct,
+                        [
+                          %Adbc.Field{
+                            name: "col1",
+                            type: :s32,
+                            nullable: true,
+                            metadata: nil
+                          },
+                          %Adbc.Field{
+                            name: "col2",
+                            type: :s32,
+                            nullable: true,
+                            metadata: nil
+                          }
+                        ]}
+                   }
                  }
-               }
+               ]
              ],
              num_rows: 0
            } = Adbc.Connection.query!(conn, "SELECT struct_pack(col1 := 1, col2 := 2)")
@@ -103,7 +105,7 @@ defmodule Adbc.DuckDBTest do
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM list_dates ORDER BY id")
     result = Adbc.Result.materialize(result)
-    assert [id_col, dates_col] = result.data
+    assert [[id_col, dates_col]] = result.data
     assert Adbc.Column.to_list(id_col) == [1, 2, 3]
     assert Adbc.Column.to_list(dates_col) == [[~D[2024-01-01], ~D[2024-06-15]], nil, [~D[2025-03-22]]]
   end

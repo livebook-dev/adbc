@@ -21,25 +21,27 @@ defmodule Adbc.ResultTest do
   defp result do
     %Adbc.Result{
       data: [
-        Adbc.Column.timestamp(
-          [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
-          :seconds,
-          "UTC",
-          name: "start_time",
-          nullable: true
-        ),
-        Adbc.Column.timestamp(
-          [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]],
-          :seconds,
-          "UTC",
-          name: "end_time",
-          nullable: true
-        ),
-        Adbc.Column.list(
-          [Adbc.Column.s32([1, 2, 3, 4]), Adbc.Column.s32([3, 4, 5, 6])],
-          Adbc.Field.new(:s32, nullable: true),
-          name: "time_series", nullable: true
-        )
+        [
+          Adbc.Column.timestamp(
+            [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
+            :seconds,
+            "UTC",
+            name: "start_time",
+            nullable: true
+          ),
+          Adbc.Column.timestamp(
+            [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]],
+            :seconds,
+            "UTC",
+            name: "end_time",
+            nullable: true
+          ),
+          Adbc.Column.list(
+            [Adbc.Column.s32([1, 2, 3, 4]), Adbc.Column.s32([3, 4, 5, 6])],
+            Adbc.Field.new(:s32, nullable: true),
+            name: "time_series", nullable: true
+          )
+        ]
       ]
     }
   end
@@ -90,52 +92,54 @@ defmodule Adbc.ResultTest do
               results = %Adbc.Result{
                 num_rows: nil,
                 data: [
-                  %Adbc.Column{
-                    field: %Adbc.Field{
-                      name: "sepal_length",
-                      type: :f64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %Adbc.Field{
+                        name: "sepal_length",
+                        type: :f64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %Adbc.Field{
+                        name: "sepal_width",
+                        type: :f64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %Adbc.Field{
+                        name: "petal_length",
+                        type: :f64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %Adbc.Field{
+                        name: "petal_width",
+                        type: :f64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %Adbc.Field{
+                        name: "species",
+                        type: :large_string,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  },
-                  %Adbc.Column{
-                    field: %Adbc.Field{
-                      name: "sepal_width",
-                      type: :f64,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  },
-                  %Adbc.Column{
-                    field: %Adbc.Field{
-                      name: "petal_length",
-                      type: :f64,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  },
-                  %Adbc.Column{
-                    field: %Adbc.Field{
-                      name: "petal_width",
-                      type: :f64,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  },
-                  %Adbc.Column{
-                    field: %Adbc.Field{
-                      name: "species",
-                      type: :large_string,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  }
+                  ]
                 ]
               }} = Result.from_ipc_stream(@iris_ipc_stream)
 
       assert %Adbc.Result{
                num_rows: nil,
-               data:
+               data: [
                  [
                    %Adbc.Column{
                      field: %Adbc.Field{name: "sepal_length", type: :f64, nullable: true}
@@ -153,6 +157,7 @@ defmodule Adbc.ResultTest do
                      field: %Adbc.Field{name: "species", type: :large_string, nullable: true}
                    }
                  ] = data
+               ]
              } = Adbc.Result.materialize(results)
 
       for column <- data do
@@ -170,7 +175,7 @@ defmodule Adbc.ResultTest do
   describe "to_ipc_stream" do
     test "dumps columns as in-memory IPC format data" do
       result = %Adbc.Result{
-        data: [Adbc.Column.s64([1, 2, 3]), Adbc.Column.f32([1.1, 2.2, 3.3])],
+        data: [[Adbc.Column.s64([1, 2, 3]), Adbc.Column.f32([1.1, 2.2, 3.3])]],
         num_rows: 3
       }
 

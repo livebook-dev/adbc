@@ -47,22 +47,24 @@ defmodule Adbc.ConnectionTest do
                :ok,
                results = %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_name",
-                       type: :u32,
-                       metadata: nil,
-                       nullable: false
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "info_name",
+                         type: :u32,
+                         metadata: nil,
+                         nullable: false
+                       }
+                     },
+                     %Adbc.Column{
+                       field: %{
+                         name: "info_value",
+                         type: :dense_union,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   },
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_value",
-                       type: :dense_union,
-                       metadata: nil,
-                       nullable: true
-                     }
-                   }
+                   ]
                  ],
                  num_rows: nil
                }
@@ -71,35 +73,35 @@ defmodule Adbc.ConnectionTest do
       assert %Adbc.Result{
                num_rows: nil,
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "info_name",
-                     type: :u32,
-                     nullable: false,
-                     metadata: nil
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "info_name",
+                       type: :u32,
+                       nullable: false,
+                       metadata: nil
+                     }
+                   } = info_name_col,
+                   %Adbc.Column{
+                     field: %{
+                       name: "info_value",
+                       type: :dense_union,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: [
+                         %{"string_value" => _},
+                         # "3.43.2"
+                         %{"string_value" => _},
+                         %{"string_value" => _},
+                         # "(unknown)"
+                         %{"string_value" => _},
+                         # "0.4.0"
+                         %{"string_value" => _},
+                         %{"int64_value" => _}
+                       ]
                    }
-                 } = info_name_col,
-                 %Adbc.Column{
-                   field: %{
-                     name: "info_value",
-                     type: :dense_union,
-                     nullable: true,
-                     metadata: nil
-                   },
-                   data: [
-                     [
-                       %{"string_value" => _},
-                       # "3.43.2"
-                       %{"string_value" => _},
-                       %{"string_value" => _},
-                       # "(unknown)"
-                       %{"string_value" => _},
-                       # "0.4.0"
-                       %{"string_value" => _},
-                       %{"int64_value" => _}
-                     ]
-                   ]
-                 }
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -112,45 +114,49 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "info_name",
-                      type: :u32,
-                      metadata: nil,
-                      nullable: false
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "info_name",
+                        type: :u32,
+                        metadata: nil,
+                        nullable: false
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %{
+                        name: "info_value",
+                        type: :dense_union,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  },
-                  %Adbc.Column{
-                    field: %{
-                      name: "info_value",
-                      type: :dense_union,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.get_info(conn, [0])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "info_name",
-                     type: :u32,
-                     nullable: false,
-                     metadata: nil
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "info_name",
+                       type: :u32,
+                       nullable: false,
+                       metadata: nil
+                     }
+                   } = info_name_col,
+                   %Adbc.Column{
+                     field: %{
+                       name: "info_value",
+                       type: :dense_union,
+                       nullable: true,
+                       metadata: nil
+                     },
+                     data: [%{"string_value" => _}]
                    }
-                 } = info_name_col,
-                 %Adbc.Column{
-                   field: %{
-                     name: "info_value",
-                     type: :dense_union,
-                     nullable: true,
-                     metadata: nil
-                   },
-                   data: [[%{"string_value" => _}]]
-                 }
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -201,29 +207,33 @@ defmodule Adbc.ConnectionTest do
               results = %Adbc.Result{
                 num_rows: nil,
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "table_type",
-                      type: :string,
-                      metadata: nil,
-                      nullable: false
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "table_type",
+                        type: :string,
+                        metadata: nil,
+                        nullable: false
+                      }
                     }
-                  }
+                  ]
                 ]
               }} = Connection.get_table_types(conn)
 
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "table_type",
-                       type: :string,
-                       nullable: false,
-                       metadata: nil
-                     },
-                     data: [_]
-                   }
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "table_type",
+                         type: :string,
+                         nullable: false,
+                         metadata: nil
+                       },
+                       data: _
+                     }
+                   ]
                  ]
                } = Adbc.Result.materialize(results)
 
@@ -238,14 +248,16 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  } = column
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    } = column
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, "SELECT 123 as num")
@@ -255,14 +267,16 @@ defmodule Adbc.ConnectionTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = column
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = column
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -274,44 +288,48 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
+                    },
+                    %Adbc.Column{
+                      field: %{
+                        name: "bool",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  },
-                  %Adbc.Column{
-                    field: %{
-                      name: "bool",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
-                    }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, "SELECT 123 as num, true as bool")
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col,
-                 %Adbc.Column{
-                   field: %{
-                     name: "bool",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = bool_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col,
+                   %Adbc.Column{
+                     field: %{
+                       name: "bool",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = bool_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -325,28 +343,32 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, "SELECT 123 + ? as num", [456])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -360,28 +382,32 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref, [456])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -396,28 +422,32 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref_a, [456])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -426,28 +456,32 @@ defmodule Adbc.ConnectionTest do
       assert {:ok,
               results = %Adbc.Result{
                 data: [
-                  %Adbc.Column{
-                    field: %{
-                      name: "num",
-                      type: :s64,
-                      metadata: nil,
-                      nullable: true
+                  [
+                    %Adbc.Column{
+                      field: %{
+                        name: "num",
+                        type: :s64,
+                        metadata: nil,
+                        nullable: true
+                      }
                     }
-                  }
+                  ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref_b, [456])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -468,28 +502,32 @@ defmodule Adbc.ConnectionTest do
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "num",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   }
+                   ]
                  ],
                  num_rows: nil
                } = Connection.query!(conn, "SELECT 123 as num")
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -498,44 +536,48 @@ defmodule Adbc.ConnectionTest do
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "num",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
+                     },
+                     %Adbc.Column{
+                       field: %{
+                         name: "bool",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   },
-                   %Adbc.Column{
-                     field: %{
-                       name: "bool",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
-                     }
-                   }
+                   ]
                  ],
                  num_rows: nil
                } = Connection.query!(conn, "SELECT 123 as num, true as bool")
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col,
-                 %Adbc.Column{
-                   field: %{
-                     name: "bool",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = bool_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col,
+                   %Adbc.Column{
+                     field: %{
+                       name: "bool",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = bool_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -549,28 +591,32 @@ defmodule Adbc.ConnectionTest do
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "num",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   }
+                   ]
                  ],
                  num_rows: nil
                } = Connection.query!(conn, "SELECT 123 + ? as num", [456])
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -593,22 +639,24 @@ defmodule Adbc.ConnectionTest do
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "num",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
+                     },
+                     %Adbc.Column{
+                       field: %{
+                         name: "bool",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   },
-                   %Adbc.Column{
-                     field: %{
-                       name: "bool",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
-                     }
-                   }
+                   ]
                  ],
                  num_rows: nil
                } =
@@ -618,22 +666,24 @@ defmodule Adbc.ConnectionTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col,
-                 %Adbc.Column{
-                   field: %{
-                     name: "bool",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = bool_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col,
+                   %Adbc.Column{
+                     field: %{
+                       name: "bool",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = bool_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -647,14 +697,16 @@ defmodule Adbc.ConnectionTest do
       assert results =
                %Adbc.Result{
                  data: [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil,
-                       nullable: true
+                   [
+                     %Adbc.Column{
+                       field: %{
+                         name: "num",
+                         type: :s64,
+                         metadata: nil,
+                         nullable: true
+                       }
                      }
-                   }
+                   ]
                  ],
                  num_rows: nil
                } =
@@ -664,14 +716,16 @@ defmodule Adbc.ConnectionTest do
 
       assert %Adbc.Result{
                data: [
-                 %Adbc.Column{
-                   field: %{
-                     name: "num",
-                     type: :s64,
-                     nullable: true,
-                     metadata: nil
-                   }
-                 } = num_col
+                 [
+                   %Adbc.Column{
+                     field: %{
+                       name: "num",
+                       type: :s64,
+                       nullable: true,
+                       metadata: nil
+                     }
+                   } = num_col
+                 ]
                ]
              } = Adbc.Result.materialize(results)
 
@@ -970,7 +1024,7 @@ defmodule Adbc.ConnectionTest do
 
       # Materialized data should work
       assert {:ok, 3} =
-               Connection.bulk_insert(conn, materialized_result.data, table: "target_table")
+               Connection.bulk_insert(conn, hd(materialized_result.data), table: "target_table")
 
       # Verify the data was inserted correctly
       {:ok, verify} = Connection.query(conn, "SELECT * FROM target_table ORDER BY id")
@@ -1193,12 +1247,11 @@ defmodule Adbc.ConnectionTest do
       {:ok, result} = Connection.query(conn, "SELECT * FROM source_table")
 
       # Verify data is unmaterialized (contains references)
-      assert is_list(hd(result.data).data)
-      assert is_reference(hd(hd(result.data).data))
+      assert is_reference(hd(hd(result.data)).data)
 
       # Try to use unmaterialized columns in bulk_insert - should fail with clear ArgumentError
       assert {:error, %ArgumentError{} = error} =
-               Connection.bulk_insert(conn, result.data, table: "target_table")
+               Connection.bulk_insert(conn, hd(result.data), table: "target_table")
 
       error_message = Exception.message(error)
       assert error_message =~ "Cannot use unmaterialized"
@@ -1211,8 +1264,10 @@ defmodule Adbc.ConnectionTest do
       # Build IPC stream data from columns
       result = %Adbc.Result{
         data: [
-          Adbc.Column.s64([1, 2, 3], name: "id"),
-          Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+          [
+            Adbc.Column.s64([1, 2, 3], name: "id"),
+            Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
+          ]
         ],
         num_rows: 3
       }
@@ -1369,8 +1424,10 @@ defmodule Adbc.ConnectionTest do
       # Build IPC stream data from columns
       result = %Adbc.Result{
         data: [
-          Adbc.Column.s64([10, 20, 30], name: "id"),
-          Adbc.Column.string(["X", "Y", "Z"], name: "code")
+          [
+            Adbc.Column.s64([10, 20, 30], name: "id"),
+            Adbc.Column.string(["X", "Y", "Z"], name: "code")
+          ]
         ],
         num_rows: 3
       }

@@ -123,7 +123,7 @@ ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, struct ArrowSchema * schema, ERL_NI
 
 ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, ERL_NIF_TERM type_term, ERL_NIF_TERM metadata, std::optional<ERL_NIF_TERM> data_ref = std::nullopt) {
     ERL_NIF_TERM field_term = make_adbc_field(env, schema, type_term, metadata);
-    ERL_NIF_TERM data_ref_list = data_ref ? enif_make_list1(env, data_ref.value()) : kAtomNil;
+    ERL_NIF_TERM data_ref_list = data_ref ? data_ref.value() : kAtomNil;
 
     std::vector<ERL_NIF_TERM> keys = {
         kAtomStructKey,
@@ -260,9 +260,8 @@ int do_get_list_half_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arr
     private_data->storage_type = NANOARROW_TYPE_UINT16;
 
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_float(env, batch, nullable, write_array, [](struct ArrowArray* arr, double val) -> int {
+    {
+        int ret = get_list_float(env, list, nullable, write_array, [](struct ArrowArray* arr, double val) -> int {
             return ArrowArrayAppendUInt(arr, float_to_float16(val));
         });
         if (ret != 0) return ret;
@@ -280,9 +279,8 @@ int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTyp
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_float(env, batch, nullable, write_array, ArrowArrayAppendDouble);
+    {
+        int ret = get_list_float(env, list, nullable, write_array, ArrowArrayAppendDouble);
         if (ret != 0) return ret;
     }
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
@@ -290,9 +288,36 @@ int do_get_list_float(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTyp
     return 0;
 }
 
-static inline bool bitmap_valid_at(const uint8_t *bitmap, size_t index, int bit_offset) {
-    size_t bit_pos = index + bit_offset;
-    return (bitmap[bit_pos / 8] & (1 << (bit_pos % 8))) != 0;
+// Copy a validity bitmap into an Arrow array, handling arbitrary bit_offset.
+// When bit_offset is byte-aligned, uses bulk memcpy. Otherwise falls back to per-bit copy.
+static int copy_validity_bitmap(const uint8_t* src, int bit_offset, size_t count,
+                                struct ArrowArray* write_array) {
+    struct ArrowBuffer* validity_buffer = ArrowArrayBuffer(write_array, 0);
+    size_t validity_bytes = (count + 7) / 8;
+    NANOARROW_RETURN_NOT_OK(ArrowBufferReserve(validity_buffer, validity_bytes));
+
+    if (bit_offset % 8 == 0) {
+        size_t bitmap_start = bit_offset / 8;
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(validity_buffer, src + bitmap_start, validity_bytes));
+        write_array->null_count = count - ArrowBitCountSet(src + bitmap_start, 0, count);
+    } else {
+        size_t src_bit = bit_offset;
+        size_t valid_count = 0;
+        for (size_t dst_byte = 0; dst_byte < validity_bytes; dst_byte++) {
+            uint8_t byte = 0;
+            size_t bits_in_byte = (dst_byte == validity_bytes - 1 && count % 8 != 0) ? count % 8 : 8;
+            for (size_t b = 0; b < bits_in_byte; b++) {
+                if (ArrowBitGet(src, src_bit)) {
+                    byte |= (uint8_t)(1 << b);
+                    valid_count++;
+                }
+                src_bit++;
+            }
+            NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt8(validity_buffer, byte));
+        }
+        write_array->null_count = count - valid_count;
+    }
+    return 0;
 }
 
 // Append raw bytes directly to the Arrow data buffer (buffer index 1).
@@ -328,56 +353,26 @@ int get_buffer_tuple(ErlNifEnv *env, ERL_NIF_TERM data_term, struct ArrowArray* 
         return 1;
     }
 
-    // Data buffer (buffer 1): bulk copy
     NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 1), binary.data, binary.size));
 
-    // Validity buffer (buffer 0)
-    struct ArrowBuffer* validity_buffer = ArrowArrayBuffer(write_array, 0);
-
     if (has_validity) {
-        // If previous batches had no validity (all valid), backfill with 0xFF
-        if (validity_buffer->size_bytes == 0 && write_array->length > 0) {
-            size_t backfill_bytes = (write_array->length + 7) / 8;
-            NANOARROW_RETURN_NOT_OK(ArrowBufferAppendFill(validity_buffer, 0xFF, backfill_bytes));
-        }
-
-        size_t dst_bit = write_array->length;
-        for (size_t i = 0; i < count; i++) {
-            bool valid = bitmap_valid_at(validity_bin.data, i, bit_offset);
-            if (dst_bit % 8 == 0) {
-                NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt8(validity_buffer, valid ? 1 : 0));
-            } else if (valid) {
-                validity_buffer->data[dst_bit / 8] |= (uint8_t)(1 << (dst_bit % 8));
-            }
-            if (!valid) {
-                write_array->null_count++;
-            }
-            dst_bit++;
-        }
-    } else if (validity_buffer->size_bytes > 0) {
-        // Previous batch had validity but this one doesn't — append all-valid bits
-        size_t bitmap_bytes = (count + 7) / 8;
-        NANOARROW_RETURN_NOT_OK(ArrowBufferAppendFill(validity_buffer, 0xFF, bitmap_bytes));
+        NANOARROW_RETURN_NOT_OK(copy_validity_bitmap(validity_bin.data, bit_offset, count, write_array));
     }
 
-    write_array->length += count;
+    write_array->length = count;
     return 0;
 }
 
 // Generic ingest for types that store data as {binary, validity | nil, bit_offset} tuples.
 // The schema must already be set up on schema_out before calling this.
-int do_get_buffer_tuples(ErlNifEnv *env, ERL_NIF_TERM batches_list, size_t element_bytes, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_buffer_tuples(ErlNifEnv *env, ERL_NIF_TERM data_term, size_t element_bytes, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     nanoarrow::UniqueArray tmp;
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
 
-    ERL_NIF_TERM head, tail;
-    tail = batches_list;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        int ret = get_buffer_tuple(env, head, write_array, element_bytes);
-        if (ret != 0) return ret;
-    }
+    int ret = get_buffer_tuple(env, data_term, write_array, element_bytes);
+    if (ret != 0) return ret;
 
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
     ArrowArrayMove(tmp.get(), array_out);
@@ -400,26 +395,14 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batch
     ERL_NIF_TERM key_field_map = tuple_elems[1];
     ERL_NIF_TERM value_field_map = tuple_elems[2];
 
-    // Collect key and value batch data from the batch maps
-    // Each batch is a %{key: batch_data, value: batch_data} map
-    std::vector<ERL_NIF_TERM> key_batches;
-    std::vector<ERL_NIF_TERM> value_batches;
-
-    ERL_NIF_TERM batch, batch_tail = batches_list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        ERL_NIF_TERM batch_key_data, batch_value_data;
-        if (!enif_get_map_value(env, batch, kAtomKey, &batch_key_data)) {
-            return kErrorBufferGetMapValue;
-        }
-        if (!enif_get_map_value(env, batch, kAtomValue, &batch_value_data)) {
-            return kErrorBufferGetMapValue;
-        }
-        key_batches.push_back(batch_key_data);
-        value_batches.push_back(batch_value_data);
+    // data is a %{key: data, value: data} map
+    ERL_NIF_TERM key_data, value_data_term;
+    if (!enif_get_map_value(env, batches_list, kAtomKey, &key_data)) {
+        return kErrorBufferGetMapValue;
     }
-
-    // Build AdbcColumnNifTerm for key from field + collected batches
-    ERL_NIF_TERM key_data = enif_make_list_from_array(env, key_batches.data(), (unsigned)key_batches.size());
+    if (!enif_get_map_value(env, batches_list, kAtomValue, &value_data_term)) {
+        return kErrorBufferGetMapValue;
+    }
     struct AdbcColumnNifTerm keys;
     keys.is_nil = 0;
     if (!enif_get_map_value(env, key_field_map, kAtomTypeKey, &keys.type_term)) return kErrorBufferGetMapValue;
@@ -430,15 +413,13 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batch
     keys.struct_name_term = kAtomAdbcFieldModule;
     keys.n_items = 0;
 
-    // Build AdbcColumnNifTerm for value from field + collected batches
-    ERL_NIF_TERM value_data = enif_make_list_from_array(env, value_batches.data(), (unsigned)value_batches.size());
     struct AdbcColumnNifTerm values;
     values.is_nil = 0;
     if (!enif_get_map_value(env, value_field_map, kAtomTypeKey, &values.type_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomNullableKey, &values.nullable_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomNameKey, &values.name_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomMetadataKey, &values.metadata_term)) return kErrorBufferGetMapValue;
-    values.data_term = value_data;
+    values.data_term = value_data_term;
     values.struct_name_term = kAtomAdbcFieldModule;
     values.n_items = 0;
 
@@ -474,12 +455,12 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTy
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
 
+    // data_term is {offsets, data, validity | nil, bit_offset}
     // Buffers: 0 = validity, 1 = offsets, 2 = data
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+    {
         int arity;
         const ERL_NIF_TERM *tuple;
-        if (!enif_get_tuple(env, batch, &arity, &tuple) || arity != 4) return 1;
+        if (!enif_get_tuple(env, list, &arity, &tuple) || arity != 4) return 1;
 
         ErlNifBinary offsets_bin, data_bin;
         if (!enif_inspect_binary(env, tuple[0], &offsets_bin)) return 1;
@@ -487,21 +468,19 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTy
         if (offsets_bin.size < offset_size) return 1;
         size_t count = (offsets_bin.size / offset_size) - 1;
 
-        // Append offsets and data buffers directly
         NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 1), offsets_bin.data, offsets_bin.size));
         NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 2), data_bin.data, data_bin.size));
 
-        // Append validity bitmap (already in Arrow LSB-first format, bit_offset is always 0 from Elixir encoding)
         bool has_validity = !enif_is_identical(tuple[2], kAtomNil);
         if (has_validity) {
             ErlNifBinary validity_bin;
+            int bit_offset = 0;
             if (!enif_inspect_binary(env, tuple[2], &validity_bin)) return 1;
-            size_t validity_bytes = (count + 7) / 8;
-            NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 0), validity_bin.data, validity_bytes));
-            write_array->null_count += count - ArrowBitCountSet(validity_bin.data, 0, count);
+            if (!enif_get_int(env, tuple[3], &bit_offset)) return 1;
+            NANOARROW_RETURN_NOT_OK(copy_validity_bitmap(validity_bin.data, bit_offset, count, write_array));
         }
 
-        write_array->length += count;
+        write_array->length = count;
     }
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
     ArrowArrayMove(tmp.get(), array_out);
@@ -532,9 +511,8 @@ int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowT
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_boolean(env, batch, nullable, write_array, ArrowArrayAppendInt);
+    {
+        int ret = get_list_boolean(env, list, nullable, write_array, ArrowArrayAppendInt);
         if (ret != 0) return ret;
     }
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
@@ -568,9 +546,8 @@ int do_get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullab
     struct ArrowArray* write_array = tmp.get();
     NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
     NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        int ret = get_list_fixed_size_binary(env, batch, nullable, write_array, ArrowArrayAppendBytes);
+    {
+        int ret = get_list_fixed_size_binary(env, list, nullable, write_array, ArrowArrayAppendBytes);
         if (ret != 0) return ret;
     }
     NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
@@ -639,43 +616,68 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
         return 1;
     }
 
-    // data is a list of batches, each batch is %{offsets: binary, validity: binary|nil, values: list, offset: int}
-    ERL_NIF_TERM batch, batch_tail = list;
-    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
-        if (!enif_is_map(env, batch)) {
+    // data is %{offsets: binary, validity: binary|nil, values: data, offset: int}
+    {
+        if (!enif_is_map(env, list)) {
             snprintf(error_out->message, sizeof(error_out->message),
-                "Expected list data batch to be a map with offsets, validity, values, and offset");
+                "Expected list data to be a map with offsets, validity, values, and offset");
             return 1;
         }
 
         ERL_NIF_TERM offsets_term, validity_term, values_term, offset_term;
-        if (!enif_get_map_value(env, batch, kAtomOffsets, &offsets_term) ||
-            !enif_get_map_value(env, batch, kAtomValidity, &validity_term) ||
-            !enif_get_map_value(env, batch, kAtomValues, &values_term) ||
-            !enif_get_map_value(env, batch, kAtomOffsetKey, &offset_term)) {
+        if (!enif_get_map_value(env, list, kAtomOffsets, &offsets_term) ||
+            !enif_get_map_value(env, list, kAtomValidity, &validity_term) ||
+            !enif_get_map_value(env, list, kAtomValues, &values_term) ||
+            !enif_get_map_value(env, list, kAtomOffsetKey, &offset_term)) {
             snprintf(error_out->message, sizeof(error_out->message),
                 "Expected list data batch to have offsets, validity, values, and offset keys");
             return 1;
         }
 
-        // Build child array from the values (a list of batches for the inner column)
-        struct AdbcColumnNifTerm child_column;
-        child_column.is_nil = 0;
-        child_column.type_term = inner_type_term;
-        child_column.nullable_term = inner_nullable_term;
-        child_column.data_term = values_term;
-        child_column.name_term = kAtomNil;
-        child_column.metadata_term = kAtomNil;
-        child_column.struct_name_term = kAtomAdbcFieldModule;
-        child_column.n_items = 0;
-
-        // Build child values into a temporary child array
+        // Build child array from the values list.
+        // values_term is a list of child data items; iterate and process each
+        // into the same child array via adbc_column_to_adbc_field.
         nanoarrow::UniqueArray child_array;
         struct ArrowSchema child_schema{};
-        int ret = adbc_column_to_adbc_field(env, &child_column, true, child_array.get(), &child_schema, error_out);
-        if (ret != 0) {
-            if (child_schema.release) child_schema.release(&child_schema);
-            return ret;
+        bool child_initialized = false;
+
+        ERL_NIF_TERM val_head, val_tail = values_term;
+        while (enif_get_list_cell(env, val_tail, &val_head, &val_tail)) {
+            struct AdbcColumnNifTerm child_column;
+            child_column.is_nil = 0;
+            child_column.type_term = inner_type_term;
+            child_column.nullable_term = inner_nullable_term;
+            child_column.data_term = val_head;
+            child_column.name_term = kAtomNil;
+            child_column.metadata_term = kAtomNil;
+            child_column.struct_name_term = kAtomAdbcFieldModule;
+            child_column.n_items = 0;
+
+            if (!child_initialized) {
+                int ret = adbc_column_to_adbc_field(env, &child_column, true, child_array.get(), &child_schema, error_out);
+                if (ret != 0) {
+                    if (child_schema.release) child_schema.release(&child_schema);
+                    return ret;
+                }
+                child_initialized = true;
+            } else {
+                nanoarrow::UniqueArray extra_array;
+                struct ArrowSchema extra_schema{};
+                int ret = adbc_column_to_adbc_field(env, &child_column, true, extra_array.get(), &extra_schema, error_out);
+                if (extra_schema.release) extra_schema.release(&extra_schema);
+                if (ret != 0) return ret;
+
+                // Append extra buffers into child array
+                for (int64_t b = 0; b < extra_array.get()->n_buffers; b++) {
+                    struct ArrowBuffer* dst = ArrowArrayBuffer(child_array.get(), b);
+                    struct ArrowBuffer* src = ArrowArrayBuffer(extra_array.get(), b);
+                    if (src->size_bytes > 0) {
+                        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(dst, src->data, src->size_bytes));
+                    }
+                }
+                child_array.get()->length += extra_array.get()->length;
+                child_array.get()->null_count += extra_array.get()->null_count;
+            }
         }
 
         // Now set up the parent schema's child from the built child schema
@@ -714,14 +716,10 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
         NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(array_out, 1),
             offsets_bin.data + offset_elem_size, offsets_bin.size - offset_elem_size));
 
-        // Set length and validity
-        for (size_t i = 0; i < n_elements; i++) {
-            if (has_validity && !bitmap_valid_at(validity_bin.data, i, bit_offset)) {
-                NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(array_out, 1));
-            } else {
-                NANOARROW_RETURN_NOT_OK(ArrowArrayFinishElement(array_out));
-            }
+        if (has_validity) {
+            NANOARROW_RETURN_NOT_OK(copy_validity_bitmap(validity_bin.data, bit_offset, n_elements, array_out));
         }
+        array_out->length = n_elements;
 
         NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
     }
@@ -816,10 +814,6 @@ int must_be_adbc_column(ErlNifEnv *env,
         return kErrorBufferGetMapValue;
     }
 
-    // Data is always a list of batches
-    if (!enif_is_list(env, data_term)) {
-        return kErrorBufferDataIsNotAList;
-    }
     if (n_items) {
         *n_items = 0;
     }
@@ -1155,21 +1149,6 @@ int adbc_column_to_arrow_type_struct(ErlNifEnv *env, ERL_NIF_TERM values, struct
                 return 1;
             }
 
-            // Check if data_term is a list containing any references
-            if (enif_is_list(env, data_term)) {
-                ERL_NIF_TERM ref_head, ref_tail, ref_list;
-                ref_list = data_term;
-                while (enif_get_list_cell(env, ref_list, &ref_head, &ref_tail)) {
-                    if (enif_is_ref(env, ref_head)) {
-                        snprintf(error_out->message, sizeof(error_out->message),
-                            "Cannot use unmaterialized `Adbc.Column` data (list of references). "
-                            "Please call `Adbc.Result.materialize/1` or `Adbc.Column.materialize/1` first.");
-                        return 1;
-                    }
-                    // If it's not a reference, it's regular data, so break and continue processing
-                    break;
-                }
-            }
 
             ArrowSchemaInit(schema_i);
             unsigned n_items = 0;
