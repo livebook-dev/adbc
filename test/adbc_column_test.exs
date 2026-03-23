@@ -357,4 +357,49 @@ defmodule Adbc.ColumnTest do
                    end
     end
   end
+
+  describe "has_validity?/1" do
+    test "integer column" do
+      refute Adbc.Column.has_validity?(Adbc.Column.s32([1, 2, 3]))
+      assert Adbc.Column.has_validity?(Adbc.Column.s32([1, nil, 3]))
+    end
+
+    test "string column" do
+      refute Adbc.Column.has_validity?(Adbc.Column.string(["a", "b"]))
+      assert Adbc.Column.has_validity?(Adbc.Column.string(["a", nil, "b"]))
+    end
+
+    test "list column" do
+      refute Adbc.Column.has_validity?(
+               Adbc.Column.list([Adbc.Column.s32([1, 2])], Adbc.Field.new(:s32))
+             )
+
+      assert Adbc.Column.has_validity?(
+               Adbc.Column.list([Adbc.Column.s32([1, 2]), nil], Adbc.Field.new(:s32))
+             )
+    end
+
+    test "dictionary column" do
+      refute Adbc.Column.has_validity?(
+               Adbc.Column.dictionary(Adbc.Column.s32([0, 1]), Adbc.Column.string(["a", "b"]))
+             )
+
+      assert Adbc.Column.has_validity?(
+               Adbc.Column.dictionary(
+                 Adbc.Column.s32([0, nil, 1]),
+                 Adbc.Column.string(["a", "b"])
+               )
+             )
+    end
+
+    test "raises for unmaterialized column" do
+      assert_raise ArgumentError, "column has not been materialized", fn ->
+        {:ok, result} =
+          Adbc.Result.from_ipc_stream(File.read!(Path.join("test", "iris/iris.ipc_stream")))
+
+        [col | _] = hd(result.data)
+        Adbc.Column.has_validity?(col)
+      end
+    end
+  end
 end

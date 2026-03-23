@@ -1523,6 +1523,34 @@ defmodule Adbc.Column do
   end
 
   @doc """
+  Returns whether the column contains a validity bitmap (which would
+  indicate the presence of nils).
+
+  The column must be materialized. Raises `ArgumentError` if the
+  column data is still a NIF reference.
+  """
+  @spec has_validity?(t()) :: boolean()
+  def has_validity?(%Adbc.Column{data: ref}) when is_reference(ref) do
+    raise ArgumentError, "column has not been materialized"
+  end
+
+  def has_validity?(%Adbc.Column{data: %Adbc.DictionaryData{key: %{validity: validity}}}) do
+    validity != nil
+  end
+
+  def has_validity?(%Adbc.Column{data: %Adbc.RunEndEncodedData{values: %{validity: validity}}}) do
+    validity != nil
+  end
+
+  def has_validity?(%Adbc.Column{data: %{validity: validity}}) do
+    validity != nil
+  end
+
+  def has_validity?(%Adbc.Column{data: data}) when is_list(data) do
+    nil in data
+  end
+
+  @doc """
   Converts a column's data to a plain Elixir list.
 
   For primitive columns, returns the data as-is. For composite
@@ -1543,6 +1571,10 @@ defmodule Adbc.Column do
 
   """
   @spec to_list(t()) :: [term()]
+  def to_list(%Adbc.Column{data: ref}) when is_reference(ref) do
+    raise ArgumentError, "column has not been materialized"
+  end
+
   def to_list(%Adbc.Column{
         field: %{type: {:dictionary, key_field, value_field}},
         data: %Adbc.DictionaryData{key: key_data, value: value_data}
