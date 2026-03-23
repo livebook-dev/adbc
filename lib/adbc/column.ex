@@ -1557,8 +1557,24 @@ defmodule Adbc.Column do
   @doc """
   Returns the column's data as a raw binary.
 
-  Only supported for columns backed by `Adbc.BufferData` (fixed-size
-  primitive types) and `Adbc.DictionaryData` (returns the key binary).
+  Supported types and their binary formats:
+
+    * `:s8` / `:u8` / `:s16` / `:u16` / `:s32` / `:u32` / `:s64` / `:u64`
+    * `:f16` / `:f32` / `:f64`
+    * `:date32` - equivalent to `:s32`
+    * `:date64` - equivalent to `:s64`
+    * `{:time32, unit}` - equivalent to `:s32`
+    * `{:time64, unit}` - equivalent to `:s64`
+    * `{:timestamp, unit, tz}` - equivalent to `:s64`
+    * `{:duration, unit}` - equivalent to `:s64`
+    * `{:interval, :month}` - equivalent to `:s32`
+    * `{:interval, :day_time}` - two `:s32` values per element (days, milliseconds)
+    * `{:interval, :month_day_nano}` - `:s32` + `:s32` + `:s64` per element (months, days, nanoseconds)
+    * `{:decimal128, precision, scale}` - 128-bit signed little-endian two's complement
+    * `{:decimal256, precision, scale}` - 256-bit signed little-endian two's complement
+    * `{:fixed_size_binary, n}` - `n` raw bytes per element
+    * `{:dictionary, key_type, _}` - returns the key binary in the key's format
+
   Raises `ArgumentError` for other data types or unmaterialized columns.
   """
   @spec to_binary(t()) :: binary()
