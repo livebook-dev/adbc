@@ -44,7 +44,7 @@ defmodule Adbc.DuckDBTest do
                  }
                ]
              ],
-             num_rows: 0
+             num_rows: nil
            } = Adbc.Connection.query!(conn, "SELECT struct_pack(col1 := 1, col2 := 2)")
   end
 

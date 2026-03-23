@@ -3,7 +3,7 @@ Mix.install([{:req, "~> 0.4"}])
 defmodule Update do
   # To update duckdb driver, just bump this version
   # https://github.com/duckdb/duckdb/releases/
-  @duckdb_version "1.4.1"
+  @duckdb_version "1.5.1"
 
   # To update ADBC drivers, bump the tag and version accordingly
   # https://github.com/apache/arrow-adbc/releases
@@ -31,7 +31,7 @@ defmodule Update do
     zip_files =
       Enum.filter(assets, fn %{"name" => name} ->
         String.starts_with?(name, "libduckdb") and String.ends_with?(name, ".zip") and
-          not String.contains?(name, "src")
+          not String.contains?(name, "src") and not String.ends_with?(name, "-musl.zip")
       end)
 
     {aarch64_apple_darwin, zip_files} = data_for(zip_files, ["osx", "universal"])
@@ -119,7 +119,7 @@ defmodule Update do
   end
 end
 
-file = "lib/adbc_driver.ex"
+file = "lib/adbc/driver.ex"
 versions = Update.versions()
 mappings = Update.mappings()
 
