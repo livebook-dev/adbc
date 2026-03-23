@@ -166,6 +166,7 @@ defmodule Adbc.Column do
   defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
   defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
+  defp encode_data({:fixed_size_binary, nbytes}, data), do: encode_fixed_size_binary(data, nbytes)
   defp encode_data(:string, data), do: encode_string(data, 32)
   defp encode_data(:binary, data), do: encode_string(data, 32)
   defp encode_data(:large_string, data), do: encode_string(data, 64)
@@ -952,12 +953,11 @@ defmodule Adbc.Column do
 
   ## Examples
 
-      iex> Adbc.Column.fixed_size_binary([<<0>>, <<1>>, <<2>>], 1)
-      %Adbc.Column{
-        field: %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}, nullable: false, metadata: nil},
-        data: [<<0>>, <<1>>, <<2>>],
-        size: 3
-      }
+      iex> col = Adbc.Column.fixed_size_binary([<<0>>, <<1>>, <<2>>], 1)
+      iex> col.field
+      %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}, nullable: false, metadata: nil}
+      iex> Adbc.Column.to_list(col)
+      [<<0>>, <<1>>, <<2>>]
 
   """
   @spec fixed_size_binary([iodata() | nil], non_neg_integer(), Keyword.t()) :: t()
@@ -965,7 +965,7 @@ defmodule Adbc.Column do
       when is_list(data) and is_integer(nbytes) and is_list(opts) do
     %Adbc.Column{
       field: Adbc.Field.new({:fixed_size_binary, nbytes}, opts),
-      data: data,
+      data: encode_fixed_size_binary(data, nbytes),
       size: length(data)
     }
   end
@@ -1408,6 +1408,26 @@ defmodule Adbc.Column do
     encode_float(rest, size, <<data::binary, value::float-little-size(size)>>, bitmap, pending)
   end
 
+  defp encode_fixed_size_binary(data, nbytes) do
+    encode_fixed_size_binary(data, nbytes, <<>>, <<>>, 0)
+  end
+
+  defp encode_fixed_size_binary([], _nbytes, data, bitmap, pending) do
+    {_data, validity, bit_offset} = bitmap_finish(<<>>, bitmap, pending)
+    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset}
+  end
+
+  defp encode_fixed_size_binary([nil | rest], nbytes, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+    encode_fixed_size_binary(rest, nbytes, <<data::binary, 0::size(nbytes * 8)>>, bitmap, pending)
+  end
+
+  defp encode_fixed_size_binary([value | rest], nbytes, data, bitmap, pending) do
+    {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+    binary = IO.iodata_to_binary(value)
+    encode_fixed_size_binary(rest, nbytes, <<data::binary, binary::binary>>, bitmap, pending)
+  end
+
   defp encode_string(data, offset_size) do
     {offsets, values, bitmap, bit_offset} =
       encode_offset(data, offset_size, fn value -> {value, byte_size(value)} end)
@@ -1811,6 +1831,13 @@ defmodule Adbc.Column do
     decode_float_64(buffer.data, buffer.validity, buffer.bit_offset, 0)
   end
 
+  def to_list(%Adbc.Column{
+        field: %{type: {:fixed_size_binary, nbytes}},
+        data: %Adbc.BufferData{} = buffer
+      }) do
+    decode_fixed_size_binary(buffer.data, buffer.validity, buffer.bit_offset, nbytes, 0)
+  end
+
   def to_list(%Adbc.Column{field: %{type: :boolean}, data: %Adbc.BufferData{} = buffer}) do
     decode_boolean(buffer.data, buffer.validity, buffer.bit_offset, buffer.size, 0)
   end
@@ -1891,6 +1918,14 @@ defmodule Adbc.Column do
     {chunk, rest} = Enum.split(values, fixed_size)
     element = if bitmap_valid?(validity, index, bit_offset), do: chunk
     [element | decode_fixed_size_list(rest, validity, bit_offset, fixed_size, index + 1)]
+  end
+
+  defp decode_fixed_size_binary(<<>>, _validity, _bit_offset, _nbytes, _index), do: []
+
+  defp decode_fixed_size_binary(data, validity, bit_offset, nbytes, index) do
+    <<chunk::binary-size(nbytes), rest::binary>> = data
+    value = if bitmap_valid?(validity, index, bit_offset), do: chunk
+    [value | decode_fixed_size_binary(rest, validity, bit_offset, nbytes, index + 1)]
   end
 
   defp decode_interval_day_time(binary, validity, offset) do

@@ -169,6 +169,27 @@ defmodule Adbc.ColumnTest do
     end
   end
 
+  describe "fixed_size_binary" do
+    test "round-trips non-nullable" do
+      col = Adbc.Column.fixed_size_binary([<<1, 2>>, <<3, 4>>, <<5, 6>>], 2)
+      assert col.field.type == {:fixed_size_binary, 2}
+      assert col.field.nullable == false
+      assert Adbc.Column.to_list(col) == [<<1, 2>>, <<3, 4>>, <<5, 6>>]
+    end
+
+    test "round-trips nullable" do
+      col = Adbc.Column.fixed_size_binary([<<1, 2>>, nil, <<5, 6>>], 2, nullable: true)
+      assert col.field.type == {:fixed_size_binary, 2}
+      assert col.field.nullable == true
+      assert Adbc.Column.to_list(col) == [<<1, 2>>, nil, <<5, 6>>]
+    end
+
+    test "single byte elements" do
+      col = Adbc.Column.fixed_size_binary([<<0xFF>>, <<0x00>>, <<0xAB>>], 1)
+      assert Adbc.Column.to_list(col) == [<<0xFF>>, <<0x00>>, <<0xAB>>]
+    end
+  end
+
   describe "decimals" do
     test "integers" do
       value = 42

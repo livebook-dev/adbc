@@ -59,6 +59,30 @@ defmodule Adbc.PythonxTest do
     end
   end
 
+  describe "fixed_size_binary" do
+    test "materializes fixed_size_binary column" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([b"ab", b"cd", None, b"ef"], type=pyarrow.binary(2))
+        pyarrow.Table.from_arrays([data], names=["fsb"])
+        """)
+
+      assert %Adbc.Result{
+               data: [
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{name: "fsb", type: {:fixed_size_binary, 2}},
+                     data: %Adbc.BufferData{}
+                   } = col
+                 ]
+               ]
+             } = result
+
+      assert Adbc.Column.to_list(col) == ["ab", "cd", nil, "ef"]
+    end
+  end
+
   describe "list" do
     test "materializes list column" do
       result =

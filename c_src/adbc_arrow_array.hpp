@@ -65,44 +65,6 @@ static ERL_NIF_TERM string_views_from_buffer(
     return enif_make_list_from_array(env, values.data(), (unsigned)values.size());
 }
 
-template <typename M>
-static ERL_NIF_TERM fixed_size_binary_from_buffer(
-    ErlNifEnv *env,
-    int64_t element_offset,
-    int64_t element_count,
-    size_t element_bytes,
-    const uint8_t * validity_bitmap,
-    const uint8_t* value_buffer,
-    const M& value_to_nif) {
-    std::vector<ERL_NIF_TERM> values(element_count);
-    if (validity_bitmap == nullptr) {
-        for (int64_t i = element_offset; i < element_offset + element_count; i++) {
-            values[i - element_offset] = value_to_nif(env, &value_buffer[element_bytes * i]);
-        }
-    } else {
-        for (int64_t i = element_offset; i < element_offset + element_count; i++) {
-            uint8_t vbyte = validity_bitmap[i / 8];
-            if (vbyte & (1 << (i % 8))) {
-                values[i - element_offset] = value_to_nif(env, &value_buffer[element_bytes * i]);
-            } else {
-                values[i - element_offset] = kAtomNil;
-            }
-        }
-    }
-
-    return enif_make_list_from_array(env, values.data(), (unsigned)values.size());
-}
-
-template <typename M> static ERL_NIF_TERM fixed_size_binary_from_buffer(
-    ErlNifEnv *env,
-    int64_t length,
-    size_t element_bytes,
-    const uint8_t * validity_bitmap,
-    const uint8_t* value_buffer,
-    const M& value_to_nif) {
-    return fixed_size_binary_from_buffer(env, 0, length, element_bytes, validity_bitmap, value_buffer, value_to_nif);
-}
-
 int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, int64_t offset, int64_t count, uint64_t level, std::vector<ERL_NIF_TERM> &children, ERL_NIF_TERM &error, void* resource) {
     if (schema->n_children > 0 && schema->children == nullptr) {
         error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == nullptr while schema->n_children > 0");
@@ -1160,17 +1122,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     nbytes = nbytes * 10 + (format[i] - '0');
                 }
                 term_type = kAdbcColumnTypeFixedSizeBinary(nbytes);
-                current_term = fixed_size_binary_from_buffer(
-                    env,
-                    offset,
-                    count,
-                    nbytes,
-                    (const uint8_t *)values->buffers[bitmap_buffer_index],
-                    (const uint8_t *)values->buffers[data_buffer_index],
-                    [&](ErlNifEnv *env, const uint8_t * val) -> ERL_NIF_TERM {
-                        return erlang::nif::make_binary(env, (const char *)val, nbytes);
-                    }
-                );
+                current_term = make_buffer_data(env, values, offset, count, nbytes, data_buffer_index, bitmap_buffer_index, resource);
             } else if (format_len > 4 && (strncmp("+ud:", format, 4) == 0)) {
                 // NANOARROW_TYPE_DENSE_UNION
                 term_type = kAdbcColumnTypeDenseUnion;

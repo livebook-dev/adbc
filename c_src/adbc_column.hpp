@@ -421,41 +421,6 @@ int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term, bool nullable, A
     return 0;
 }
 
-int get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, struct ArrowArray* write_array, const std::function<int(struct ArrowArray*, struct ArrowBufferView val)> &callback) {
-    ERL_NIF_TERM head, tail;
-    tail = list;
-    while (enif_get_list_cell(env, tail, &head, &tail)) {
-        ErlNifBinary bytes;
-        struct ArrowBufferView val{};
-        if (enif_inspect_iolist_as_binary(env, head, &bytes)) {
-            val.data.data = bytes.data;
-            val.size_bytes = static_cast<int64_t>(bytes.size);
-            NANOARROW_RETURN_NOT_OK(callback(write_array, val));
-        } else if (nullable && enif_is_identical(head, kAtomNil)) {
-            NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(write_array, 1));
-        } else {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int do_get_list_fixed_size_binary(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, int32_t fixed_size, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
-    NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeFixedSize(schema_out, nanoarrow_type, fixed_size));
-
-    nanoarrow::UniqueArray tmp;
-    struct ArrowArray* write_array = tmp.get();
-    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(write_array, schema_out, error_out));
-    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(write_array));
-    {
-        int ret = get_list_fixed_size_binary(env, list, nullable, write_array, ArrowArrayAppendBytes);
-        if (ret != 0) return ret;
-    }
-    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(tmp.get(), error_out));
-    ArrowArrayMove(tmp.get(), array_out);
-    return 0;
-}
-
 int do_get_list_date(ErlNifEnv *env, ERL_NIF_TERM list, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
     return do_get_buffer_datas(env, list, (nanoarrow_type == NANOARROW_TYPE_DATE32) ? 4 : 8, array_out, schema_out, error_out);
@@ -985,7 +950,8 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
     } else if (column_type.arrow_type == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO) {
         ret = do_get_list_interval(env, data_term, column_type.arrow_type, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_FIXED_SIZE_BINARY) {
-        ret = do_get_list_fixed_size_binary(env, data_term, nullable, column_type.arrow_type, column_type.fixed_size, array_out, schema_out, error_out);
+        NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeFixedSize(schema_out, column_type.arrow_type, column_type.fixed_size));
+        ret = do_get_buffer_datas(env, data_term, column_type.fixed_size, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DECIMAL128 || column_type.arrow_type == NANOARROW_TYPE_DECIMAL256) {
         ret = do_get_list_decimal(env, data_term, column_type.arrow_type, column_type.bits, column_type.precision, column_type.scale, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DICTIONARY) {
