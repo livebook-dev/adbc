@@ -54,6 +54,7 @@ static ERL_NIF_TERM kAtomAdbcListDataModule;
 static ERL_NIF_TERM kAtomAdbcBufferDataModule;
 static ERL_NIF_TERM kAtomAdbcBinaryDataModule;
 static ERL_NIF_TERM kAtomAdbcStructDataModule;
+static ERL_NIF_TERM kAtomAdbcBooleanDataModule;
 static ERL_NIF_TERM kAtomFieldKey;
 static ERL_NIF_TERM kAtomNameKey;
 static ERL_NIF_TERM kAtomTypeKey;

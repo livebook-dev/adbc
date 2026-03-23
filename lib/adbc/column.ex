@@ -1245,7 +1245,7 @@ defmodule Adbc.Column do
   defp encode_boolean([], count, data, byte, bits, bitmap, validity_pending) do
     {_data, validity, bit_offset} = bitmap_finish(<<>>, bitmap, validity_pending)
     data = if bits > 0, do: <<data::binary, byte>>, else: data
-    %Adbc.BufferData{data: data, validity: validity, bit_offset: bit_offset, size: count}
+    %Adbc.BooleanData{data: data, validity: validity, bit_offset: bit_offset, size: count}
   end
 
   defp encode_boolean([nil | rest], count, data, byte, bits, bitmap, validity_pending) do
@@ -1780,7 +1780,7 @@ defmodule Adbc.Column do
     decode_fixed_size_binary(buffer.data, buffer.validity, buffer.bit_offset, nbytes, 0)
   end
 
-  def to_list(%Adbc.Column{field: %{type: :boolean}, data: %Adbc.BufferData{} = buffer}) do
+  def to_list(%Adbc.Column{field: %{type: :boolean}, data: %Adbc.BooleanData{} = buffer}) do
     decode_boolean(buffer.data, buffer.validity, buffer.bit_offset, buffer.size, 0)
   end
 

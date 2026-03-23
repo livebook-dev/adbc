@@ -791,7 +791,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                     kAtomStructKey, kAtomDataKey, kAtomValidity, kAtomBitOffsetKey, kAtomSizeKey,
                 };
                 std::vector<ERL_NIF_TERM> vals = {
-                    kAtomAdbcBufferDataModule, data_term, validity_term, enif_make_int(env, (int)offset), enif_make_int64(env, count),
+                    kAtomAdbcBooleanDataModule, data_term, validity_term, enif_make_int(env, (int)offset), enif_make_int64(env, count),
                 };
                 enif_make_map_from_arrays(env, keys.data(), vals.data(), (unsigned)vals.size(), &current_term);
             }

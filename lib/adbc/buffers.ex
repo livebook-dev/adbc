@@ -20,6 +20,11 @@ end
 
 defmodule Adbc.BufferData do
   @moduledoc false
+  defstruct [:data, :validity, :bit_offset]
+end
+
+defmodule Adbc.BooleanData do
+  @moduledoc false
   defstruct [:data, :validity, :bit_offset, :size]
 end
 

@@ -376,7 +376,7 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, ArrowType nanoarrow_ty
 int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
 
-    // %Adbc.BufferData{data: binary, validity: binary | nil, bit_offset: int, size: int}
+    // %Adbc.BooleanData{data: binary, validity: binary | nil, bit_offset: int, size: int}
     ERL_NIF_TERM data_field, validity_field, bit_offset_field, size_field;
     if (!enif_get_map_value(env, data_term, kAtomDataKey, &data_field)) return 1;
     if (!enif_get_map_value(env, data_term, kAtomValidity, &validity_field)) return 1;
