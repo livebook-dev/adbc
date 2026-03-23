@@ -390,6 +390,13 @@ defmodule Adbc.ColumnTest do
                  Adbc.Column.string(["a", "b"])
                )
              )
+
+      assert Adbc.Column.has_validity?(
+               Adbc.Column.dictionary(
+                 Adbc.Column.s32([0, 1]),
+                 Adbc.Column.string(["a", nil])
+               )
+             )
     end
 
     test "raises for unmaterialized column" do
@@ -399,6 +406,46 @@ defmodule Adbc.ColumnTest do
 
         [col | _] = hd(result.data)
         Adbc.Column.has_validity?(col)
+      end
+    end
+  end
+
+  describe "to_binary/1" do
+    test "integer column" do
+      assert Adbc.Column.to_binary(Adbc.Column.s32([1, 2, 3])) ==
+               <<1::signed-little-32, 2::signed-little-32, 3::signed-little-32>>
+    end
+
+    test "float column" do
+      assert Adbc.Column.to_binary(Adbc.Column.f64([1.0, 2.0])) ==
+               <<1.0::float-little-64, 2.0::float-little-64>>
+    end
+
+    test "dictionary column returns key binary" do
+      assert Adbc.Column.to_binary(
+               Adbc.Column.dictionary(Adbc.Column.s32([0, 1, 0]), Adbc.Column.string(["a", "b"]))
+             ) == <<0::signed-little-32, 1::signed-little-32, 0::signed-little-32>>
+    end
+
+    test "raises for boolean column" do
+      assert_raise ArgumentError, ~r/cannot convert/, fn ->
+        Adbc.Column.to_binary(Adbc.Column.boolean([true, false]))
+      end
+    end
+
+    test "raises for string column" do
+      assert_raise ArgumentError, ~r/cannot convert/, fn ->
+        Adbc.Column.to_binary(Adbc.Column.string(["a", "b"]))
+      end
+    end
+
+    test "raises for unmaterialized column" do
+      assert_raise ArgumentError, "column has not been materialized", fn ->
+        {:ok, result} =
+          Adbc.Result.from_ipc_stream(File.read!(Path.join("test", "iris/iris.ipc_stream")))
+
+        [col | _] = hd(result.data)
+        Adbc.Column.to_binary(col)
       end
     end
   end

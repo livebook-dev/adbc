@@ -1534,8 +1534,12 @@ defmodule Adbc.Column do
     raise ArgumentError, "column has not been materialized"
   end
 
-  def has_validity?(%Adbc.Column{data: %Adbc.DictionaryData{key: %{validity: validity}}}) do
-    validity != nil
+  def has_validity?(%Adbc.Column{
+        field: %{type: {:dictionary, key_field, value_field}},
+        data: %Adbc.DictionaryData{key: key, value: value}
+      }) do
+    has_validity?(%Adbc.Column{field: key_field, data: key}) or
+      has_validity?(%Adbc.Column{field: value_field, data: value})
   end
 
   def has_validity?(%Adbc.Column{data: %Adbc.RunEndEncodedData{values: %{validity: validity}}}) do
@@ -1548,6 +1552,28 @@ defmodule Adbc.Column do
 
   def has_validity?(%Adbc.Column{data: data}) when is_list(data) do
     nil in data
+  end
+
+  @doc """
+  Returns the column's data as a raw binary.
+
+  Only supported for columns backed by `Adbc.BufferData` (fixed-size
+  primitive types) and `Adbc.DictionaryData` (returns the key binary).
+  Raises `ArgumentError` for other data types or unmaterialized columns.
+  """
+  @spec to_binary(t()) :: binary()
+  def to_binary(%Adbc.Column{data: ref}) when is_reference(ref) do
+    raise ArgumentError, "column has not been materialized"
+  end
+
+  def to_binary(%Adbc.Column{data: %Adbc.BufferData{data: binary}}), do: binary
+
+  def to_binary(%Adbc.Column{data: %Adbc.DictionaryData{key: %Adbc.BufferData{data: binary}}}),
+    do: binary
+
+  def to_binary(%Adbc.Column{field: field}) do
+    raise ArgumentError,
+          "cannot convert column #{inspect(field.name)} of type #{inspect(field.type)} to binary"
   end
 
   @doc """
