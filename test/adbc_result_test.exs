@@ -59,6 +59,14 @@ defmodule Adbc.ResultTest do
            ]
   end
 
+  test "to_columns" do
+    assert %{
+             "start_time" => [%Adbc.Column{field: %Adbc.Field{name: "start_time"}}],
+             "end_time" => [%Adbc.Column{field: %Adbc.Field{name: "end_time"}}],
+             "time_series" => [%Adbc.Column{field: %Adbc.Field{name: "time_series"}}]
+           } = Result.to_columns(result())
+  end
+
   test "to_map with list views" do
     assert %{
              "start_time" => [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
