@@ -174,7 +174,8 @@ defmodule Adbc.PythonxTest do
                    %Adbc.Column{
                      field: %Adbc.Field{
                        name: "dict",
-                       type: {:dictionary, %Adbc.Field{type: key_type}, %Adbc.Field{type: :string}}
+                       type:
+                         {:dictionary, %Adbc.Field{type: key_type}, %Adbc.Field{type: :string}}
                      }
                    }
                  ]
@@ -288,7 +289,12 @@ defmodule Adbc.PythonxTest do
                          {:run_end_encoded, %Adbc.Field{name: "run_ends", type: :s32},
                           %Adbc.Field{name: "values", type: :string}}
                      },
-                     data: %Adbc.RunEndEncodedData{offset: 0, length: 7, values: _, run_ends: %Adbc.BufferData{}}
+                     data: %Adbc.RunEndEncodedData{
+                       offset: 0,
+                       length: 7,
+                       values: _,
+                       run_ends: %Adbc.BufferData{}
+                     }
                    }
                  ]
                ]
@@ -336,12 +342,12 @@ defmodule Adbc.PythonxTest do
                        type: {:list_view, %Adbc.Field{name: "item", type: :s32}}
                      },
                      data: %Adbc.ListViewData{
-                         values: %Adbc.BufferData{},
-                         offsets: _,
-                         sizes: _,
-                         validity: _,
-                         bit_offset: _
-                       }
+                       values: %Adbc.BufferData{},
+                       offsets: _,
+                       sizes: _,
+                       validity: _,
+                       bit_offset: _
+                     }
                    }
                  ]
                ]

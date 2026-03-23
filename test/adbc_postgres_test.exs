@@ -190,7 +190,8 @@ defmodule Adbc.PostgresTest do
                        metadata: nil
                      }
                    }
-                 ] | _
+                 ]
+                 | _
                ]
              } = Connection.query!(conn, query)
 
@@ -221,7 +222,8 @@ defmodule Adbc.PostgresTest do
                      metadata: nil
                    }
                  }
-               ] | _
+               ]
+               | _
              ]
            } = result
 

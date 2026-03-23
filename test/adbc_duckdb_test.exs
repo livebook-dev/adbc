@@ -103,7 +103,12 @@ defmodule Adbc.DuckDBTest do
     result = Adbc.Result.materialize(result)
     assert [[id_col, dates_col]] = result.data
     assert Adbc.Column.to_list(id_col) == [1, 2, 3]
-    assert Adbc.Column.to_list(dates_col) == [[~D[2024-01-01], ~D[2024-06-15]], nil, [~D[2025-03-22]]]
+
+    assert Adbc.Column.to_list(dates_col) == [
+             [~D[2024-01-01], ~D[2024-06-15]],
+             nil,
+             [~D[2025-03-22]]
+           ]
   end
 
   test "dictionary", %{conn: conn} do
@@ -244,9 +249,7 @@ defmodule Adbc.DuckDBTest do
 
   test "duration", %{conn: conn} do
     columns = [
-      Adbc.Column.duration([1_000_000, -500_000, nil], :microseconds,
-        name: "dur_col"
-      )
+      Adbc.Column.duration([1_000_000, -500_000, nil], :microseconds, name: "dur_col")
     ]
 
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "durations")
