@@ -1,5 +1,14 @@
 ## Update
 
+### adbc and drivers
+
+1. Update the contents in 3rd_party with latest (only root files and c/)
+    from latest ADBC release: https://github.com/apache/arrow-adbc/releases/
+
+2. Update @duckdb_version, @adbc_driver_version, and @adbc_tag in `update.exs`
+
+3. Run elixir update.exs
+
 ### nanoarrow
 
 To update the bundled nanoarrow, run the following command:

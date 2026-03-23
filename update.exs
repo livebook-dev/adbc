@@ -1,12 +1,3 @@
-# To support a new version of ADBC, you must:
-#
-# 1. Update the contents in 3rd_party with latest (only root files and c/)
-#    from latest ADBC release: https://github.com/apache/arrow-adbc/releases/
-# 2. Update @duckdb_version, @adbc_driver_version, and @adbc_tag below
-# 3. Run elixir update.exs
-# 4. ???
-# 5. Profit!
-#
 Mix.install([{:req, "~> 0.4"}])
 
 defmodule Update do
