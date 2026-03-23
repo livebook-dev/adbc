@@ -170,7 +170,7 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema * schema, 
 
     // Always use "item" as the canonical name for list elements, regardless of what
     // the driver provides; using "item" appears to be conventional but duckdb uses "l"
-    element_schema = make_adbc_field(env, erlang::nif::make_binary(env, "item"), child_type, items_schema->flags & ARROW_FLAG_NULLABLE, child_metadata);
+    element_schema = make_adbc_field(env, erlang::nif::make_binary(env, "item"), child_type, child_metadata);
     return 0;
 }
 
@@ -228,7 +228,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema,
         } else {
             key_type_term = kAdbcColumnTypeS32; // default to s32 for index
         }
-        ERL_NIF_TERM key_field = make_adbc_field(env, erlang::nif::make_binary(env, "key"), key_type_term, false, kAtomNil);
+        ERL_NIF_TERM key_field = make_adbc_field(env, erlang::nif::make_binary(env, "key"), key_type_term, kAtomNil);
         ERL_NIF_TERM value_field = make_adbc_field(env, schema->dictionary, value_type, value_metadata);
 
         type_term = enif_make_tuple3(env, kAdbcColumnTypeDictionary, key_field, value_field);

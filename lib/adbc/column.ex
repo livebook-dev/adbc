@@ -4,19 +4,13 @@ defmodule Adbc.Column do
 
   It contains the column's field definition and data.
   The field (an `Adbc.Field`) describes the column's name, type,
-  nullability, and metadata. The data field is opaque and must
-  not be access directly, use functions such as `to_list/1`
-  to get a list of values of the column's data type.
+  and metadata. The data field is opaque and must not be accessed
+  directly, use functions such as `to_list/1` to get a list of
+  values of the column's data type.
 
-  You can create new columns using `new/2`, which will infer
-  a base type if none is given, and detect if the columns are
-  nullable or not.
-
-  The other functions in this module, such as `s8/2`, `boolean/2`,
-  etc, are meant to be low-level functions which expect correct
-  data to be given. For example, they won't automatically
-  detect nullable, nor validate it, you must explicitly provide
-  said value as argument.
+  You can create new columns using constructors such as `s8/2`,
+  `boolean/2`, etc. `new/2` is available as a convenience that
+  infers the type for you.
   """
   import Bitwise
 
@@ -80,8 +74,7 @@ defmodule Adbc.Column do
   Creates a column by inferring the type from the data.
 
   This is a higher-level API that traverses the data element by element,
-  inferring the most appropriate type. Nullable is automatically set to
-  `true` if any `nil` values are found.
+  inferring the most appropriate type.
 
   ## Type inference rules
 
@@ -93,101 +86,64 @@ defmodule Adbc.Column do
     * `%Date{}` → `:date32` (integers also supported)
     * `%Time{}` → `{:time64, :microseconds}` (integers representing microseconds also supported)
     * `%NaiveDateTime{}` → `{:timestamp, :microseconds, "UTC"}` (integers representing microseconds also supported)
-    * lists → `:list` (each element is a plain Elixir list or `nil`;
-      inner type is recursively inferred)
 
-  If `nil` values are present, then the column is appropriately marked as nullable.
   If there are no values, the default type of `:string` is assumed.
-
-  If a `:type` is given, the type inference is skipped and only
-  nullable detection is performed. This is useful for types that
-  cannot be inferred, such as unsigned integers, smaller integer
-  sizes, decimal, duration, interval, and composite types.
 
   ## Options
 
     * `:name` - The name of the column
-    * `:type` - Explicitly set the column type, skipping type inference
 
   ## Examples
 
       iex> col = Adbc.Column.new([1, 2, 3], name: "ids")
       iex> col.field
-      %Adbc.Field{name: "ids", type: :s64, nullable: false, metadata: nil}
+      %Adbc.Field{name: "ids", type: :s64}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
       iex> col = Adbc.Column.new([1, nil, 3.0])
       iex> col.field
-      %Adbc.Field{name: nil, type: :f64, nullable: true, metadata: nil}
+      %Adbc.Field{name: nil, type: :f64}
       iex> Adbc.Column.to_list(col)
       [1.0, nil, 3.0]
-
-      iex> col = Adbc.Column.new([1, 2, 3], type: :u32)
-      iex> col.field
-      %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil}
-      iex> Adbc.Column.to_list(col)
-      [1, 2, 3]
 
   """
   @spec new(list(), Keyword.t()) :: t()
   def new(data, opts \\ []) when is_list(data) and is_list(opts) do
-    {type, nullable} =
-      case opts[:type] do
-        nil -> infer_type(data, nil, false)
-        type -> {type, Enum.member?(data, nil)}
-      end
+    type = infer_type(data, nil)
 
     %Adbc.Column{
       field: %Adbc.Field{
         name: opts[:name],
-        type: type,
-        nullable: nullable,
-        metadata: nil
+        type: type
       },
       data: encode_data(type, data),
       size: length(data)
     }
   end
 
-  for {type, size} <- [s8: 8, s16: 16, s32: 32, s64: 64, u8: 8, u16: 16, u32: 32, u64: 64] do
-    defp encode_data(unquote(type), data),
-      do: encode_buffer(data, unquote(size), &encode_integer/1)
-  end
-
   defp encode_data(:boolean, data), do: encode_boolean(data)
-  defp encode_data(:f16, data), do: encode_float(data, 16)
-  defp encode_data(:f32, data), do: encode_float(data, 32)
+  defp encode_data(:s64, data), do: encode_buffer(data, 64, &encode_integer/1)
   defp encode_data(:f64, data), do: encode_float(data, 64)
+  defp encode_data(:string, data), do: encode_string(data, 32)
   defp encode_data(:date32, data), do: encode_date32(data)
-  defp encode_data(:date64, data), do: encode_date64(data)
-  defp encode_data({:duration, _unit}, data), do: encode_buffer(data, 64, &encode_integer/1)
-  defp encode_data({:time32, unit}, data), do: encode_time(data, unit, 32)
   defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
-  defp encode_data({:interval, unit}, data), do: encode_interval(data, unit)
-  defp encode_data({:fixed_size_binary, nbytes}, data), do: encode_fixed_size_binary(data, nbytes)
-  defp encode_data(:string, data), do: encode_string(data, 32)
-  defp encode_data(:binary, data), do: encode_string(data, 32)
-  defp encode_data(:large_string, data), do: encode_string(data, 64)
-  defp encode_data(:large_binary, data), do: encode_string(data, 64)
 
   @float_atoms [:nan, :infinity, :neg_infinity]
 
-  defp infer_type([], nil, nullable), do: {:string, nullable}
-  defp infer_type([], type, nullable), do: {type, nullable}
+  defp infer_type([], nil), do: :string
+  defp infer_type([], type), do: type
 
-  defp infer_type([nil | rest], type, _nullable) do
-    infer_type(rest, type, true)
-  end
+  defp infer_type([nil | rest], type), do: infer_type(rest, type)
 
-  defp infer_type([value | rest], type, nullable) when is_boolean(value) do
+  defp infer_type([value | rest], type) when is_boolean(value) do
     case type do
       nil ->
-        infer_type(rest, :boolean, nullable)
+        infer_type(rest, :boolean)
 
       :boolean ->
-        infer_type(rest, :boolean, nullable)
+        infer_type(rest, :boolean)
 
       _ ->
         raise ArgumentError,
@@ -195,25 +151,25 @@ defmodule Adbc.Column do
     end
   end
 
-  defp infer_type([value | rest], type, nullable) when is_integer(value) do
+  defp infer_type([value | rest], type) when is_integer(value) do
     case type do
       nil ->
-        infer_type(rest, :s64, nullable)
+        infer_type(rest, :s64)
 
       :s64 ->
-        infer_type(rest, :s64, nullable)
+        infer_type(rest, :s64)
 
       :f64 ->
-        infer_type(rest, :f64, nullable)
+        infer_type(rest, :f64)
 
       :date32 ->
-        infer_type(rest, :date32, nullable)
+        infer_type(rest, :date32)
 
       {:time64, _} = t ->
-        infer_type(rest, t, nullable)
+        infer_type(rest, t)
 
       {:timestamp, _, _} = t ->
-        infer_type(rest, t, nullable)
+        infer_type(rest, t)
 
       _ ->
         raise ArgumentError,
@@ -221,16 +177,16 @@ defmodule Adbc.Column do
     end
   end
 
-  defp infer_type([value | rest], type, nullable) when is_float(value) or value in @float_atoms do
+  defp infer_type([value | rest], type) when is_float(value) or value in @float_atoms do
     case type do
       nil ->
-        infer_type(rest, :f64, nullable)
+        infer_type(rest, :f64)
 
       :s64 ->
-        infer_type(rest, :f64, nullable)
+        infer_type(rest, :f64)
 
       :f64 ->
-        infer_type(rest, :f64, nullable)
+        infer_type(rest, :f64)
 
       _ ->
         raise ArgumentError,
@@ -238,13 +194,13 @@ defmodule Adbc.Column do
     end
   end
 
-  defp infer_type([value | rest], type, nullable) when is_binary(value) do
+  defp infer_type([value | rest], type) when is_binary(value) do
     case type do
       nil ->
-        infer_type(rest, :string, nullable)
+        infer_type(rest, :string)
 
       :string ->
-        infer_type(rest, :string, nullable)
+        infer_type(rest, :string)
 
       _ ->
         raise ArgumentError,
@@ -252,48 +208,48 @@ defmodule Adbc.Column do
     end
   end
 
-  defp infer_type([%Date{} | rest], type, nullable) do
+  defp infer_type([%Date{} | rest], type) do
     case type do
       nil ->
-        infer_type(rest, :date32, nullable)
+        infer_type(rest, :date32)
 
       :date32 ->
-        infer_type(rest, :date32, nullable)
+        infer_type(rest, :date32)
 
       :s64 ->
-        infer_type(rest, :date32, nullable)
+        infer_type(rest, :date32)
 
       _ ->
         raise ArgumentError, "mixed types in column: got Date but previously saw #{inspect(type)}"
     end
   end
 
-  defp infer_type([%Time{} | rest], type, nullable) do
+  defp infer_type([%Time{} | rest], type) do
     case type do
       nil ->
-        infer_type(rest, {:time64, :microseconds}, nullable)
+        infer_type(rest, {:time64, :microseconds})
 
       {:time64, _} = t ->
-        infer_type(rest, t, nullable)
+        infer_type(rest, t)
 
       :s64 ->
-        infer_type(rest, {:time64, :microseconds}, nullable)
+        infer_type(rest, {:time64, :microseconds})
 
       _ ->
         raise ArgumentError, "mixed types in column: got Time but previously saw #{inspect(type)}"
     end
   end
 
-  defp infer_type([%NaiveDateTime{} | rest], type, nullable) do
+  defp infer_type([%NaiveDateTime{} | rest], type) do
     case type do
       nil ->
-        infer_type(rest, {:timestamp, :microseconds, "UTC"}, nullable)
+        infer_type(rest, {:timestamp, :microseconds, "UTC"})
 
       {:timestamp, _, _} = t ->
-        infer_type(rest, t, nullable)
+        infer_type(rest, t)
 
       :s64 ->
-        infer_type(rest, {:timestamp, :microseconds, "UTC"}, nullable)
+        infer_type(rest, {:timestamp, :microseconds, "UTC"})
 
       _ ->
         raise ArgumentError,
@@ -301,11 +257,10 @@ defmodule Adbc.Column do
     end
   end
 
-  defp infer_type([value | _rest], _type, _nullable) do
+  defp infer_type([value | _rest], _type) do
     raise ArgumentError, "cannot infer type for value in column: #{inspect(value)}"
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains booleans.
 
@@ -317,14 +272,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.boolean([true, false, true])
       iex> col.field
-      %Adbc.Field{name: nil, type: :boolean, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :boolean}
       iex> Adbc.Column.to_list(col)
       [true, false, true]
 
@@ -338,7 +292,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains unsigned 8-bit integers.
 
@@ -350,14 +303,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.u8([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :u8, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :u8}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -371,7 +323,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains unsigned 16-bit integers.
 
@@ -383,14 +334,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.u16([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :u16, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :u16}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -404,7 +354,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains un32-bit signed integers.
 
@@ -416,14 +365,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.u32([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :u32, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :u32}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -437,7 +385,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains un64-bit signed integers.
 
@@ -449,14 +396,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.u64([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :u64, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :u64}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -470,7 +416,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains signed 8-bit integers.
 
@@ -482,14 +427,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.s8([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :s8, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :s8}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -503,7 +447,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains signed 16-bit integers.
 
@@ -515,14 +458,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.s16([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :s16, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :s16}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -536,7 +478,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 32-bit signed integers.
 
@@ -548,14 +489,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.s32([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :s32, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :s32}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -569,7 +509,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 64-bit signed integers.
 
@@ -581,14 +520,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.s64([1, 2, 3])
       iex> col.field
-      %Adbc.Field{name: nil, type: :s64, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :s64}
       iex> Adbc.Column.to_list(col)
       [1, 2, 3]
 
@@ -602,7 +540,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 16-bit half-precision floats.
 
@@ -614,14 +551,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.f16([1.0, 2.0, 3.0])
       iex> col.field
-      %Adbc.Field{name: nil, type: :f16, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :f16}
       iex> Adbc.Column.to_list(col)
       [1.0, 2.0, 3.0]
 
@@ -635,7 +571,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 32-bit single-precision floats.
 
@@ -647,14 +582,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.f32([1.0, 2.0, 3.0])
       iex> col.field
-      %Adbc.Field{name: nil, type: :f32, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :f32}
       iex> Adbc.Column.to_list(col)
       [1.0, 2.0, 3.0]
 
@@ -668,7 +602,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 64-bit double-precision floats.
 
@@ -680,14 +613,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.f64([1.0, 2.0, 3.0])
       iex> col.field
-      %Adbc.Field{name: nil, type: :f64, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :f64}
       iex> Adbc.Column.to_list(col)
       [1.0, 2.0, 3.0]
 
@@ -701,7 +633,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 128-bit decimals.
 
@@ -717,7 +648,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec decimal128([Decimal.t() | integer() | nil], precision128(), integer(), Keyword.t()) ::
@@ -731,7 +661,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains 256-bit decimals.
 
@@ -747,7 +676,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec decimal256([Decimal.t() | integer() | nil], precision256(), integer(), Keyword.t()) ::
@@ -797,7 +725,6 @@ defmodule Adbc.Column do
     end)
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains UTF-8 encoded strings.
 
@@ -809,14 +736,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.string(["a", "ab", "abc"])
       iex> col.field
-      %Adbc.Field{name: nil, type: :string, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :string}
       iex> Adbc.Column.to_list(col)
       ["a", "ab", "abc"]
 
@@ -830,7 +756,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains UTF-8 encoded large strings.
 
@@ -844,14 +769,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.large_string(["a", "ab", "abc"])
       iex> col.field
-      %Adbc.Field{name: nil, type: :large_string, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :large_string}
       iex> Adbc.Column.to_list(col)
       ["a", "ab", "abc"]
 
@@ -865,7 +789,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains binary values.
 
@@ -877,14 +800,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.binary([<<0>>, <<1>>, <<2>>])
       iex> col.field
-      %Adbc.Field{name: nil, type: :binary, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :binary}
       iex> Adbc.Column.to_list(col)
       [<<0>>, <<1>>, <<2>>]
 
@@ -898,7 +820,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains large binary values.
 
@@ -912,14 +833,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.large_binary([<<0>>, <<1>>, <<2>>])
       iex> col.field
-      %Adbc.Field{name: nil, type: :large_binary, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: :large_binary}
       iex> Adbc.Column.to_list(col)
       [<<0>>, <<1>>, <<2>>]
 
@@ -933,7 +853,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains fixed size binaries.
 
@@ -948,14 +867,13 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
 
   ## Examples
 
       iex> col = Adbc.Column.fixed_size_binary([<<0>>, <<1>>, <<2>>], 1)
       iex> col.field
-      %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}, nullable: false, metadata: nil}
+      %Adbc.Field{name: nil, type: {:fixed_size_binary, 1}}
       iex> Adbc.Column.to_list(col)
       [<<0>>, <<1>>, <<2>>]
 
@@ -970,7 +888,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains date represented as 32-bit signed integers in UTC.
 
@@ -984,7 +901,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec date32([Date.t() | s32() | nil], Keyword.t()) :: t()
@@ -996,7 +912,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains date represented as 64-bit signed integers in UTC.
 
@@ -1010,7 +925,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec date64([Date.t() | s64() | nil], Keyword.t()) :: t()
@@ -1022,7 +936,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains time represented as signed integers in UTC.
 
@@ -1049,7 +962,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec time([Time.t() | s64() | nil], Adbc.Field.time_unit(), Keyword.t()) :: t()
@@ -1073,7 +985,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains timestamps represented as signed integers in the given timezone.
 
@@ -1096,7 +1007,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec timestamp(
@@ -1116,7 +1026,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains durations represented as 64-bit signed integers.
 
@@ -1135,7 +1044,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec duration([s64() | nil], Adbc.Field.time_unit(), Keyword.t()) :: t()
@@ -1149,7 +1057,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that contains durations represented as signed integers.
 
@@ -1177,7 +1084,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec interval(
@@ -1196,7 +1102,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   A column that each row is a list of some type or nil.
 
@@ -1209,7 +1114,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec list([t() | nil], Adbc.Field.t(), Keyword.t()) :: t()
@@ -1221,7 +1125,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   Similar to `list/3`, but for large lists.
 
@@ -1234,7 +1137,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec large_list([t() | nil], Adbc.Field.t(), Keyword.t()) :: t()
@@ -1246,7 +1148,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   Similar to `list/3`, but the length of the list is the same.
 
@@ -1260,7 +1161,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec fixed_size_list(list(), Adbc.Field.t(), s32(), Keyword.t()) :: t()
@@ -1272,7 +1172,6 @@ defmodule Adbc.Column do
     }
   end
 
-  @doc type: :column_builder
   @doc """
   Construct an array using dictionary encoding.
 
@@ -1289,15 +1188,15 @@ defmodule Adbc.Column do
   As an example, you could have the following data:
 
   ```elixir
-  Adbc.Column.string(["foo", "bar", "foo", "bar", nil, "baz"], nullable: true)
+  Adbc.Column.string(["foo", "bar", "foo", "bar", nil, "baz"])
   ```
 
   In dictionary-encoded form, this could appear as:
 
   ```elixir
   Adbc.Column.dictionary(
-    Adbc.Column.string(["foo", "bar", "baz"], nullable: true),
-    Adbc.Column.s32([0, 1, 0, 1, nil, 2], nullable: true)
+    Adbc.Column.string(["foo", "bar", "baz"]),
+    Adbc.Column.s32([0, 1, 0, 1, nil, 2])
   )
   ```
 
@@ -1314,7 +1213,6 @@ defmodule Adbc.Column do
   ## Options
 
   * `:name` - The name of the column
-  * `:nullable` - A boolean value indicating whether the column is nullable
   * `:metadata` - A map of metadata
   """
   @spec dictionary(t(), t(), Keyword.t()) :: t()

@@ -203,8 +203,8 @@ ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env, struct ArrowSchema * s
         kAtomValue
     };
     ERL_NIF_TERM map_values[] = {
-        make_adbc_column(env, key_schema, key_values, nif_keys[0], key_type, key_schema->flags & ARROW_FLAG_NULLABLE, key_metadata, nif_keys[1]),
-        make_adbc_column(env, value_schema, value_values, nif_values[0], value_type, value_schema->flags & ARROW_FLAG_NULLABLE, value_metadata, nif_values[1])
+        make_adbc_column(env, key_schema, key_values, nif_keys[0], key_type, key_metadata, nif_keys[1]),
+        make_adbc_column(env, value_schema, value_values, nif_values[0], value_type, value_metadata, nif_values[1])
     };
 
     enif_make_map_from_arrays(env, map_keys, map_values, (unsigned)(sizeof(map_keys)/sizeof(map_keys[0])), &map_out);

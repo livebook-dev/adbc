@@ -26,20 +26,18 @@ defmodule Adbc.ResultTest do
             [~N[2024-05-31 12:00:00], ~N[2024-05-31 12:30:00]],
             :seconds,
             "UTC",
-            name: "start_time",
-            nullable: true
+            name: "start_time"
           ),
           Adbc.Column.timestamp(
             [~N[2024-05-31 13:00:00], ~N[2024-05-31 13:30:00]],
             :seconds,
             "UTC",
-            name: "end_time",
-            nullable: true
+            name: "end_time"
           ),
           Adbc.Column.list(
             [Adbc.Column.s32([1, 2, 3, 4]), Adbc.Column.s32([3, 4, 5, 6])],
-            Adbc.Field.new(:s32, nullable: true),
-            name: "time_series", nullable: true
+            Adbc.Field.new(:s32),
+            name: "time_series"
           )
         ]
       ]
@@ -97,40 +95,35 @@ defmodule Adbc.ResultTest do
                       field: %Adbc.Field{
                         name: "sepal_length",
                         type: :f64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %Adbc.Field{
                         name: "sepal_width",
                         type: :f64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %Adbc.Field{
                         name: "petal_length",
                         type: :f64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %Adbc.Field{
                         name: "petal_width",
                         type: :f64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %Adbc.Field{
                         name: "species",
                         type: :large_string,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -142,19 +135,19 @@ defmodule Adbc.ResultTest do
                data: [
                  [
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "sepal_length", type: :f64, nullable: true}
+                     field: %Adbc.Field{name: "sepal_length", type: :f64}
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "sepal_width", type: :f64, nullable: true}
+                     field: %Adbc.Field{name: "sepal_width", type: :f64}
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "petal_length", type: :f64, nullable: true}
+                     field: %Adbc.Field{name: "petal_length", type: :f64}
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "petal_width", type: :f64, nullable: true}
+                     field: %Adbc.Field{name: "petal_width", type: :f64}
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "species", type: :large_string, nullable: true}
+                     field: %Adbc.Field{name: "species", type: :large_string}
                    }
                  ] = data
                ]

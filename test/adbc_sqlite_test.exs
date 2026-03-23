@@ -84,34 +84,33 @@ defmodule Adbc.SQLiteTest do
                data: [
                  [
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i1", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i2", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i3", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i4", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i5", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "i6", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{
                        name: "i7",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -120,7 +119,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "i8",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -129,7 +127,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "i9",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -138,7 +135,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t1",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -147,7 +143,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t2",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -156,7 +151,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t3",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -165,7 +159,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t4",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -174,7 +167,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t5",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -183,7 +175,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "t6",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -192,44 +183,42 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "b1",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "r1", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "r1", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "r2", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "r3", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "r3", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "r4", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "n1", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "n2", type: :f64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
-                     field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
+                     field: %Adbc.Field{name: "n3", type: :s64, metadata: nil},
                      data: _
                    },
                    %Adbc.Column{
                      field: %Adbc.Field{
                        name: "n4",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -238,7 +227,6 @@ defmodule Adbc.SQLiteTest do
                      field: %Adbc.Field{
                        name: "n5",
                        type: :string,
-                       nullable: true,
                        metadata: nil
                      },
                      data: _
@@ -321,46 +309,45 @@ defmodule Adbc.SQLiteTest do
              data: [
                [
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i1", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i1", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i2", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i2", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i3", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i3", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i4", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i4", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i5", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i5", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i6", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i6", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i7", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i7", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i8", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i8", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "i9", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "i9", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
                      name: "t1",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -369,7 +356,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "t2",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -378,7 +364,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "t3",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -387,7 +372,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "t4",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -396,7 +380,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "t5",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -405,7 +388,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "t6",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -414,7 +396,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "b1",
                      type: :binary,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -423,45 +404,42 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "r1",
                      type: :f64,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
                  } = r1_col,
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "r2", type: :f64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "r2", type: :f64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
                      name: "r3",
                      type: :f64,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
                  } = r3_col,
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "r4", type: :f64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "r4", type: :f64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "n1", type: :f64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "n1", type: :f64, metadata: nil},
                    data: _
                  } = n1_col,
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "n2", type: :f64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "n2", type: :f64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
-                   field: %Adbc.Field{name: "n3", type: :s64, nullable: true, metadata: nil},
+                   field: %Adbc.Field{name: "n3", type: :s64, metadata: nil},
                    data: _
                  },
                  %Adbc.Column{
                    field: %Adbc.Field{
                      name: "n4",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -470,7 +448,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "n5",
                      type: :string,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -497,16 +474,14 @@ defmodule Adbc.SQLiteTest do
                     field: %Adbc.Field{
                       name: "S64",
                       type: :s64,
-                      metadata: nil,
-                      nullable: true
+                      metadata: nil
                     }
                   },
                   %Adbc.Column{
                     field: %Adbc.Field{
                       name: "F64",
                       type: :f64,
-                      metadata: nil,
-                      nullable: true
+                      metadata: nil
                     }
                   }
                 ]
@@ -524,7 +499,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "S64",
                      type: :s64,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -533,7 +507,6 @@ defmodule Adbc.SQLiteTest do
                    field: %Adbc.Field{
                      name: "F64",
                      type: :f64,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -556,7 +529,6 @@ defmodule Adbc.SQLiteTest do
                  %Adbc.Column{
                    field: %Adbc.Field{
                      name: "name",
-                     nullable: true,
                      metadata: nil
                    },
                    data: _

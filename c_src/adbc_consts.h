@@ -56,7 +56,6 @@ static ERL_NIF_TERM kAtomAdbcBinaryDataModule;
 static ERL_NIF_TERM kAtomFieldKey;
 static ERL_NIF_TERM kAtomNameKey;
 static ERL_NIF_TERM kAtomTypeKey;
-static ERL_NIF_TERM kAtomNullableKey;
 static ERL_NIF_TERM kAtomMetadataKey;
 static ERL_NIF_TERM kAtomDataKey;
 static ERL_NIF_TERM kAtomSizeKey;
@@ -122,6 +121,5 @@ constexpr int kErrorBufferUnknownType = 7;
 constexpr int kErrorBufferGetMetadataKey = 8;
 constexpr int kErrorBufferGetMetadataValue = 9;
 constexpr int kErrorInternalError = 11;
-constexpr int kErrorNilInNonNullableColumn = 12;
 
 #endif  // ADBC_CONSTS_H

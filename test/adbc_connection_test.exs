@@ -52,16 +52,14 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "info_name",
                          type: :u32,
-                         metadata: nil,
-                         nullable: false
+                         metadata: nil
                        }
                      },
                      %Adbc.Column{
                        field: %{
                          name: "info_value",
                          type: :dense_union,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -78,7 +76,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "info_name",
                        type: :u32,
-                       nullable: false,
                        metadata: nil
                      }
                    } = info_name_col,
@@ -86,20 +83,19 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "info_value",
                        type: :dense_union,
-                       nullable: true,
                        metadata: nil
                      },
                      data: [
-                         %{"string_value" => _},
-                         # "3.43.2"
-                         %{"string_value" => _},
-                         %{"string_value" => _},
-                         # "(unknown)"
-                         %{"string_value" => _},
-                         # "0.4.0"
-                         %{"string_value" => _},
-                         %{"int64_value" => _}
-                       ]
+                       %{"string_value" => _},
+                       # "3.43.2"
+                       %{"string_value" => _},
+                       %{"string_value" => _},
+                       # "(unknown)"
+                       %{"string_value" => _},
+                       # "0.4.0"
+                       %{"string_value" => _},
+                       %{"int64_value" => _}
+                     ]
                    }
                  ]
                ]
@@ -119,16 +115,14 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "info_name",
                         type: :u32,
-                        metadata: nil,
-                        nullable: false
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %{
                         name: "info_value",
                         type: :dense_union,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -143,7 +137,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "info_name",
                        type: :u32,
-                       nullable: false,
                        metadata: nil
                      }
                    } = info_name_col,
@@ -151,7 +144,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "info_value",
                        type: :dense_union,
-                       nullable: true,
                        metadata: nil
                      },
                      data: [%{"string_value" => _}]
@@ -212,8 +204,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "table_type",
                         type: :string,
-                        metadata: nil,
-                        nullable: false
+                        metadata: nil
                       }
                     }
                   ]
@@ -228,7 +219,6 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "table_type",
                          type: :string,
-                         nullable: false,
                          metadata: nil
                        },
                        data: _
@@ -253,8 +243,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     } = column
                   ]
@@ -272,7 +261,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = column
@@ -293,16 +281,14 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     },
                     %Adbc.Column{
                       field: %{
                         name: "bool",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -317,7 +303,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col,
@@ -325,7 +310,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "bool",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = bool_col
@@ -348,8 +332,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -364,7 +347,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -387,8 +369,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -403,7 +384,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -427,8 +407,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -443,7 +422,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -461,8 +439,7 @@ defmodule Adbc.ConnectionTest do
                       field: %{
                         name: "num",
                         type: :s64,
-                        metadata: nil,
-                        nullable: true
+                        metadata: nil
                       }
                     }
                   ]
@@ -477,7 +454,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -507,8 +483,7 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "num",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -523,7 +498,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -541,16 +515,14 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "num",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      },
                      %Adbc.Column{
                        field: %{
                          name: "bool",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -565,7 +537,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col,
@@ -573,7 +544,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "bool",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = bool_col
@@ -596,8 +566,7 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "num",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -612,7 +581,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -644,16 +612,14 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "num",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      },
                      %Adbc.Column{
                        field: %{
                          name: "bool",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -671,7 +637,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col,
@@ -679,7 +644,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "bool",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = bool_col
@@ -702,8 +666,7 @@ defmodule Adbc.ConnectionTest do
                        field: %{
                          name: "num",
                          type: :s64,
-                         metadata: nil,
-                         nullable: true
+                         metadata: nil
                        }
                      }
                    ]
@@ -721,7 +684,6 @@ defmodule Adbc.ConnectionTest do
                      field: %{
                        name: "num",
                        type: :s64,
-                       nullable: true,
                        metadata: nil
                      }
                    } = num_col
@@ -1035,13 +997,13 @@ defmodule Adbc.ConnectionTest do
       assert map["name"] == ["Alice", "Bob", "Charlie"]
     end
 
-    test "nullable columns and nil values", %{db: db} do
+    test "nil values", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
       # Nullable columns with nil values work fine
       columns = [
-        Adbc.Column.s64([1, nil, 3], name: "id", nullable: true),
-        Adbc.Column.string(["Alice", nil, "Charlie"], name: "name", nullable: true)
+        Adbc.Column.s64([1, nil, 3], name: "id"),
+        Adbc.Column.string(["Alice", nil, "Charlie"], name: "name")
       ]
 
       assert {:ok, 3} = Connection.bulk_insert(conn, columns, table: "nullable_test")

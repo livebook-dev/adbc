@@ -32,13 +32,11 @@ defmodule Adbc.DuckDBTest do
                           %Adbc.Field{
                             name: "col1",
                             type: :s32,
-                            nullable: true,
                             metadata: nil
                           },
                           %Adbc.Field{
                             name: "col2",
                             type: :s32,
-                            nullable: true,
                             metadata: nil
                           }
                         ]}
@@ -53,8 +51,7 @@ defmodule Adbc.DuckDBTest do
   test "decimal128", %{conn: conn} do
     columns = [
       Adbc.Column.decimal128([Decimal.new("1.23"), Decimal.new("-4.56"), nil], 10, 2,
-        name: "dec_col",
-        nullable: true
+        name: "dec_col"
       )
     ]
 
@@ -96,8 +93,7 @@ defmodule Adbc.DuckDBTest do
           Adbc.Column.date32([~D[2025-03-22]])
         ],
         Adbc.Field.new(:date32),
-        name: "dates",
-        nullable: true
+        name: "dates"
       )
     ]
 
@@ -113,7 +109,7 @@ defmodule Adbc.DuckDBTest do
   test "dictionary", %{conn: conn} do
     columns = [
       Adbc.Column.dictionary(
-        Adbc.Column.s32([0, 1, 0, 2, 1], nullable: true),
+        Adbc.Column.s32([0, 1, 0, 2, 1]),
         Adbc.Column.string(["foo", "bar", "baz"]),
         name: "val"
       )
@@ -132,12 +128,10 @@ defmodule Adbc.DuckDBTest do
   test "floats", %{conn: conn} do
     columns = [
       Adbc.Column.f32([1, 2.5, :nan, :infinity, :neg_infinity, nil],
-        name: "f32_col",
-        nullable: true
+        name: "f32_col"
       ),
       Adbc.Column.f64([10, 20.5, :nan, :infinity, :neg_infinity, nil],
-        name: "f64_col",
-        nullable: true
+        name: "f64_col"
       )
     ]
 
@@ -153,10 +147,10 @@ defmodule Adbc.DuckDBTest do
   @tag :unix
   test "integers", %{conn: conn} do
     columns = [
-      Adbc.Column.s8([1, -1, nil], name: "s8_col", nullable: true),
-      Adbc.Column.s16([100, -100, nil], name: "s16_col", nullable: true),
-      Adbc.Column.s32([1000, -1000, nil], name: "s32_col", nullable: true),
-      Adbc.Column.s64([10000, -10000, nil], name: "s64_col", nullable: true)
+      Adbc.Column.s8([1, -1, nil], name: "s8_col"),
+      Adbc.Column.s16([100, -100, nil], name: "s16_col"),
+      Adbc.Column.s32([1000, -1000, nil], name: "s32_col"),
+      Adbc.Column.s64([10000, -10000, nil], name: "s64_col")
     ]
 
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "integers")
@@ -173,8 +167,8 @@ defmodule Adbc.DuckDBTest do
   @tag :unix
   test "strings and binary", %{conn: conn} do
     columns = [
-      Adbc.Column.string(["hello", "world", nil], name: "str_col", nullable: true),
-      Adbc.Column.binary([<<1, 2, 3>>, <<4, 5>>, nil], name: "bin_col", nullable: true)
+      Adbc.Column.string(["hello", "world", nil], name: "str_col"),
+      Adbc.Column.binary([<<1, 2, 3>>, <<4, 5>>, nil], name: "bin_col")
     ]
 
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "strings")
@@ -204,21 +198,18 @@ defmodule Adbc.DuckDBTest do
 
     columns = [
       Adbc.Column.date32([~D[2024-01-15], epoch_days, nil],
-        name: "date_col",
-        nullable: true
+        name: "date_col"
       ),
       Adbc.Column.timestamp(
         [~N[2024-01-15 10:30:00], epoch_us, nil],
         :microseconds,
         "UTC",
-        name: "ts_col",
-        nullable: true
+        name: "ts_col"
       ),
       Adbc.Column.time(
         [~T[10:30:00], time_us, nil],
         :microseconds,
-        name: "time_col",
-        nullable: true
+        name: "time_col"
       )
     ]
 
@@ -240,7 +231,7 @@ defmodule Adbc.DuckDBTest do
 
   test "booleans", %{conn: conn} do
     columns = [
-      Adbc.Column.boolean([true, false, nil], name: "bool_col", nullable: true)
+      Adbc.Column.boolean([true, false, nil], name: "bool_col")
     ]
 
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "booleans")
@@ -254,8 +245,7 @@ defmodule Adbc.DuckDBTest do
   test "duration", %{conn: conn} do
     columns = [
       Adbc.Column.duration([1_000_000, -500_000, nil], :microseconds,
-        name: "dur_col",
-        nullable: true
+        name: "dur_col"
       )
     ]
 
@@ -272,8 +262,7 @@ defmodule Adbc.DuckDBTest do
     # interval month_day_nano: {months, days, nanoseconds}
     columns = [
       Adbc.Column.interval([{14, 3, 1_000_000_000}, {0, 0, 0}, nil], :month_day_nano,
-        name: "iv_col",
-        nullable: true
+        name: "iv_col"
       )
     ]
 

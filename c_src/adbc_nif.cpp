@@ -1103,7 +1103,6 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomFieldKey = erlang::nif::atom(env, "field");
     kAtomNameKey = erlang::nif::atom(env, "name");
     kAtomTypeKey = erlang::nif::atom(env, "type");
-    kAtomNullableKey = erlang::nif::atom(env, "nullable");
     kAtomMetadataKey = erlang::nif::atom(env, "metadata");
     kAtomDataKey = erlang::nif::atom(env, "data");
     kAtomSizeKey = erlang::nif::atom(env, "size");

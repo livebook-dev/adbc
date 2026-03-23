@@ -2,17 +2,17 @@ defmodule Adbc.Field do
   @moduledoc """
   Represents the schema definition of a column.
 
-  A field describes the name, type, nullability, and metadata
-  of a column without containing any data.
+  A field describes the name, type, and metadata of a column
+  without containing any data.
 
   Use `new/2` to create a field:
 
       Adbc.Field.new(:s32, name: "id")
-      Adbc.Field.new({:list, Adbc.Field.new(:s32)}, name: "ids", nullable: true)
+      Adbc.Field.new({:list, Adbc.Field.new(:s32)}, name: "ids")
 
   """
   @enforce_keys [:type]
-  defstruct [:name, :type, nullable: false, metadata: nil]
+  defstruct [:name, :type, :metadata]
 
   @type signed_integer :: :s8 | :s16 | :s32 | :s64
   @type unsigned_integer :: :u8 | :u16 | :u32 | :u64
@@ -79,7 +79,6 @@ defmodule Adbc.Field do
   @type t :: %__MODULE__{
           name: String.t() | nil,
           type: data_type(),
-          nullable: boolean(),
           metadata: map() | nil
         }
 
@@ -89,7 +88,6 @@ defmodule Adbc.Field do
   ## Options
 
     * `:name` - The name of the field
-    * `:nullable` - Whether the field is nullable (default: `false`)
     * `:metadata` - A map of metadata
   """
   @spec new(data_type(), Keyword.t()) :: t()
@@ -97,7 +95,6 @@ defmodule Adbc.Field do
     %Adbc.Field{
       name: opts[:name],
       type: type,
-      nullable: opts[:nullable] || false,
       metadata: opts[:metadata]
     }
   end

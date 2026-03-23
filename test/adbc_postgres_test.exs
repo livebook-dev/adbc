@@ -26,7 +26,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "num",
                      type: :s32,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -52,7 +51,7 @@ defmodule Adbc.PostgresTest do
     assert [[col]] = result.data
 
     assert col.field.type ==
-             {:list, %Adbc.Field{name: "item", type: :string, nullable: true, metadata: nil}}
+             {:list, %Adbc.Field{name: "item", type: :string, metadata: nil}}
 
     assert Adbc.Column.to_list(col) == [["1", "2", "3"]]
   end
@@ -98,7 +97,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "datetime",
                      type: {:timestamp, :microseconds, nil},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -107,7 +105,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "datetime_usec",
                      type: {:timestamp, :microseconds, nil},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -116,7 +113,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "datetime_tz_8601",
                      type: {:timestamp, :microseconds, "UTC"},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -125,7 +121,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "datetime_tz_offset",
                      type: {:timestamp, :microseconds, "UTC"},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -134,7 +129,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "date",
                      type: :date32,
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -143,7 +137,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "time",
                      type: {:time64, :microseconds},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -152,7 +145,6 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "time_usec",
                      type: {:time64, :microseconds},
-                     nullable: true,
                      metadata: nil
                    },
                    data: _
@@ -195,8 +187,7 @@ defmodule Adbc.PostgresTest do
                      field: %Adbc.Field{
                        name: "generate_series",
                        type: {:timestamp, :microseconds, nil},
-                       metadata: nil,
-                       nullable: true
+                       metadata: nil
                      }
                    }
                  ] | _
@@ -227,8 +218,7 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "x",
                      type: :s32,
-                     metadata: nil,
-                     nullable: true
+                     metadata: nil
                    }
                  }
                ] | _
@@ -262,8 +252,7 @@ defmodule Adbc.PostgresTest do
                      field: %Adbc.Field{
                        name: "int4",
                        type: :s32,
-                       metadata: nil,
-                       nullable: true
+                       metadata: nil
                      },
                      data: _
                    } = col
@@ -295,8 +284,7 @@ defmodule Adbc.PostgresTest do
                    field: %Adbc.Field{
                      name: "int4",
                      type: :s32,
-                     metadata: nil,
-                     nullable: true
+                     metadata: nil
                    },
                    data: _
                  } = col

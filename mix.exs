@@ -92,9 +92,6 @@ defmodule Adbc.MixProject do
       main: "Adbc.Database",
       source_ref: "v#{@version}",
       source_url: @github_url,
-      groups_for_docs: [
-        "Column builders": &(&1[:type] == :column_builder)
-      ],
       groups_for_modules: [
         "Result types": [
           Adbc.Result,

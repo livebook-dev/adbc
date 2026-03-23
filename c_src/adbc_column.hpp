@@ -41,7 +41,7 @@ struct AdbcColumnType {
 struct AdbcColumnNifTerm {
     int is_nil;
     unsigned n_items;
-    ERL_NIF_TERM struct_name_term, name_term, type_term, nullable_term, metadata_term, data_term;
+    ERL_NIF_TERM struct_name_term, name_term, type_term, metadata_term, data_term;
     static int from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column, bool allow_nil, AdbcColumnNifTerm *out);
 };
 
@@ -53,7 +53,6 @@ int must_be_adbc_column(ErlNifEnv *env,
     ERL_NIF_TERM &struct_name_term,
     ERL_NIF_TERM &name_term,
     ERL_NIF_TERM &type_term,
-    ERL_NIF_TERM &nullable_term,
     ERL_NIF_TERM &metadata_term,
     ERL_NIF_TERM &data_term,
     unsigned *n_items);
@@ -70,9 +69,9 @@ int AdbcColumnNifTerm::from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column, bool 
         }
     }
 
-    ERL_NIF_TERM struct_name_term, name_term, type_term, nullable_term, metadata_term, data_term;
+    ERL_NIF_TERM struct_name_term, name_term, type_term, metadata_term, data_term;
     unsigned n_items = 0;
-    int ret = must_be_adbc_column(env, adbc_column, struct_name_term, name_term, type_term, nullable_term, metadata_term, data_term, &n_items);
+    int ret = must_be_adbc_column(env, adbc_column, struct_name_term, name_term, type_term, metadata_term, data_term, &n_items);
     if (ret != 0) {
         return ret;
     }
@@ -83,7 +82,6 @@ int AdbcColumnNifTerm::from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column, bool 
         out->struct_name_term = struct_name_term;
         out->name_term = name_term;
         out->type_term = type_term;
-        out->nullable_term = nullable_term;
         out->metadata_term = metadata_term;
         out->data_term = data_term;
     }
@@ -91,21 +89,17 @@ int AdbcColumnNifTerm::from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column, bool 
     return 0;
 }
 
-ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, ERL_NIF_TERM name_term, ERL_NIF_TERM type_term, bool nullable, ERL_NIF_TERM metadata) {
-    ERL_NIF_TERM nullable_term = nullable ? kAtomTrue : kAtomFalse;
-
+ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, ERL_NIF_TERM name_term, ERL_NIF_TERM type_term, ERL_NIF_TERM metadata) {
     std::vector<ERL_NIF_TERM> keys = {
         kAtomStructKey,
         kAtomNameKey,
         kAtomTypeKey,
-        kAtomNullableKey,
         kAtomMetadataKey,
     };
     std::vector<ERL_NIF_TERM> values = {
         kAtomAdbcFieldModule,
         name_term,
         type_term,
-        nullable_term,
         metadata,
     };
 
@@ -115,9 +109,8 @@ ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, ERL_NIF_TERM name_term, ERL_NIF_TER
 }
 
 ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, struct ArrowSchema * schema, ERL_NIF_TERM type_term, ERL_NIF_TERM metadata) {
-    bool nullable = schema->flags & ARROW_FLAG_NULLABLE;
     ERL_NIF_TERM name_term = erlang::nif::make_binary(env, schema->name == nullptr ? "" : schema->name);
-    return make_adbc_field(env, name_term, type_term, nullable, metadata);
+    return make_adbc_field(env, name_term, type_term, metadata);
 }
 
 ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, ERL_NIF_TERM type_term, ERL_NIF_TERM metadata, std::optional<ERL_NIF_TERM> data_ref = std::nullopt) {
@@ -142,8 +135,8 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, ERL_N
     return adbc_column;
 }
 
-ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * array, ERL_NIF_TERM name_term, ERL_NIF_TERM type_term, bool nullable, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
-    ERL_NIF_TERM field_term = make_adbc_field(env, name_term, type_term, nullable, metadata);
+ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * array, ERL_NIF_TERM name_term, ERL_NIF_TERM type_term, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
+    ERL_NIF_TERM field_term = make_adbc_field(env, name_term, type_term, metadata);
 
     std::vector<ERL_NIF_TERM> keys = {
         kAtomStructKey,
@@ -164,14 +157,14 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struc
     return adbc_column;
 }
 
-ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, ERL_NIF_TERM name_term, const char * type, bool nullable, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
+ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, ERL_NIF_TERM name_term, const char * type, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
     ERL_NIF_TERM type_term = erlang::nif::make_binary(env, type);
-    return make_adbc_column(env, schema, values, name_term, type_term, nullable, metadata, data);
+    return make_adbc_column(env, schema, values, name_term, type_term, metadata, data);
 }
 
-ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, const char * name, const char * type, bool nullable, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
+ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema * schema, struct ArrowArray * values, const char * name, const char * type, ERL_NIF_TERM metadata, ERL_NIF_TERM data) {
     ERL_NIF_TERM name_term = erlang::nif::make_binary(env, name == nullptr ? "" : name);
-    return make_adbc_column(env, schema, values, name_term, type, nullable, metadata, data);
+    return make_adbc_column(env, schema, values, name_term, type, metadata, data);
 }
 
 int do_get_buffer_datas(ErlNifEnv *env, ERL_NIF_TERM batches_list, size_t element_bytes, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out);
@@ -277,7 +270,7 @@ int do_get_list_decimal(ErlNifEnv *env, ERL_NIF_TERM batches_list, ArrowType nan
     return do_get_buffer_datas(env, batches_list, bitwidth / 8, array_out, schema_out, error_out);
 }
 
-int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batches_list, bool nullable, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batches_list, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     // type_term is {:dictionary, key_field, value_field}
     int arity;
     const ERL_NIF_TERM *tuple_elems;
@@ -299,7 +292,6 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batch
     struct AdbcColumnNifTerm keys;
     keys.is_nil = 0;
     if (!enif_get_map_value(env, key_field_map, kAtomTypeKey, &keys.type_term)) return kErrorBufferGetMapValue;
-    if (!enif_get_map_value(env, key_field_map, kAtomNullableKey, &keys.nullable_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, key_field_map, kAtomNameKey, &keys.name_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, key_field_map, kAtomMetadataKey, &keys.metadata_term)) return kErrorBufferGetMapValue;
     keys.data_term = key_data;
@@ -309,7 +301,6 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM batch
     struct AdbcColumnNifTerm values;
     values.is_nil = 0;
     if (!enif_get_map_value(env, value_field_map, kAtomTypeKey, &values.type_term)) return kErrorBufferGetMapValue;
-    if (!enif_get_map_value(env, value_field_map, kAtomNullableKey, &values.nullable_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomNameKey, &values.name_term)) return kErrorBufferGetMapValue;
     if (!enif_get_map_value(env, value_field_map, kAtomMetadataKey, &values.metadata_term)) return kErrorBufferGetMapValue;
     values.data_term = value_data_term;
@@ -339,7 +330,7 @@ failed:
     return ret;
 }
 
-int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
 
     size_t offset_size = (nanoarrow_type == NANOARROW_TYPE_LARGE_STRING || nanoarrow_type == NANOARROW_TYPE_LARGE_BINARY) ? 8 : 4;
@@ -382,7 +373,7 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, ArrowTy
     return 0;
 }
 
-int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term, bool nullable, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term, ArrowType nanoarrow_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, nanoarrow_type));
 
     // %Adbc.BufferData{data: binary, validity: binary | nil, bit_offset: int, size: int}
@@ -448,7 +439,7 @@ int do_get_list_interval(ErlNifEnv *env, ERL_NIF_TERM list, ArrowType nanoarrow_
     return do_get_buffer_datas(env, list, element_bytes, array_out, schema_out, error_out);
 }
 
-int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, bool nullable, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     if (column_type == nullptr) {
         enif_snprintf(error_out->message, sizeof(error_out->message), "internal error: column_type is null in do_get_list:%d", __LINE__);
         return kErrorInternalError;
@@ -463,7 +454,6 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
     // Extract inner field from parent type: {:list, inner_field} or {:large_list, inner_field}
     // or {:fixed_size_list, inner_field, size}
     ERL_NIF_TERM inner_type_term = kAtomNil;
-    ERL_NIF_TERM inner_nullable_term = kAtomFalse;
     {
         int arity;
         const ERL_NIF_TERM *tuple_elems;
@@ -471,7 +461,6 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
             ERL_NIF_TERM inner_field_term = tuple_elems[1];
             if (enif_is_map(env, inner_field_term)) {
                 enif_get_map_value(env, inner_field_term, kAtomTypeKey, &inner_type_term);
-                enif_get_map_value(env, inner_field_term, kAtomNullableKey, &inner_nullable_term);
             }
         }
     }
@@ -512,7 +501,6 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
             struct AdbcColumnNifTerm child_column;
             child_column.is_nil = 0;
             child_column.type_term = inner_type_term;
-            child_column.nullable_term = inner_nullable_term;
             child_column.data_term = val_head;
             child_column.name_term = kAtomNil;
             child_column.metadata_term = kAtomNil;
@@ -636,7 +624,6 @@ int must_be_adbc_column(ErlNifEnv *env,
     ERL_NIF_TERM &struct_name_term,
     ERL_NIF_TERM &name_term,
     ERL_NIF_TERM &type_term,
-    ERL_NIF_TERM &nullable_term,
     ERL_NIF_TERM &metadata_term,
     ERL_NIF_TERM &data_term,
     unsigned *n_items)
@@ -666,9 +653,6 @@ int must_be_adbc_column(ErlNifEnv *env,
         return kErrorBufferGetMapValue;
     }
     if (!enif_get_map_value(env, field_term, kAtomTypeKey, &type_term)) {
-        return kErrorBufferGetMapValue;
-    }
-    if (!enif_get_map_value(env, field_term, kAtomNullableKey, &nullable_term)) {
         return kErrorBufferGetMapValue;
     }
     if (!enif_get_map_value(env, field_term, kAtomMetadataKey, &metadata_term)) {
@@ -864,7 +848,17 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
         }
     }
 
-    bool nullable = enif_is_identical(column->nullable_term, kAtomTrue);
+    // Derive nullable from the data's validity field rather than the Field struct.
+    // If the data has a non-nil validity bitmap, the column is nullable.
+    ERL_NIF_TERM data_term = column->data_term;
+    bool nullable = false;
+    {
+        ERL_NIF_TERM validity_term;
+        if (enif_is_map(env, data_term) &&
+            enif_get_map_value(env, data_term, kAtomValidity, &validity_term)) {
+            nullable = !enif_is_identical(validity_term, kAtomNil);
+        }
+    }
 
     ArrowSchemaInit(schema_out);
     NANOARROW_RETURN_NOT_OK(ArrowSchemaSetName(schema_out, name.c_str()));
@@ -891,9 +885,8 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
     }
 
     int ret = kErrorBufferUnknownType;
-    ERL_NIF_TERM data_term = column->data_term;
     if (column_type.arrow_type == NANOARROW_TYPE_BOOL) {
-        ret = do_get_list_boolean(env, data_term, nullable, column_type.arrow_type, array_out, schema_out, error_out);
+        ret = do_get_list_boolean(env, data_term, column_type.arrow_type, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_INT8) {
         ret = do_get_list_integer<int8_t>(env, data_term, NANOARROW_TYPE_INT8, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_UINT8) {
@@ -920,23 +913,23 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
         NANOARROW_RETURN_NOT_OK(ArrowSchemaSetType(schema_out, NANOARROW_TYPE_DOUBLE));
         ret = do_get_buffer_datas(env, data_term, sizeof(double), array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_BINARY) {
-        ret = do_get_list_string(env, data_term, nullable, NANOARROW_TYPE_BINARY, array_out, schema_out, error_out);
+        ret = do_get_list_string(env, data_term,NANOARROW_TYPE_BINARY, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_LARGE_BINARY) {
-        ret = do_get_list_string(env, data_term, nullable, NANOARROW_TYPE_LARGE_BINARY, array_out, schema_out, error_out);
+        ret = do_get_list_string(env, data_term,NANOARROW_TYPE_LARGE_BINARY, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_STRING) {
-        ret = do_get_list_string(env, data_term, nullable, NANOARROW_TYPE_STRING, array_out, schema_out, error_out);
+        ret = do_get_list_string(env, data_term,NANOARROW_TYPE_STRING, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_LARGE_STRING) {
-        ret = do_get_list_string(env, data_term, nullable, NANOARROW_TYPE_LARGE_STRING, array_out, schema_out, error_out);
+        ret = do_get_list_string(env, data_term,NANOARROW_TYPE_LARGE_STRING, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DATE32) {
         ret = do_get_list_date(env, data_term, NANOARROW_TYPE_DATE32, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DATE64) {
         ret = do_get_list_date(env, data_term, NANOARROW_TYPE_DATE64, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_LIST) {
-        ret = do_get_list(env, column->type_term, data_term, nullable, &column_type, array_out, schema_out, error_out);
+        ret = do_get_list(env, column->type_term, data_term, &column_type, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_LARGE_LIST) {
-        ret = do_get_list(env, column->type_term, data_term, nullable, &column_type, array_out, schema_out, error_out);
+        ret = do_get_list(env, column->type_term, data_term, &column_type, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_FIXED_SIZE_LIST) {
-        ret = do_get_list(env, column->type_term, data_term, nullable, &column_type, array_out, schema_out, error_out);
+        ret = do_get_list(env, column->type_term, data_term, &column_type, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_TIME32 || column_type.arrow_type == NANOARROW_TYPE_TIME64) {
         ret = do_get_list_time(env, data_term, column_type.arrow_type, column_type.time_unit, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DURATION) {
@@ -955,16 +948,11 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
     } else if (column_type.arrow_type == NANOARROW_TYPE_DECIMAL128 || column_type.arrow_type == NANOARROW_TYPE_DECIMAL256) {
         ret = do_get_list_decimal(env, data_term, column_type.arrow_type, column_type.bits, column_type.precision, column_type.scale, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DICTIONARY) {
-        ret = do_get_dictionary(env, column->type_term, data_term, nullable, array_out, schema_out, error_out);
+        ret = do_get_dictionary(env, column->type_term, data_term, array_out, schema_out, error_out);
     }
 
     if (ret == kErrorBufferUnknownType) {
         enif_snprintf(error_out->message, sizeof(error_out->message), "unsupport type `%T` (arrow_type=%d) found in adbc_column_to_adbc_field:%d", column->type_term, column_type.arrow_type, __LINE__);
-    } else if (ret == kErrorBufferIsNotAMap && !nullable) {
-        enif_snprintf(error_out->message, sizeof(error_out->message),
-            "found nil data in non-nullable column \"%T\". Set `nullable: true` when building the column to allow nil values",
-            column->name_term);
-        ret = kErrorNilInNonNullableColumn;
     }
     return ret;
 }
@@ -1046,7 +1034,6 @@ int adbc_column_to_arrow_type_struct(ErlNifEnv *env, ERL_NIF_TERM values, struct
             case kErrorBufferGetMetadataKey:
             case kErrorBufferGetMetadataValue:
             case kErrorInternalError:
-            case kErrorNilInNonNullableColumn:
                 // error message is already set
                 return 1;
             default:
