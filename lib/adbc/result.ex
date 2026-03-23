@@ -104,11 +104,12 @@ defmodule Adbc.Result do
 
   It has two fields:
 
-    * `:data` - a list of `Adbc.Column`. The `Adbc.Column` may
-      not yet have been materialized
-
     * `:num_rows` - the number of rows returned, if returned
       by the database
+
+    * `:data` - a private field that stores the returned
+      `Adbc.Column`s. Use `to_columns/1` to convert to a public format
+
   """
   defstruct [:num_rows, :data]
 

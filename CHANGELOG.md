@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v0.10.0
+
+#### Enhancements
+
+* Add `Adbc.Column.new` that automatically infers column types
+* Add `Adbc.Column.has_validity?` that returns if the column has a validity bitmap (and therefore may have nils)
+* Add `Adbc.Column.to_binary` that returns the binary blob of a column (as a reference to its underlying arrow buffer)
+* Add `Adbc.Connection.ingest` that copies that into a temporary table that is removed when its result is garbage collected
+* Allow a keyword list in `Adbc.Connection.ingest` and `Adbc.Connection.bulk_insert`
+* Add `Adbc.Result.to_columns` to access column data while keeping its underlying struct private
+* Add `Adbc.Result.from_ipc_stream` and `Adbc.Result.to_ipc_stream`
+* Add `Adbc.StreamResult.from_ipc_stream`
+
+#### Backwards incompatible changes
+
+* The data field of `Adbc.Result` is now private. Use `Adbc.Result.to_columns` to retrieve its contents in a similar shape as before
+* Move schema properties from `Adbc.Column` into `Adbc.Field`
+
 ## v0.9.0
 
 Require Erlang/OTP 26+.
