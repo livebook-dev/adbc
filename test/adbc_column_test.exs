@@ -413,18 +413,18 @@ defmodule Adbc.ColumnTest do
   describe "to_binary/1" do
     test "integer column" do
       assert Adbc.Column.to_binary(Adbc.Column.s32([1, 2, 3])) ==
-               <<1::signed-little-32, 2::signed-little-32, 3::signed-little-32>>
+               <<1::signed-native-32, 2::signed-native-32, 3::signed-native-32>>
     end
 
     test "float column" do
       assert Adbc.Column.to_binary(Adbc.Column.f64([1.0, 2.0])) ==
-               <<1.0::float-little-64, 2.0::float-little-64>>
+               <<1.0::float-native-64, 2.0::float-native-64>>
     end
 
     test "dictionary column returns key binary" do
       assert Adbc.Column.to_binary(
                Adbc.Column.dictionary(Adbc.Column.s32([0, 1, 0]), Adbc.Column.string(["a", "b"]))
-             ) == <<0::signed-little-32, 1::signed-little-32, 0::signed-little-32>>
+             ) == <<0::signed-native-32, 1::signed-native-32, 0::signed-native-32>>
     end
 
     test "raises for boolean column" do

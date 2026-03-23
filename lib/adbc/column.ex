@@ -1285,25 +1285,25 @@ defmodule Adbc.Column do
 
   defp encode_float([:nan | rest], size, data, bitmap, pending) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    data = <<data::binary, Map.fetch!(@float_nan, size)::integer-little-size(size)>>
+    data = <<data::binary, Map.fetch!(@float_nan, size)::integer-native-size(size)>>
     encode_float(rest, size, data, bitmap, pending)
   end
 
   defp encode_float([:infinity | rest], size, data, bitmap, pending) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    data = <<data::binary, Map.fetch!(@float_infinity, size)::integer-little-size(size)>>
+    data = <<data::binary, Map.fetch!(@float_infinity, size)::integer-native-size(size)>>
     encode_float(rest, size, data, bitmap, pending)
   end
 
   defp encode_float([:neg_infinity | rest], size, data, bitmap, pending) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    data = <<data::binary, Map.fetch!(@float_neg_infinity, size)::integer-little-size(size)>>
+    data = <<data::binary, Map.fetch!(@float_neg_infinity, size)::integer-native-size(size)>>
     encode_float(rest, size, data, bitmap, pending)
   end
 
   defp encode_float([value | rest], size, data, bitmap, pending) when is_number(value) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    encode_float(rest, size, <<data::binary, value::float-little-size(size)>>, bitmap, pending)
+    encode_float(rest, size, <<data::binary, value::float-native-size(size)>>, bitmap, pending)
   end
 
   defp encode_fixed_size_binary(data, nbytes) do
@@ -1349,7 +1349,7 @@ defmodule Adbc.Column do
 
   defp encode_offset([nil | rest], acc, offsets, bitmap, pending, offset, offset_size, encoder) do
     {bitmap, pending} = bitmap_mark_null(bitmap, pending)
-    offsets = <<offsets::binary, offset::signed-integer-little-size(offset_size)>>
+    offsets = <<offsets::binary, offset::signed-integer-native-size(offset_size)>>
     encode_offset(rest, acc, offsets, bitmap, pending, offset, offset_size, encoder)
   end
 
@@ -1357,7 +1357,7 @@ defmodule Adbc.Column do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
     {data, size} = encoder.(value)
     offset = offset + size
-    offsets = <<offsets::binary, offset::signed-integer-little-size(offset_size)>>
+    offsets = <<offsets::binary, offset::signed-integer-native-size(offset_size)>>
     encode_offset(rest, [data | acc], offsets, bitmap, pending, offset, offset_size, encoder)
   end
 
@@ -1441,7 +1441,7 @@ defmodule Adbc.Column do
 
   defp encode_buffer([value | rest], data, bitmap, pending, size, encoder) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    data = <<data::binary, encoder.(value)::signed-integer-little-size(size)>>
+    data = <<data::binary, encoder.(value)::signed-integer-native-size(size)>>
     encode_buffer(rest, data, bitmap, pending, size, encoder)
   end
 
@@ -1459,7 +1459,7 @@ defmodule Adbc.Column do
 
   defp encode_interval_day_time([{days, ms} | rest], data, bitmap, pending) do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
-    data = <<data::binary, days::signed-integer-little-32, ms::signed-integer-little-32>>
+    data = <<data::binary, days::signed-integer-native-32, ms::signed-integer-native-32>>
     encode_interval_day_time(rest, data, bitmap, pending)
   end
 
@@ -1477,8 +1477,8 @@ defmodule Adbc.Column do
     {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
 
     data =
-      <<data::binary, months::signed-integer-little-32, days::signed-integer-little-32,
-        ns::signed-integer-little-64>>
+      <<data::binary, months::signed-integer-native-32, days::signed-integer-native-32,
+        ns::signed-integer-native-64>>
 
     encode_interval_month_day_nano(rest, data, bitmap, pending)
   end
@@ -1671,7 +1671,7 @@ defmodule Adbc.Column do
 
   def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: %Adbc.ListData{} = batch}) do
     values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
-    <<first::signed-integer-little-32, rest::binary>> = batch.offsets
+    <<first::signed-integer-native-32, rest::binary>> = batch.offsets
     decode_list_32(rest, batch.validity, batch.bit_offset, values, first, 0)
   end
 
@@ -1680,7 +1680,7 @@ defmodule Adbc.Column do
         data: %Adbc.ListData{} = batch
       }) do
     values = Enum.flat_map(batch.values, &to_list(%Adbc.Column{field: inner_field, data: &1}))
-    <<first::signed-integer-little-64, rest::binary>> = batch.offsets
+    <<first::signed-integer-native-64, rest::binary>> = batch.offsets
     decode_list_64(rest, batch.validity, batch.bit_offset, values, first, 0)
   end
 
@@ -1901,7 +1901,7 @@ defmodule Adbc.Column do
   end
 
   defp decode_interval_day_time(
-         <<days::signed-integer-little-32, ms::signed-integer-little-32, rest::binary>>,
+         <<days::signed-integer-native-32, ms::signed-integer-native-32, rest::binary>>,
          validity,
          offset,
          index
@@ -1917,8 +1917,8 @@ defmodule Adbc.Column do
   end
 
   defp decode_interval_month_day_nano(
-         <<months::signed-integer-little-32, days::signed-integer-little-32,
-           ns::signed-integer-little-64, rest::binary>>,
+         <<months::signed-integer-native-32, days::signed-integer-native-32,
+           ns::signed-integer-native-64, rest::binary>>,
          validity,
          offset,
          index
@@ -1939,7 +1939,7 @@ defmodule Adbc.Column do
     defp unquote(name)(<<>>, _validity, _bit_offset, _index), do: []
 
     defp unquote(name)(
-           <<n::float-little-size(unquote(size)), rest::binary>>,
+           <<n::float-native-size(unquote(size)), rest::binary>>,
            validity,
            bit_offset,
            index
@@ -1949,7 +1949,7 @@ defmodule Adbc.Column do
     end
 
     defp unquote(name)(
-           <<unquote(infinity)::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           <<unquote(infinity)::unsigned-integer-native-size(unquote(size)), rest::binary>>,
            validity,
            bit_offset,
            index
@@ -1959,7 +1959,7 @@ defmodule Adbc.Column do
     end
 
     defp unquote(name)(
-           <<unquote(neg_infinity)::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           <<unquote(neg_infinity)::unsigned-integer-native-size(unquote(size)), rest::binary>>,
            validity,
            bit_offset,
            index
@@ -1970,7 +1970,7 @@ defmodule Adbc.Column do
 
     # NaN: float match above fails for NaN, so this catch-all handles it
     defp unquote(name)(
-           <<_::unsigned-integer-little-size(unquote(size)), rest::binary>>,
+           <<_::unsigned-integer-native-size(unquote(size)), rest::binary>>,
            validity,
            bit_offset,
            index
