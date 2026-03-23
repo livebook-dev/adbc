@@ -843,7 +843,19 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
             if (get_arrow_struct(env, schema, values, offset, count, level, children, error, resource) == 1) {
                 return 1;
             }
-            children_term = enif_make_list_from_array(env, children.data(), (unsigned)children.size());
+
+            // Extract struct-level validity bitmap
+            const uint8_t * struct_bitmap = (const uint8_t *)values->buffers[0];
+            ERL_NIF_TERM struct_validity_term;
+            int struct_bit_offset;
+            slice_validity_bitmap(env, struct_bitmap, offset, count, resource, struct_validity_term, struct_bit_offset);
+
+            ERL_NIF_TERM values_list = enif_make_list_from_array(env, children.data(), (unsigned)children.size());
+
+            // Build %Adbc.StructData{validity: ..., bit_offset: ..., values: ...}
+            ERL_NIF_TERM sd_keys[] = { kAtomStructKey, kAtomValidity, kAtomBitOffsetKey, kAtomValues };
+            ERL_NIF_TERM sd_vals[] = { kAtomAdbcStructDataModule, struct_validity_term, enif_make_int(env, struct_bit_offset), values_list };
+            enif_make_map_from_arrays(env, sd_keys, sd_vals, 4, &children_term);
         } else if (strncmp("+r", format, 2) == 0) {
             // NANOARROW_TYPE_RUN_END_ENCODED (maybe in nanoarrow v0.6.0)
             // https://github.com/apache/arrow-nanoarrow/pull/507

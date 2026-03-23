@@ -1100,6 +1100,7 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     kAtomAdbcListDataModule = erlang::nif::atom(env, "Elixir.Adbc.ListData");
     kAtomAdbcBufferDataModule = erlang::nif::atom(env, "Elixir.Adbc.BufferData");
     kAtomAdbcBinaryDataModule = erlang::nif::atom(env, "Elixir.Adbc.BinaryData");
+    kAtomAdbcStructDataModule = erlang::nif::atom(env, "Elixir.Adbc.StructData");
     kAtomFieldKey = erlang::nif::atom(env, "field");
     kAtomNameKey = erlang::nif::atom(env, "name");
     kAtomTypeKey = erlang::nif::atom(env, "type");

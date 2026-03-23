@@ -27,3 +27,8 @@ defmodule Adbc.BinaryData do
   @moduledoc false
   defstruct [:offsets, :data, :validity, :bit_offset]
 end
+
+defmodule Adbc.StructData do
+  @moduledoc false
+  defstruct [:validity, :bit_offset, :values]
+end

@@ -1620,15 +1620,27 @@ defmodule Adbc.Column do
     decode_list_view_64(batch.offsets, batch.sizes, batch.validity, batch.bit_offset, values, 0)
   end
 
-  def to_list(%Adbc.Column{field: %{type: {:struct, fields}}, data: batch}) do
+  def to_list(%Adbc.Column{
+        field: %{type: {:struct, fields}},
+        data: %Adbc.StructData{validity: validity, bit_offset: bit_offset, values: values}
+      }) do
     columns =
-      Enum.zip_with(fields, batch, fn field, col_data ->
+      Enum.zip_with(fields, values, fn field, col_data ->
         %Adbc.Column{field: field, data: col_data}
       end)
 
-    %Adbc.Result{data: [columns], num_rows: nil}
-    |> Table.to_rows()
-    |> Enum.to_list()
+    rows = Table.to_rows(%Adbc.Result{data: [columns], num_rows: nil})
+
+    if validity do
+      rows
+      |> Enum.map_reduce(0, fn value, index ->
+        value = if bitmap_valid?(validity, index, bit_offset), do: value
+        {value, index + 1}
+      end)
+      |> elem(0)
+    else
+      Enum.to_list(rows)
+    end
   end
 
   def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: %Adbc.ListData{} = batch}) do

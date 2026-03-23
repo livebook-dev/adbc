@@ -256,13 +256,10 @@ defmodule Adbc.PythonxTest do
                ]
              } = result
 
-      # Note: pyarrow represents null structs as structs with placeholder values
-      # in children (0 for integers, "" for strings) since the null is at the
-      # struct level, not the child level
       assert Adbc.Column.to_list(hd(hd(result.data))) == [
                %{"x" => 1, "y" => "a"},
                %{"x" => 2, "y" => "b"},
-               %{"x" => 0, "y" => ""}
+               nil
              ]
     end
   end
