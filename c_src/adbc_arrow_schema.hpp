@@ -45,7 +45,11 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema * schema, struct
                 return 1;
             }
             struct ArrowArray * child_array = array->children[child_i];
-            ArrowSchemaDeepCopy(child_schema, record->val.schema);
+            int copy_ret = ArrowSchemaDeepCopy(child_schema, record->val.schema);
+            if (copy_ret != NANOARROW_OK) {
+                error = erlang::nif::error(env, "ArrowSchemaDeepCopy failed in get_struct_schema");
+                return 1;
+            }
             ArrowArrayMove(child_array, record->val.values);
             memset(array->children[child_i], 0, sizeof(struct ArrowArray));
             ERL_NIF_TERM data_ref = record->make_resource(env);
@@ -150,15 +154,21 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema * schema, uint64_t 
 
 static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema * schema, uint64_t level, ERL_NIF_TERM &element_schema, ERL_NIF_TERM &error) {
     if (schema->children == nullptr) {
-        return erlang::nif::error(env, "invalid ArrowSchema (list), schema->children == nullptr");
+        error = erlang::nif::error(env, "invalid ArrowSchema (list), schema->children == nullptr");
+        return 1;
     }
     if (schema->n_children != 1) {
-        return erlang::nif::error(env, "invalid ArrowSchema (list), schema->n_children != 1");
+        error = erlang::nif::error(env, "invalid ArrowSchema (list), schema->n_children != 1");
+        return 1;
     }
 
     struct ArrowSchema * items_schema = schema->children[0];
-    if (!(strcmp("item", items_schema->name) == 0 || strcmp("l", items_schema->name) == 0)) {
-        return erlang::nif::error(env, "invalid ArrowSchema (list), its single child is not named 'item' or 'l'");
+    // Accept "item" (Arrow convention), "l" (DuckDB convention), or empty string
+    // (nanoarrow IPC reader may not preserve the child name)
+    const char * child_name = items_schema->name ? items_schema->name : "";
+    if (!(strcmp("item", child_name) == 0 || strcmp("l", child_name) == 0 || strcmp("", child_name) == 0)) {
+        error = erlang::nif::error(env, "invalid ArrowSchema (list), its single child is not named 'item' or 'l'");
+        return 1;
     }
 
     std::vector<ERL_NIF_TERM> childrens;

@@ -574,9 +574,11 @@ static ERL_NIF_TERM adbc_arrow_array_stream_next(ErlNifEnv *env, int argc, const
     }
 
     if (code != 0) {
-        // error is already set in arrow_schema_to_nif_term
-        // we don't need to release the schema in private data here
-        // it will be released when the stream resource is GC'd
+        // If arrow_schema_to_nif_term failed without setting an error term,
+        // produce a generic error rather than returning an invalid term.
+        if (error == 0) {
+            return erlang::nif::error(env, "failed to convert Arrow schema to Elixir term");
+        }
         return error;
     } else {
         return erlang::nif::ok(env, out_terms[0]);
@@ -872,6 +874,205 @@ static ERL_NIF_TERM adbc_ipc_load_stream_binary(ErlNifEnv *env, int argc, const 
     }
 
     return array_stream->make_resource(env);
+}
+
+// Private data for an ArrowArrayStream built from Elixir columns.
+// Holds the schema and one record batch; the stream yields that single batch
+// and then signals end-of-stream.
+struct ColumnsStreamPrivate {
+    struct ArrowSchema schema;
+    struct ArrowArray   array;
+    bool consumed;  // true after get_next has returned the batch
+};
+
+static int columns_stream_get_schema(struct ArrowArrayStream *stream, struct ArrowSchema *out) {
+    auto *priv = static_cast<ColumnsStreamPrivate *>(stream->private_data);
+    return ArrowSchemaDeepCopy(&priv->schema, out);
+}
+
+static int columns_stream_get_next(struct ArrowArrayStream *stream, struct ArrowArray *out) {
+    auto *priv = static_cast<ColumnsStreamPrivate *>(stream->private_data);
+    if (priv->consumed) {
+        // Signal end-of-stream
+        out->release = nullptr;
+        return 0;
+    }
+    // Move the array to the caller — transfers ownership of all buffers.
+    memcpy(out, &priv->array, sizeof(struct ArrowArray));
+    // Prevent double-free: the caller now owns the array.
+    priv->array.release = nullptr;
+    priv->consumed = true;
+    return 0;
+}
+
+static const char *columns_stream_get_last_error(struct ArrowArrayStream *) {
+    return nullptr;
+}
+
+static void columns_stream_release(struct ArrowArrayStream *stream) {
+    if (stream->private_data) {
+        auto *priv = static_cast<ColumnsStreamPrivate *>(stream->private_data);
+        if (priv->schema.release) priv->schema.release(&priv->schema);
+        if (priv->array.release)  priv->array.release(&priv->array);
+        delete priv;
+        stream->private_data = nullptr;
+    }
+    stream->release = nullptr;
+}
+
+// Build an ArrowArrayStream resource from a list of Adbc.Column structs.
+// The resulting stream yields a single record batch, then ends.
+static ERL_NIF_TERM adbc_columns_to_arrow_array_stream(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct ArrowArrayStream>;
+
+    if (!enif_is_list(env, argv[0])) {
+        return enif_make_badarg(env);
+    }
+
+    struct ArrowError arrow_error{};
+    auto *priv = new (std::nothrow) ColumnsStreamPrivate{};
+    if (!priv) {
+        return erlang::nif::error(env, "out of memory");
+    }
+    memset(&priv->schema, 0, sizeof(struct ArrowSchema));
+    memset(&priv->array, 0, sizeof(struct ArrowArray));
+    priv->consumed = false;
+    priv->schema.release = nullptr;
+
+    if (adbc_column_to_arrow_type_struct(env, argv[0], &priv->array, &priv->schema, &arrow_error)) {
+        ERL_NIF_TERM ret = erlang::nif::error(env, arrow_error.message);
+        if (priv->schema.release) priv->schema.release(&priv->schema);
+        if (priv->array.release)  priv->array.release(&priv->array);
+        delete priv;
+        return ret;
+    }
+
+    ERL_NIF_TERM error{};
+    auto stream_res = res_type::allocate_resource(env, error);
+    if (stream_res == nullptr) {
+        if (priv->schema.release) priv->schema.release(&priv->schema);
+        if (priv->array.release)  priv->array.release(&priv->array);
+        delete priv;
+        return error;
+    }
+
+    stream_res->val.get_schema     = columns_stream_get_schema;
+    stream_res->val.get_next       = columns_stream_get_next;
+    stream_res->val.get_last_error = columns_stream_get_last_error;
+    stream_res->val.release        = columns_stream_release;
+    stream_res->val.private_data   = priv;
+
+    return erlang::nif::ok(env, stream_res->make_resource(env));
+}
+
+// Serialize an ArrowArrayStream directly to IPC bytes.
+// Consumes the stream — drains all batches and writes schema + batches + EOS.
+static ERL_NIF_TERM adbc_arrow_array_stream_to_ipc(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct ArrowArrayStream>;
+    ERL_NIF_TERM error{};
+
+    res_type *res = nullptr;
+    if ((res = res_type::get_resource(env, argv[0], error)) == nullptr) {
+        return error;
+    }
+    if (res->val.release == nullptr) {
+        return erlang::nif::error(env, "stream has already been released");
+    }
+
+    struct ArrowSchema schema{};
+    schema.release = nullptr;
+    struct ArrowError arrow_error{};
+    ERL_NIF_TERM ret{};
+
+    // Get the schema from the stream
+    int code = res->val.get_schema(&res->val, &schema);
+    if (code != 0) {
+        const char *reason = res->val.get_last_error(&res->val);
+        return erlang::nif::error(env, reason ? reason : "failed to get schema from stream");
+    }
+
+    // Set up IPC writer
+    nanoarrow::UniqueBuffer output;
+    nanoarrow::ipc::UniqueOutputStream ostream;
+    code = ArrowIpcOutputStreamInitBuffer(ostream.get(), output.get());
+    if (code != NANOARROW_OK) {
+        ret = erlang::nif::error(env, "failed to initialize IPC output stream");
+        goto cleanup;
+    }
+
+    {
+        nanoarrow::ipc::UniqueWriter writer;
+        code = ArrowIpcWriterInit(writer.get(), ostream.get());
+        if (code != NANOARROW_OK) {
+            ret = erlang::nif::error(env, "failed to initialize IPC writer");
+            goto cleanup;
+        }
+
+        code = ArrowIpcWriterWriteSchema(writer.get(), &schema, &arrow_error);
+        if (code != NANOARROW_OK) {
+            ret = nif_error_from_arrow_error(env, &arrow_error);
+            goto cleanup;
+        }
+
+        // Drain all batches from the stream
+        while (true) {
+            struct ArrowArray array{};
+            code = res->val.get_next(&res->val, &array);
+            if (code != 0) {
+                const char *reason = res->val.get_last_error(&res->val);
+                ret = erlang::nif::error(env, reason ? reason : "failed to get next batch");
+                goto cleanup;
+            }
+            if (array.release == nullptr) {
+                // End of stream
+                break;
+            }
+
+            nanoarrow::UniqueArrayView array_view;
+            code = ArrowArrayViewInitFromSchema(array_view.get(), &schema, &arrow_error);
+            if (code != NANOARROW_OK) {
+                array.release(&array);
+                ret = nif_error_from_arrow_error(env, &arrow_error);
+                goto cleanup;
+            }
+            code = ArrowArrayViewSetArray(array_view.get(), &array, &arrow_error);
+            if (code != NANOARROW_OK) {
+                array.release(&array);
+                ret = nif_error_from_arrow_error(env, &arrow_error);
+                goto cleanup;
+            }
+
+            code = ArrowIpcWriterWriteArrayView(writer.get(), array_view.get(), &arrow_error);
+            array.release(&array);
+            if (code != NANOARROW_OK) {
+                ret = nif_error_from_arrow_error(env, &arrow_error);
+                goto cleanup;
+            }
+        }
+
+        // Write end-of-stream marker
+        code = ArrowIpcWriterWriteArrayView(writer.get(), nullptr, &arrow_error);
+        if (code != NANOARROW_OK) {
+            ret = nif_error_from_arrow_error(env, &arrow_error);
+            goto cleanup;
+        }
+
+        ArrowIpcWriterReset(writer.get());
+    }
+
+    {
+        ErlNifBinary binary;
+        if (!enif_alloc_binary(output->size_bytes, &binary)) {
+            ret = erlang::nif::error(env, "out of memory");
+            goto cleanup;
+        }
+        memcpy(binary.data, output->data, output->size_bytes);
+        ret = erlang::nif::ok(env, enif_make_binary(env, &binary));
+    }
+
+cleanup:
+    if (schema.release) schema.release(&schema);
+    return ret;
 }
 
 // argv[0] is a list of batches, each batch is a list of columns
@@ -1222,6 +1423,9 @@ static ErlNifFunc nif_functions[] = {
 
     {"adbc_column_materialize", 1, adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"adbc_delete_on_gc_new", 2, adbc_delete_on_gc_new, 0},
+
+    {"adbc_columns_to_arrow_array_stream", 1, adbc_columns_to_arrow_array_stream, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"adbc_arrow_array_stream_to_ipc", 1, adbc_arrow_array_stream_to_ipc, ERL_NIF_DIRTY_JOB_CPU_BOUND},
 
     {"adbc_ipc_system_endianness", 0, adbc_ipc_system_endianness, 0},
     {"adbc_ipc_load_stream_binary", 1, adbc_ipc_load_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
