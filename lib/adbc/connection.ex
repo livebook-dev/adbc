@@ -188,6 +188,18 @@ defmodule Adbc.Connection do
   end
 
   @doc """
+  Execute a DDL statement without streaming results.
+  Faster than `query/2` for statements that don't return data (CREATE, DROP, SET, etc.).
+  """
+  @spec execute(t(), binary) :: :ok | {:error, Exception.t()}
+  def execute(conn, statement) when is_binary(statement) do
+    case command(conn, {:execute_ddl, statement}) do
+      {:ok, _} -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
   Prepares the given `query`.
   """
   @spec prepare(t(), binary) :: {:ok, reference} | {:error, Exception.t()}
@@ -931,6 +943,17 @@ defmodule Adbc.Connection do
 
   defp maybe_dequeue(state), do: state
 
+  defp handle_command({:execute_ddl, sql}, state) do
+    result =
+      with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
+           :ok <- Adbc.Nif.adbc_statement_set_sql_query(stmt, sql),
+           {:ok, _rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        {:ok, :executed}
+      end
+
+    {result, state}
+  end
+
   defp handle_command({:prepare, query}, state) do
     with {:ok, stmt} <- create_statement(state.conn, query),
          :ok <- Adbc.Nif.adbc_statement_prepare(stmt) do
@@ -997,10 +1020,14 @@ defmodule Adbc.Connection do
   end
 
   defp handle_command({:delete_on_gc, table_name}, state) do
+    drop_sql =
+      if String.starts_with?(table_name, "__dux_v_"),
+        do: ~s(DROP VIEW IF EXISTS "#{table_name}"),
+        else: "DROP TABLE IF EXISTS #{table_name}"
+
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
-           :ok <-
-             Adbc.Nif.adbc_statement_set_sql_query(stmt, "DROP TABLE IF EXISTS #{table_name}"),
+           :ok <- Adbc.Nif.adbc_statement_set_sql_query(stmt, drop_sql),
            {:ok, _rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         :ok
       end
