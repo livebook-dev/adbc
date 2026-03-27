@@ -282,4 +282,237 @@ defmodule Adbc.DuckDBTest do
 
     assert map["iv_col"] == [{14, 3, 1_000_000_000}, {0, 0, 0}, nil]
   end
+
+  describe "stream to IPC" do
+    test "struct columns via stream", %{conn: conn} do
+      {:ok, ipc} =
+        Adbc.Connection.query_pointer(
+          conn,
+          "SELECT {'x': 1, 'y': 'a'} as s UNION ALL SELECT {'x': 2, 'y': 'b'}",
+          fn stream ->
+            Adbc.StreamResult.to_ipc_stream(stream)
+          end
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      result = Adbc.Result.materialize(result)
+      structs = Adbc.Column.to_list(hd(result.data))
+      assert structs == [%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}]
+    end
+
+    test "list columns via stream", %{conn: conn} do
+      {:ok, ipc} =
+        Adbc.Connection.query_pointer(
+          conn,
+          "SELECT [1, 2, 3] as arr UNION ALL SELECT [4, 5]",
+          fn stream ->
+            Adbc.StreamResult.to_ipc_stream(stream)
+          end
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      result = Adbc.Result.materialize(result)
+      assert Adbc.Column.to_list(hd(result.data)) == [[1, 2, 3], [4, 5]]
+    end
+
+    test "list columns multi-batch via materialize path", %{conn: conn} do
+      # DuckDB UNION ALL produces separate record batches — exercises multi-batch list encoding
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT [10, 20] as arr UNION ALL SELECT [30, 40, 50]")
+
+      result = Adbc.Result.materialize(result)
+      ipc = Adbc.Result.to_ipc_stream(result)
+
+      # Verify through pyarrow (independent IPC reader)
+      {_, globals} =
+        Pythonx.eval(
+          """
+          import pyarrow as pa
+          table = pa.ipc.open_stream(pa.BufferReader(ipc)).read_all()
+          col = table.column('arr').to_pylist()
+          """,
+          %{"ipc" => Pythonx.encode!(ipc)}
+        )
+
+      assert Pythonx.decode(globals["col"]) == [[10, 20], [30, 40, 50]]
+    end
+
+    test "list columns with nulls via stream", %{conn: conn} do
+      {:ok, ipc} =
+        Adbc.Connection.query_pointer(
+          conn,
+          "SELECT [1, 2] as arr UNION ALL SELECT NULL",
+          fn stream ->
+            Adbc.StreamResult.to_ipc_stream(stream)
+          end
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      result = Adbc.Result.materialize(result)
+      assert Adbc.Column.to_list(hd(result.data)) == [[1, 2], nil]
+    end
+
+    test "struct with nulls via stream", %{conn: conn} do
+      {:ok, ipc} =
+        Adbc.Connection.query_pointer(
+          conn,
+          "SELECT {'a': 1}::STRUCT(a INTEGER) UNION ALL SELECT NULL::STRUCT(a INTEGER)",
+          fn stream ->
+            Adbc.StreamResult.to_ipc_stream(stream)
+          end
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      result = Adbc.Result.materialize(result)
+      structs = Adbc.Column.to_list(hd(result.data))
+      assert length(structs) == 2
+      assert hd(structs) == %{"a" => 1}
+    end
+
+    test "large result multi-batch via stream", %{conn: conn} do
+      {:ok, ipc} =
+        Adbc.Connection.query_pointer(
+          conn,
+          "SELECT i FROM generate_series(1, 500) t(i)",
+          fn stream ->
+            Adbc.StreamResult.to_ipc_stream(stream)
+          end
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(result))
+      assert map["i"] == Enum.to_list(1..500)
+    end
+
+    test "matches materialize path for mixed types", %{conn: conn} do
+      sql = """
+      SELECT 42 as i, 3.14 as f, 'hello' as s, true as b,
+             {'a': 1, 'b': 'x'} as st
+      """
+
+      # Direct stream path
+      {:ok, ipc_direct} =
+        Adbc.Connection.query_pointer(conn, sql, fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
+
+      # Materialize path
+      {:ok, result} = Adbc.Connection.query(conn, sql)
+      ipc_mat = result |> Adbc.Result.materialize() |> Adbc.Result.to_ipc_stream()
+
+      # Both paths should produce the same data
+      {:ok, r1} = Adbc.Result.from_ipc_stream(ipc_direct)
+      {:ok, r2} = Adbc.Result.from_ipc_stream(ipc_mat)
+
+      assert Adbc.Result.to_map(Adbc.Result.materialize(r1)) ==
+               Adbc.Result.to_map(Adbc.Result.materialize(r2))
+    end
+  end
+
+  describe "to_py round-trip" do
+    test "struct columns via DuckDB", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT {'name': 'Alice', 'age': 30} as person UNION ALL SELECT {'name': 'Bob', 'age': 25}")
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      round_tripped = Adbc.Result.materialize(round_tripped)
+
+      assert Adbc.Column.to_list(hd(round_tripped.data)) == [
+               %{"name" => "Alice", "age" => 30},
+               %{"name" => "Bob", "age" => 25}
+             ]
+    end
+
+    test "list columns via DuckDB", %{conn: conn} do
+      # UNION ALL produces multi-batch results from DuckDB
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT [10, 20, 30] as nums UNION ALL SELECT [40]")
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {_, globals} = Pythonx.eval("col = table.column('nums').to_pylist()", %{"table" => py_table})
+      assert Pythonx.decode(globals["col"]) == [[10, 20, 30], [40]]
+    end
+
+    test "scalars and structs via DuckDB", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, """
+        SELECT 1 as i, 'hello' as s, true as b, 3.14::DOUBLE as f,
+               {'x': 42} as st
+        """)
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {_, globals} = Pythonx.eval("n = len(table)", %{"table" => py_table})
+      assert Pythonx.decode(globals["n"]) == 1
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(round_tripped))
+      assert map["i"] == [1]
+      assert map["s"] == ["hello"]
+      assert map["b"] == [true]
+      assert_in_delta hd(map["f"]), 3.14, 1.0e-9
+    end
+
+    test "float values are preserved", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT 1.5::DOUBLE as a, 2.75::DOUBLE as b, -0.001::DOUBLE as c")
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(round_tripped))
+
+      assert_in_delta hd(map["a"]), 1.5, 1.0e-9
+      assert_in_delta hd(map["b"]), 2.75, 1.0e-9
+      assert_in_delta hd(map["c"]), -0.001, 1.0e-9
+    end
+
+    test "empty result to_py", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT 1 as x WHERE 1 = 0")
+
+      result = Adbc.Result.materialize(result)
+      assert result.data == []
+
+      # to_py on an empty result should still produce a valid pyarrow table
+      {:ok, py_table} = Adbc.Result.to_py(result)
+      {is_table, _} = Pythonx.eval("isinstance(table, __import__('pyarrow').Table)", %{"table" => py_table})
+      assert Pythonx.decode(is_table) == true
+    end
+
+    test "all-null column", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT NULL::INTEGER as x UNION ALL SELECT NULL")
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(round_tripped))
+      assert map["x"] == [nil, nil]
+    end
+
+    test "column order preservation", %{conn: conn} do
+      {:ok, result} =
+        Adbc.Connection.query(conn, "SELECT 1 as alpha, 2 as beta, 3 as gamma, 4 as delta, 5 as epsilon")
+
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {col_names, _} = Pythonx.eval("table.column_names", %{"table" => py_table})
+      assert Pythonx.decode(col_names) == ["alpha", "beta", "gamma", "delta", "epsilon"]
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      round_tripped = Adbc.Result.materialize(round_tripped)
+      names = Enum.map(round_tripped.data, & &1.field.name)
+      assert names == ["alpha", "beta", "gamma", "delta", "epsilon"]
+    end
+  end
 end

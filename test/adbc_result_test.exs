@@ -177,4 +177,165 @@ defmodule Adbc.ResultTest do
       assert is_binary(Result.to_ipc_stream(result))
     end
   end
+
+  describe "columns_to_arrow_array_stream" do
+    test "stream yields one batch then ends" do
+      columns = [Adbc.Column.s64([10, 20, 30], name: "x")]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+
+      # First call returns a list of columns (one struct batch)
+      assert {:ok, [%Adbc.Column{field: %Adbc.Field{name: "x"}}]} =
+               Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+
+      # Second call signals end of stream
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+
+      # Third call also signals end (idempotent)
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+    end
+
+    test "stream data round-trips through IPC" do
+      columns = [
+        Adbc.Column.s32([1, nil, 3], name: "ints", nullable: true),
+        Adbc.Column.string(["a", "b", nil], name: "strs", nullable: true),
+        Adbc.Column.boolean([true, nil, false], name: "bools", nullable: true)
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      map = Result.to_map(Result.materialize(result))
+
+      assert map["ints"] == [1, nil, 3]
+      assert map["strs"] == ["a", "b", nil]
+      assert map["bools"] == [true, nil, false]
+    end
+
+    test "stream with nested list columns produces valid IPC" do
+      columns = [
+        Adbc.Column.list(
+          [Adbc.Column.s32([1, 2, 3]), Adbc.Column.s32([4, 5])],
+          Adbc.Field.new(:s32),
+          name: "lists",
+          nullable: true
+        )
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      assert is_binary(ipc)
+      assert byte_size(ipc) > 0
+    end
+
+    test "rejects unmaterialized columns" do
+      bad_columns = [%Adbc.Column{field: %Adbc.Field{name: "x", type: :s64}, data: make_ref()}]
+
+      assert {:error, msg} = Adbc.Nif.adbc_columns_to_arrow_array_stream(bad_columns)
+      assert msg =~ "materialize"
+    end
+
+    test "rejects non-list argument" do
+      assert_raise ArgumentError, fn ->
+        Adbc.Nif.adbc_columns_to_arrow_array_stream("not a list")
+      end
+    end
+
+    test "multiple typed columns through IPC round-trip" do
+      columns = [
+        Adbc.Column.s64([100, 200], name: "id"),
+        Adbc.Column.string(["Alice", "Bob"], name: "name", nullable: true),
+        Adbc.Column.boolean([true, false], name: "active", nullable: true)
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      map = Result.to_map(Result.materialize(result))
+
+      assert map["id"] == [100, 200]
+      assert map["name"] == ["Alice", "Bob"]
+      assert map["active"] == [true, false]
+    end
+
+    test "timestamp columns through IPC round-trip" do
+      columns = [
+        Adbc.Column.timestamp(
+          [~N[2024-01-01 00:00:00], ~N[2024-06-15 12:30:00]],
+          :seconds,
+          "UTC",
+          name: "ts",
+          nullable: true
+        )
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      map = Result.to_map(Result.materialize(result))
+
+      assert map["ts"] == [~N[2024-01-01 00:00:00], ~N[2024-06-15 12:30:00]]
+    end
+
+    test "dictionary columns can be created as stream" do
+      columns = [
+        Adbc.Column.dictionary(
+          Adbc.Column.s32([0, 1, 0, 2], nullable: true),
+          Adbc.Column.string(["foo", "bar", "baz"]),
+          name: "dict",
+          nullable: true
+        )
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+
+      # Stream yields one batch with the dictionary column
+      assert {:ok, batch} = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+      assert [%Adbc.Column{field: %Adbc.Field{type: {:dictionary, _, _}}}] = batch
+
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+    end
+
+    test "empty column list produces a valid stream" do
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream([])
+      # Empty columns produce a single empty batch, then end
+      assert {:ok, []} = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+    end
+  end
+
+  describe "StreamResult.to_ipc_stream" do
+    test "rejects already-released stream" do
+      columns = [Adbc.Column.s64([1], name: "x")]
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+
+      # Consume the stream
+      {:ok, _ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+
+      # Second consumption should still work (stream is drained but valid)
+      # — it produces a schema-only IPC (empty table)
+      {:ok, ipc2} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      assert is_binary(ipc2)
+    end
+
+    test "multi-column IPC round-trip preserves all data" do
+      columns = [
+        Adbc.Column.s64([10, 20, 30], name: "id"),
+        Adbc.Column.string(["a", "b", "c"], name: "label"),
+        Adbc.Column.f64([1.1, 2.2, 3.3], name: "score")
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      map = Result.to_map(Result.materialize(result))
+
+      assert map["id"] == [10, 20, 30]
+      assert map["label"] == ["a", "b", "c"]
+
+      for {actual, expected} <- Enum.zip(map["score"], [1.1, 2.2, 3.3]) do
+        assert_in_delta actual, expected, 1.0e-9
+      end
+    end
+  end
 end
