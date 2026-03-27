@@ -539,4 +539,38 @@ defmodule Adbc.SQLiteTest do
 
     assert Adbc.Column.to_list(name_col) == [nil]
   end
+
+  test "execute/4 returns rows affected", %{conn: conn} do
+    assert {:ok, _} =
+             Connection.execute(conn, "INSERT INTO test (i1, t5) VALUES (1, 'hello')")
+
+    assert {:ok, _} =
+             Connection.execute(conn, "INSERT INTO test (i1, t5) VALUES (?, ?)", [
+               Adbc.Column.s64([2]),
+               Adbc.Column.string(["world"])
+             ])
+
+    assert {:ok, result} = Connection.query(conn, "SELECT i1, t5 FROM test ORDER BY i1")
+    result = Adbc.Result.materialize(result)
+    [batch] = result.data
+    assert Adbc.Column.to_list(Enum.at(batch, 0)) == [1, 2]
+    assert Adbc.Column.to_list(Enum.at(batch, 1)) == ["hello", "world"]
+  end
+
+  test "execute!/4 raises on error", %{conn: conn} do
+    assert_raise Adbc.Error, fn ->
+      Connection.execute!(conn, "SELECT * FROM nonexistent_table")
+    end
+  end
+
+  test "execute/4 with DDL", %{conn: conn} do
+    assert {:ok, _} = Connection.execute(conn, "CREATE TABLE execute_test (id INT, name TEXT)")
+    assert {:ok, _} = Connection.execute(conn, "INSERT INTO execute_test VALUES (1, 'test')")
+
+    assert {:ok, result} = Connection.query(conn, "SELECT * FROM execute_test")
+    result = Adbc.Result.materialize(result)
+    [batch] = result.data
+    assert Adbc.Column.to_list(Enum.at(batch, 0)) == [1]
+    assert Adbc.Column.to_list(Enum.at(batch, 1)) == ["test"]
+  end
 end

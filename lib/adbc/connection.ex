@@ -188,6 +188,38 @@ defmodule Adbc.Connection do
   end
 
   @doc """
+  Runs the given `query` with `params` and `statement_options`, returning
+  only the number of affected rows.
+
+  Unlike `query/4`, this function does not return any data. This is useful
+  for DDL statements (CREATE TABLE, DROP TABLE, etc.) and DML statements
+  (INSERT, UPDATE, DELETE) where you don't need the result set.
+
+  Returns `{:ok, rows_affected}` where `rows_affected` is a non-negative
+  integer or `nil` if the driver does not report it.
+  """
+  @spec execute(t(), binary | reference, [term], Keyword.t()) ::
+          {:ok, non_neg_integer() | nil} | {:error, Exception.t()}
+  def execute(conn, query, params \\ [], statement_options \\ [])
+      when (is_binary(query) or is_reference(query)) and is_list(params) and
+             is_list(statement_options) do
+    command(conn, {:execute, query, params, statement_options})
+  end
+
+  @doc """
+  Same as `execute/4` but raises an exception on error.
+  """
+  @spec execute!(t(), binary | reference, [term], Keyword.t()) :: non_neg_integer() | nil
+  def execute!(conn, query, params \\ [], statement_options \\ [])
+      when (is_binary(query) or is_reference(query)) and is_list(params) and
+             is_list(statement_options) do
+    case execute(conn, query, params, statement_options) do
+      {:ok, rows_affected} -> rows_affected
+      {:error, reason} -> raise reason
+    end
+  end
+
+  @doc """
   Prepares the given `query`.
   """
   @spec prepare(t(), binary) :: {:ok, reference} | {:error, Exception.t()}
@@ -991,6 +1023,17 @@ defmodule Adbc.Connection do
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         ref = Adbc.Nif.adbc_execute_on_gc_new(self(), "DROP TABLE IF EXISTS #{table_name}")
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
+      end
+
+    {result, state}
+  end
+
+  defp handle_command({:execute, query_or_prepared, params, statement_options}, state) do
+    result =
+      with {:ok, stmt} <- ensure_statement(state.conn, query_or_prepared, statement_options),
+           :ok <- maybe_bind(stmt, params),
+           {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
+        {:ok, normalize_rows(rows_affected)}
       end
 
     {result, state}
