@@ -49,6 +49,38 @@ defmodule Adbc.Helper do
   def noop(value), do: value
 
   if Code.ensure_loaded?(Pythonx) do
+    def to_py(stream_ref) when is_reference(stream_ref) do
+      pointer = Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref)
+
+      {_, globals} =
+        Pythonx.eval(
+          """
+          import ctypes
+          import pyarrow as pa
+
+          pycapsule_new = ctypes.pythonapi.PyCapsule_New
+          pycapsule_new.restype = ctypes.py_object
+          pycapsule_new.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
+          capsule = pycapsule_new(pointer, b"arrow_array_stream", None)
+
+          # PyArrow's from_stream expects an object with __arrow_c_stream__,
+          # not a raw PyCapsule. Wrap it in a minimal protocol object.
+          class _StreamWrapper:
+              def __init__(self, capsule):
+                  self._capsule = capsule
+              def __arrow_c_stream__(self, requested_schema=None):
+                  return self._capsule
+
+          table = pa.RecordBatchReader.from_stream(_StreamWrapper(capsule)).read_all()
+          """,
+          %{"pointer" => Pythonx.encode!(pointer)}
+        )
+
+      # Keep the stream_ref alive until Python has fully consumed the stream
+      noop(stream_ref)
+      {:ok, globals["table"]}
+    end
+
     def from_py(py_object) when is_struct(py_object, Pythonx.Object) do
       {_, globals} =
         Pythonx.eval(
@@ -86,6 +118,15 @@ defmodule Adbc.Helper do
       end
     end
   else
+    def to_py(_stream_ref) do
+      {:error,
+       RuntimeError.exception("""
+       Adbc.Helper.to_py/1 requires pythonx to be available, add it to your mix.exs:
+
+           {:pythonx, "~> 0.4.0"}
+       """)}
+    end
+
     def from_py(_py_object) do
       {:error,
        RuntimeError.exception("""

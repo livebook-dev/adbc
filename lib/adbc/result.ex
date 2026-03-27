@@ -67,6 +67,23 @@ defmodule Adbc.StreamResult do
       {:error, reason} -> raise reason
     end
   end
+
+  @doc """
+  Serialize the stream directly to Arrow IPC bytes.
+
+  This consumes the stream in C without materializing into Elixir terms,
+  making it significantly faster than `Adbc.Result.materialize/1` followed
+  by `Adbc.Result.to_ipc_stream/1` for cross-node data transfer.
+
+  The stream is consumed and cannot be used again after this call.
+  """
+  @spec to_ipc_stream(t()) :: binary
+  def to_ipc_stream(%Adbc.StreamResult{ref: ref}) when is_reference(ref) do
+    case Adbc.Nif.adbc_arrow_array_stream_to_ipc(ref) do
+      {:ok, data} -> data
+      {:error, reason} -> raise Adbc.Helper.error_to_exception(reason)
+    end
+  end
 end
 
 defmodule Adbc.IngestResult do
@@ -209,6 +226,36 @@ defmodule Adbc.Result do
   def from_py!(py_object) do
     case from_py(py_object) do
       {:ok, result} -> result
+      {:error, reason} -> raise reason
+    end
+  end
+
+  @doc """
+  Exports an `Adbc.Result` to a Python `pyarrow.Table` via the Arrow C Data Interface.
+
+  This passes Arrow data by pointer (no serialization) using the same
+  mechanism as `from_py/1` but in the reverse direction. Requires the
+  `pythonx` package and `pyarrow` on the Python side.
+
+  The result must be materialized before calling this function.
+  Returns `{:ok, %Pythonx.Object{}}` or `{:error, exception}`.
+  """
+  def to_py(%Adbc.Result{data: columns}) when is_list(columns) do
+    case Adbc.Nif.adbc_columns_to_arrow_array_stream(columns) do
+      {:ok, stream_ref} ->
+        Adbc.Helper.to_py(stream_ref)
+
+      {:error, reason} ->
+        {:error, error_to_exception(reason)}
+    end
+  end
+
+  @doc """
+  Same as `to_py/1` but raises on error.
+  """
+  def to_py!(result) do
+    case to_py(result) do
+      {:ok, py_table} -> py_table
       {:error, reason} -> raise reason
     end
   end

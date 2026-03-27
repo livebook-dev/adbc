@@ -639,6 +639,109 @@ int do_get_list_interval(ErlNifEnv *env, ERL_NIF_TERM list, bool nullable, Arrow
     return do_get_buffer_tuples(env, list, nullable, element_bytes, array_out, schema_out, error_out);
 }
 
+// Encode a struct column: type = {:struct, [%Adbc.Field{}, ...]}, data = [[child1_data, child2_data, ...], ...]
+int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM data_term, bool nullable, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+    // Extract the fields list from {:struct, fields_list}
+    int arity;
+    const ERL_NIF_TERM *tuple_elems;
+    if (!enif_get_tuple(env, parent_type_term, &arity, &tuple_elems) || arity != 2) {
+        snprintf(error_out->message, sizeof(error_out->message), "Expected {:struct, fields} tuple");
+        return 1;
+    }
+    ERL_NIF_TERM fields_list = tuple_elems[1];
+
+    unsigned n_fields = 0;
+    if (!enif_get_list_length(env, fields_list, &n_fields) || n_fields == 0) {
+        snprintf(error_out->message, sizeof(error_out->message), "Expected non-empty fields list in struct type");
+        return 1;
+    }
+
+    // Set parent schema type — allocates child schema slots
+    NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeStruct(schema_out, n_fields));
+
+    // data_term is a list of batches: [[child1_data, child2_data, ...], ...]
+    // Each batch has one data element per field.
+    // Collect all batches for each field into a combined data list.
+    // adbc_column_to_adbc_field expects data as [batch1, batch2, ...] where
+    // each batch is a flat list of values.
+    std::vector<std::vector<ERL_NIF_TERM>> per_field_batches(n_fields);
+
+    ERL_NIF_TERM batch, batch_tail = data_term;
+    while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
+        ERL_NIF_TERM child_head, child_tail = batch;
+        unsigned fi = 0;
+        while (fi < n_fields && enif_get_list_cell(env, child_tail, &child_head, &child_tail)) {
+            per_field_batches[fi].push_back(child_head);
+            fi++;
+        }
+    }
+
+    // Build temporary child schemas and arrays
+    std::vector<nanoarrow::UniqueArray> child_arrays(n_fields);
+    int64_t struct_length = 0;
+
+    ERL_NIF_TERM field_head, field_tail = fields_list;
+    unsigned child_idx = 0;
+
+    while (enif_get_list_cell(env, field_tail, &field_head, &field_tail) && child_idx < n_fields) {
+        ERL_NIF_TERM child_type_term, child_nullable_term, child_name_term, child_metadata_term;
+        if (!enif_get_map_value(env, field_head, kAtomTypeKey, &child_type_term)) {
+            snprintf(error_out->message, sizeof(error_out->message), "Struct field missing :type");
+            return 1;
+        }
+        if (!enif_get_map_value(env, field_head, kAtomNullableKey, &child_nullable_term))
+            child_nullable_term = kAtomFalse;
+        if (!enif_get_map_value(env, field_head, kAtomNameKey, &child_name_term))
+            child_name_term = kAtomNil;
+        if (!enif_get_map_value(env, field_head, kAtomMetadataKey, &child_metadata_term))
+            child_metadata_term = kAtomNil;
+
+        // Build a multi-batch data list for this field
+        auto &batches = per_field_batches[child_idx];
+        ERL_NIF_TERM data_list = enif_make_list_from_array(env, batches.data(), batches.size());
+
+        struct AdbcColumnNifTerm child_column{};
+        child_column.type_term = child_type_term;
+        child_column.nullable_term = child_nullable_term;
+        child_column.data_term = data_list;
+        child_column.name_term = child_name_term;
+        child_column.metadata_term = child_metadata_term;
+        child_column.struct_name_term = kAtomAdbcFieldModule;
+
+        struct ArrowSchema child_schema{};
+        ArrowSchemaInit(&child_schema);
+        bool skip_init = false;
+        int ret = adbc_column_to_adbc_field(env, &child_column, true, skip_init, child_arrays[child_idx].get(), &child_schema, error_out);
+        if (ret != 0) {
+            if (child_schema.release) child_schema.release(&child_schema);
+            return ret;
+        }
+
+        if (child_idx == 0) {
+            struct_length = child_arrays[child_idx]->length;
+        }
+
+        if (schema_out->children[child_idx]->release) {
+            schema_out->children[child_idx]->release(schema_out->children[child_idx]);
+        }
+        ArrowSchemaMove(&child_schema, schema_out->children[child_idx]);
+
+        child_idx++;
+    }
+
+    // Build parent array
+    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromType(array_out, NANOARROW_TYPE_STRUCT));
+    NANOARROW_RETURN_NOT_OK(ArrowArrayAllocateChildren(array_out, static_cast<int64_t>(n_fields)));
+    array_out->length = struct_length;
+
+    for (unsigned i = 0; i < n_fields; i++) {
+        ArrowArrayMove(child_arrays[i].get(), array_out->children[i]);
+    }
+
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuilding(array_out, NANOARROW_VALIDATION_LEVEL_NONE, error_out));
+    return 0;
+}
+
 int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, bool nullable, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     if (column_type == nullptr) {
         enif_snprintf(error_out->message, sizeof(error_out->message), "internal error: column_type is null in do_get_list:%d", __LINE__);
@@ -674,6 +777,20 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
     }
 
     // data is a list of batches, each batch is %{offsets: binary, validity: binary|nil, values: list, offset: int}
+    // Collect all child values across batches into a single combined data list,
+    // then build the child array once.
+    std::vector<ERL_NIF_TERM> child_value_batches;
+
+    struct BatchInfo {
+        ErlNifBinary offsets_bin;
+        ErlNifBinary validity_bin;
+        bool has_validity;
+        int bit_offset;
+        size_t n_elements;
+    };
+    std::vector<BatchInfo> batch_infos;
+    size_t offset_elem_size = (column_type->arrow_type == NANOARROW_TYPE_LARGE_LIST) ? 8 : 4;
+
     ERL_NIF_TERM batch, batch_tail = list;
     while (enif_get_list_cell(env, batch_tail, &batch, &batch_tail)) {
         if (!enif_is_map(env, batch)) {
@@ -692,75 +809,108 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list
             return 1;
         }
 
-        // Build child array from the values (a list of batches for the inner column)
-        struct AdbcColumnNifTerm child_column;
-        child_column.is_nil = 0;
-        child_column.type_term = inner_type_term;
-        child_column.nullable_term = inner_nullable_term;
-        child_column.data_term = values_term;
-        child_column.name_term = kAtomNil;
-        child_column.metadata_term = kAtomNil;
-        child_column.struct_name_term = kAtomAdbcFieldModule;
-        child_column.n_items = 0;
-
-        // Build child values into a temporary child array
-        nanoarrow::UniqueArray child_array;
-        struct ArrowSchema child_schema{};
-        bool skip_init = false;
-        int ret = adbc_column_to_adbc_field(env, &child_column, true, skip_init, child_array.get(), &child_schema, error_out);
-        if (ret != 0) {
-            if (child_schema.release) child_schema.release(&child_schema);
-            return ret;
+        // Accumulate the inner column's values (each is a list of data batches)
+        // values_term is a list of inner batches for this outer batch
+        ERL_NIF_TERM vhead, vtail = values_term;
+        while (enif_get_list_cell(env, vtail, &vhead, &vtail)) {
+            child_value_batches.push_back(vhead);
         }
 
-        // Now set up the parent schema's child from the built child schema
-        if (schema_out->children[0]->release) {
-            schema_out->children[0]->release(schema_out->children[0]);
-        }
-        ArrowSchemaMove(&child_schema, schema_out->children[0]);
-
-        NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(array_out, schema_out, error_out));
-        NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(array_out));
-
-        // Move child array data into the parent's child slot
-        ArrowArrayMove(child_array.get(), array_out->children[0]);
-
-        // Read offsets binary
-        ErlNifBinary offsets_bin;
-        if (!enif_inspect_binary(env, offsets_term, &offsets_bin)) {
+        BatchInfo bi{};
+        if (!enif_inspect_binary(env, offsets_term, &bi.offsets_bin)) {
             snprintf(error_out->message, sizeof(error_out->message), "Expected offsets to be a binary");
             return 1;
         }
-
-        bool has_validity = !enif_is_identical(validity_term, kAtomNil);
-        ErlNifBinary validity_bin;
-        int bit_offset = 0;
-        if (has_validity) {
-            if (!enif_inspect_binary(env, validity_term, &validity_bin)) return 1;
+        bi.has_validity = !enif_is_identical(validity_term, kAtomNil);
+        if (bi.has_validity) {
+            if (!enif_inspect_binary(env, validity_term, &bi.validity_bin)) return 1;
         }
-        if (!enif_get_int(env, offset_term, &bit_offset)) return 1;
+        if (!enif_get_int(env, offset_term, &bi.bit_offset)) return 1;
+        bi.n_elements = (bi.offsets_bin.size / offset_elem_size) - 1;
+        batch_infos.push_back(bi);
+    }
 
-        // Determine element count from offsets binary
-        size_t offset_elem_size = (column_type->arrow_type == NANOARROW_TYPE_LARGE_LIST) ? 8 : 4;
-        size_t n_elements = (offsets_bin.size / offset_elem_size) - 1;
+    // Build the combined child array from all value batches
+    ERL_NIF_TERM combined_values = enif_make_list_from_array(env, child_value_batches.data(), child_value_batches.size());
 
-        // Copy offsets into the list's offset buffer (buffer index 1).
-        // Skip the first offset (0) since ArrowArrayStartAppending already wrote it.
-        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(array_out, 1),
-            offsets_bin.data + offset_elem_size, offsets_bin.size - offset_elem_size));
+    struct AdbcColumnNifTerm child_column;
+    child_column.is_nil = 0;
+    child_column.type_term = inner_type_term;
+    child_column.nullable_term = inner_nullable_term;
+    child_column.data_term = combined_values;
+    child_column.name_term = kAtomNil;
+    child_column.metadata_term = kAtomNil;
+    child_column.struct_name_term = kAtomAdbcFieldModule;
+    child_column.n_items = 0;
 
-        // Set length and validity
-        for (size_t i = 0; i < n_elements; i++) {
-            if (has_validity && !bitmap_valid_at(validity_bin.data, i, bit_offset)) {
+    nanoarrow::UniqueArray child_array;
+    struct ArrowSchema child_schema{};
+    bool skip_init = false;
+    int ret = adbc_column_to_adbc_field(env, &child_column, true, skip_init, child_array.get(), &child_schema, error_out);
+    if (ret != 0) {
+        if (child_schema.release) child_schema.release(&child_schema);
+        return ret;
+    }
+
+    // Set up the parent schema's child
+    if (schema_out->children[0]->release) {
+        schema_out->children[0]->release(schema_out->children[0]);
+    }
+    ArrowSchemaMove(&child_schema, schema_out->children[0]);
+
+    // Initialize the parent array once
+    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(array_out, schema_out, error_out));
+    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(array_out));
+
+    // Move the combined child array into the parent's child slot
+    ArrowArrayMove(child_array.get(), array_out->children[0]);
+
+    // Replay all batches' offsets and validity into the parent array.
+    // Each batch's offsets are relative to that batch's child values.
+    // Since we concatenated all child values, later batches' offsets
+    // must be shifted by the accumulated child length from prior batches.
+    int64_t child_offset_adjustment = 0;
+    for (size_t batch_i = 0; batch_i < batch_infos.size(); batch_i++) {
+        auto &bi = batch_infos[batch_i];
+
+        // Read this batch's offsets and adjust them
+        if (column_type->arrow_type == NANOARROW_TYPE_LARGE_LIST) {
+            const int64_t *src = reinterpret_cast<const int64_t *>(bi.offsets_bin.data);
+            size_t n_offsets = bi.offsets_bin.size / 8;
+            // Skip the first offset for batch 0 (ArrowArrayStartAppending wrote it)
+            size_t start = (batch_i == 0) ? 1 : 0;
+            for (size_t j = start; j < n_offsets; j++) {
+                int64_t adjusted = src[j] + child_offset_adjustment;
+                NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(array_out, 1),
+                    &adjusted, sizeof(adjusted)));
+            }
+            if (n_offsets > 0) {
+                child_offset_adjustment += src[n_offsets - 1];
+            }
+        } else {
+            const int32_t *src = reinterpret_cast<const int32_t *>(bi.offsets_bin.data);
+            size_t n_offsets = bi.offsets_bin.size / 4;
+            size_t start = (batch_i == 0) ? 1 : 0;
+            for (size_t j = start; j < n_offsets; j++) {
+                int32_t adjusted = static_cast<int32_t>(src[j] + child_offset_adjustment);
+                NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(array_out, 1),
+                    &adjusted, sizeof(adjusted)));
+            }
+            if (n_offsets > 0) {
+                child_offset_adjustment += src[n_offsets - 1];
+            }
+        }
+
+        for (size_t i = 0; i < bi.n_elements; i++) {
+            if (bi.has_validity && !bitmap_valid_at(bi.validity_bin.data, i, bi.bit_offset)) {
                 NANOARROW_RETURN_NOT_OK(ArrowArrayAppendNull(array_out, 1));
             } else {
                 NANOARROW_RETURN_NOT_OK(ArrowArrayFinishElement(array_out));
             }
         }
-
-        NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
     }
 
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
     return 0;
 }
 
@@ -938,7 +1088,9 @@ struct AdbcColumnType adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF
             int arity;
             if (enif_get_tuple(env, type_term, &arity, &tuple)) {
                 if (arity == 2) {
-                    if (enif_is_identical(tuple[0], kAdbcColumnTypeList)) {
+                    if (enif_is_identical(tuple[0], kAdbcColumnTypeStruct)) {
+                        ret.arrow_type = NANOARROW_TYPE_STRUCT;
+                    } else if (enif_is_identical(tuple[0], kAdbcColumnTypeList)) {
                         ret.arrow_type = NANOARROW_TYPE_LIST;
                     } else if (enif_is_identical(tuple[0], kAdbcColumnTypeLargeList)) {
                         ret.arrow_type = NANOARROW_TYPE_LARGE_LIST;
@@ -1129,6 +1281,8 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
         ret = do_get_list_decimal(env, data_term, nullable, column_type.arrow_type, column_type.bits, column_type.precision, column_type.scale, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DICTIONARY) {
         ret = do_get_dictionary(env, column->type_term, data_term, nullable, array_out, schema_out, error_out);
+    } else if (column_type.arrow_type == NANOARROW_TYPE_STRUCT) {
+        ret = do_get_struct(env, column->type_term, data_term, nullable, array_out, schema_out, error_out);
     }
 
     if (ret == kErrorBufferUnknownType) {
