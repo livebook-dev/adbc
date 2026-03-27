@@ -748,6 +748,91 @@ defmodule Adbc.ConnectionTest do
                  :from_pointer
                end)
     end
+
+    test "stream to IPC without materialization", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+
+      {:ok, ipc} =
+        Connection.query_pointer(conn, "SELECT 1 as a, 'hello' as b UNION ALL SELECT 2, 'world'", fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
+
+      assert is_binary(ipc)
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      result = Adbc.Result.materialize(result)
+      map = Adbc.Result.to_map(result)
+      assert map["a"] == [1, 2]
+      assert map["b"] == ["hello", "world"]
+    end
+
+    test "stream to IPC matches materialize path", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      sql = "SELECT 42 as num, 'test' as name, 3.14 as pi"
+
+      {:ok, ipc_direct} =
+        Connection.query_pointer(conn, sql, fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
+
+      {:ok, result} = Connection.query(conn, sql)
+      ipc_materialized = result |> Adbc.Result.materialize() |> Adbc.Result.to_ipc_stream()
+
+      {:ok, from_direct} = Adbc.Result.from_ipc_stream(ipc_direct)
+      {:ok, from_mat} = Adbc.Result.from_ipc_stream(ipc_materialized)
+
+      assert Adbc.Result.to_map(Adbc.Result.materialize(from_direct)) ==
+               Adbc.Result.to_map(Adbc.Result.materialize(from_mat))
+    end
+
+    test "stream to IPC with nulls", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      Connection.query!(conn, "CREATE TABLE nulltest (a INTEGER, b TEXT)")
+      Connection.query!(conn, "INSERT INTO nulltest VALUES (1, 'x'), (NULL, NULL), (3, 'z')")
+
+      {:ok, ipc} =
+        Connection.query_pointer(conn, "SELECT * FROM nulltest", fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(result))
+      assert map["a"] == [1, nil, 3]
+      assert map["b"] == ["x", nil, "z"]
+    end
+
+    test "stream to IPC with empty result", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      Connection.query!(conn, "CREATE TABLE empty_table (id INTEGER, name TEXT)")
+
+      {:ok, ipc} =
+        Connection.query_pointer(conn, "SELECT * FROM empty_table", fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
+
+      assert is_binary(ipc)
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      assert %Adbc.Result{data: [], num_rows: nil} = result
+    end
+
+    test "stream to IPC with multiple batches", %{db: db} do
+      conn = start_supervised!({Connection, database: db})
+      Connection.query!(conn, "CREATE TABLE multi (val INTEGER)")
+      values = 1..1000 |> Enum.map(&"(#{&1})") |> Enum.join(", ")
+      Connection.query!(conn, "INSERT INTO multi VALUES #{values}")
+
+      {:ok, ipc} =
+        Connection.query_pointer(
+          conn,
+          "SELECT * FROM multi ORDER BY val",
+          [],
+          fn stream -> Adbc.StreamResult.to_ipc_stream(stream) end,
+          "adbc.sqlite.query.batch_rows": 100
+        )
+
+      {:ok, result} = Adbc.Result.from_ipc_stream(ipc)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(result))
+      assert map["val"] == Enum.to_list(1..1000)
+    end
   end
 
   describe "py_query" do

@@ -183,4 +183,72 @@ defmodule Adbc.ResultTest do
       assert is_binary(Result.to_ipc_stream(result))
     end
   end
+
+  describe "columns_to_arrow_array_stream" do
+    test "stream yields one batch then ends" do
+      columns = [Adbc.Column.s64([10, 20, 30], name: "x")]
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+
+      assert {:ok, [%Adbc.Column{field: %Adbc.Field{name: "x"}}]} =
+               Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+      assert :end_of_series = Adbc.Nif.adbc_arrow_array_stream_next(stream_ref)
+    end
+
+    test "stream data round-trips through IPC" do
+      columns = [
+        Adbc.Column.s32([1, nil, 3], name: "ints", nullable: true),
+        Adbc.Column.string(["a", "b", nil], name: "strs", nullable: true),
+        Adbc.Column.boolean([true, nil, false], name: "bools", nullable: true)
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      map = Result.to_map(Result.materialize(result))
+
+      assert map["ints"] == [1, nil, 3]
+      assert map["strs"] == ["a", "b", nil]
+      assert map["bools"] == [true, nil, false]
+    end
+
+    test "stream with nested list columns round-trips through IPC" do
+      columns = [
+        Adbc.Column.list(
+          [Adbc.Column.s32([1, 2, 3]), Adbc.Column.s32([4, 5])],
+          Adbc.Field.new(:s32),
+          name: "lists", nullable: true
+        )
+      ]
+
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      result = Result.materialize(result)
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [[1, 2, 3], [4, 5]]
+    end
+
+    test "rejects unmaterialized columns" do
+      bad_columns = [%Adbc.Column{field: %Adbc.Field{name: "x", type: :s64}, data: make_ref()}]
+      assert {:error, msg} = Adbc.Nif.adbc_columns_to_arrow_array_stream(bad_columns)
+      assert msg =~ "materialize"
+    end
+
+    test "rejects non-list argument" do
+      assert_raise ArgumentError, fn ->
+        Adbc.Nif.adbc_columns_to_arrow_array_stream("not a list")
+      end
+    end
+  end
+
+  describe "StreamResult.to_ipc_stream" do
+    test "double consumption produces schema-only IPC" do
+      columns = [Adbc.Column.s64([1], name: "x")]
+      {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
+      {:ok, _ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      {:ok, ipc2} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
+      assert is_binary(ipc2)
+    end
+  end
 end
