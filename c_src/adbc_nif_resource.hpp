@@ -137,19 +137,19 @@ static void destruct_adbc_arrow_array_stream(ErlNifEnv *env, void *args) {
   }
 }
 
-struct AdbcDeleteOnGC {
+struct AdbcExecuteOnGC {
   ErlNifPid pid;
-  std::string table_name;
+  std::string statement;
 };
 
-static void destruct_adbc_delete_on_gc(ErlNifEnv *env, void *args) {
-  auto res = (NifRes<struct AdbcDeleteOnGC> *)args;
+static void destruct_adbc_execute_on_gc(ErlNifEnv *env, void *args) {
+  auto res = (NifRes<struct AdbcExecuteOnGC> *)args;
   ErlNifEnv *msg_env = enif_alloc_env();
   if (msg_env) {
-    ERL_NIF_TERM table_term = erlang::nif::make_binary(msg_env, res->val.table_name);
+    ERL_NIF_TERM statement_term = erlang::nif::make_binary(msg_env, res->val.statement);
     ERL_NIF_TERM msg = enif_make_tuple2(msg_env,
-      erlang::nif::atom(msg_env, "delete_on_gc"),
-      table_term
+      erlang::nif::atom(msg_env, "execute_on_gc"),
+      statement_term
     );
     enif_send(NULL, &res->val.pid, msg_env, msg);
     enif_free_env(msg_env);

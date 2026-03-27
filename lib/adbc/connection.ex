@@ -896,8 +896,8 @@ defmodule Adbc.Connection do
     {:noreply, maybe_dequeue(%{state | lock: :none})}
   end
 
-  def handle_info({:delete_on_gc, table_name}, state) do
-    state = update_in(state.queue, &:queue.in({:command, {:delete_on_gc, table_name}, nil}, &1))
+  def handle_info({:execute_on_gc, statement}, state) do
+    state = update_in(state.queue, &:queue.in({:command, {:execute_on_gc, statement}, nil}, &1))
     {:noreply, maybe_dequeue(state)}
   end
 
@@ -974,7 +974,7 @@ defmodule Adbc.Connection do
            :ok <- Adbc.Nif.adbc_statement_bind_stream(stmt, stream_ref),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         Adbc.Helper.noop(capsule)
-        ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
+        ref = Adbc.Nif.adbc_execute_on_gc_new(self(), "DROP TABLE IF EXISTS #{table_name}")
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
       end
 
@@ -989,18 +989,17 @@ defmodule Adbc.Connection do
            :ok <- init_statement_options(stmt, options),
            :ok <- Adbc.Nif.adbc_statement_bind(stmt, columns),
            {:ok, rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
-        ref = Adbc.Nif.adbc_delete_on_gc_new(self(), table_name)
+        ref = Adbc.Nif.adbc_execute_on_gc_new(self(), "DROP TABLE IF EXISTS #{table_name}")
         {:ok, %Adbc.IngestResult{ref: ref, table: table_name, num_rows: rows_affected}}
       end
 
     {result, state}
   end
 
-  defp handle_command({:delete_on_gc, table_name}, state) do
+  defp handle_command({:execute_on_gc, statement}, state) do
     result =
       with {:ok, stmt} <- Adbc.Nif.adbc_statement_new(state.conn),
-           :ok <-
-             Adbc.Nif.adbc_statement_set_sql_query(stmt, "DROP TABLE IF EXISTS #{table_name}"),
+           :ok <- Adbc.Nif.adbc_statement_set_sql_query(stmt, statement),
            {:ok, _rows_affected} <- Adbc.Nif.adbc_statement_execute(stmt) do
         :ok
       end

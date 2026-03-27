@@ -1336,8 +1336,8 @@ defmodule Adbc.ConnectionTest do
       :erlang.garbage_collect(conn_pid)
       :erlang.garbage_collect(self())
 
-      # Wait for the connection to receive the :delete_on_gc message
-      assert_receive {:trace, ^conn_pid, :receive, {:delete_on_gc, ^table_name}}, 1000
+      # Wait for the connection to receive the :execute_on_gc message
+      assert_receive {:trace, ^conn_pid, :receive, {:execute_on_gc, "DROP TABLE IF EXISTS " <> ^table_name}}, 1000
       :erlang.trace(conn_pid, false, [:receive])
 
       # Ensure the delete command has been processed by making a synchronous call

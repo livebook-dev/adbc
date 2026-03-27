@@ -19,7 +19,7 @@ template<> ErlNifResourceType * NifRes<struct AdbcStatement>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct AdbcError>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStream>::type = nullptr;
 template<> ErlNifResourceType * NifRes<struct ArrowArrayStreamRecord>::type = nullptr;
-template<> ErlNifResourceType * NifRes<struct AdbcDeleteOnGC>::type = nullptr;
+template<> ErlNifResourceType * NifRes<struct AdbcExecuteOnGC>::type = nullptr;
 
 static ERL_NIF_TERM nif_error_from_arrow_error(ErlNifEnv *env, struct ArrowError * arrow_error) {
     return erlang::nif::error(env, enif_make_tuple4(env,
@@ -930,8 +930,8 @@ static ERL_NIF_TERM adbc_ipc_system_endianness(ErlNifEnv *env, int argc, const E
     }
 }
 
-static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    using res_type = NifRes<struct AdbcDeleteOnGC>;
+static ERL_NIF_TERM adbc_execute_on_gc_new(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct AdbcExecuteOnGC>;
 
     ERL_NIF_TERM error{};
 
@@ -940,8 +940,8 @@ static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NI
         return enif_make_badarg(env);
     }
 
-    std::string table_name;
-    if (!erlang::nif::get(env, argv[1], table_name)) {
+    std::string statement;
+    if (!erlang::nif::get(env, argv[1], statement)) {
         return enif_make_badarg(env);
     }
 
@@ -951,7 +951,7 @@ static ERL_NIF_TERM adbc_delete_on_gc_new(ErlNifEnv *env, int argc, const ERL_NI
     }
 
     res->val.pid = pid;
-    new (&res->val.table_name) std::string(std::move(table_name));
+    new (&res->val.statement) std::string(std::move(statement));
 
     ERL_NIF_TERM ref = res->make_resource(env);
     enif_release_resource(res);
@@ -1004,8 +1004,8 @@ static int on_load(ErlNifEnv *env, void **, ERL_NIF_TERM) {
     }
 
     {
-        using res_type = NifRes<struct AdbcDeleteOnGC>;
-        rt = enif_open_resource_type(env, "Elixir.Adbc.Nif", "NifResAdbcDeleteOnGC", destruct_adbc_delete_on_gc, ERL_NIF_RT_CREATE, NULL);
+        using res_type = NifRes<struct AdbcExecuteOnGC>;
+        rt = enif_open_resource_type(env, "Elixir.Adbc.Nif", "NifResAdbcExecuteOnGC", destruct_adbc_execute_on_gc, ERL_NIF_RT_CREATE, NULL);
         if (!rt) return -1;
         res_type::type = rt;
     }
@@ -1176,7 +1176,7 @@ static ErlNifFunc nif_functions[] = {
     {"adbc_arrow_array_stream_release", 1, adbc_arrow_array_stream_release, ERL_NIF_DIRTY_JOB_IO_BOUND},
 
     {"adbc_column_materialize", 1, adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"adbc_delete_on_gc_new", 2, adbc_delete_on_gc_new, 0},
+    {"adbc_execute_on_gc_new", 2, adbc_execute_on_gc_new, 0},
 
     {"adbc_ipc_system_endianness", 0, adbc_ipc_system_endianness, 0},
     {"adbc_ipc_load_stream_binary", 1, adbc_ipc_load_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
