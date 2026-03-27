@@ -110,16 +110,20 @@ defmodule Adbc.Column do
   """
   @spec new(list(), Keyword.t()) :: t()
   def new(data, opts \\ []) when is_list(data) and is_list(opts) do
-    type = infer_type(data, nil)
+    case infer_type(data, nil) do
+      {:struct, keys} ->
+        encode_struct(keys, data, opts)
 
-    %Adbc.Column{
-      field: %Adbc.Field{
-        name: opts[:name],
-        type: type
-      },
-      data: encode_data(type, data),
-      size: length(data)
-    }
+      type ->
+        %Adbc.Column{
+          field: %Adbc.Field{
+            name: opts[:name],
+            type: type
+          },
+          data: encode_data(type, data),
+          size: length(data)
+        }
+    end
   end
 
   defp encode_data(:boolean, data), do: encode_boolean(data)
@@ -254,6 +258,27 @@ defmodule Adbc.Column do
       _ ->
         raise ArgumentError,
               "mixed types in column: got NaiveDateTime but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([%{} = map | rest], type) when not is_struct(map) do
+    keys = map |> Map.keys() |> Enum.map(&to_string/1)
+    keys = if length(keys) >= 32, do: Enum.sort(keys), else: keys
+
+    case type do
+      nil ->
+        infer_type(rest, {:struct, keys})
+
+      {:struct, ^keys} ->
+        infer_type(rest, {:struct, keys})
+
+      {:struct, other_keys} ->
+        raise ArgumentError,
+              "mixed struct keys in column: got #{inspect(keys)} but previously saw #{inspect(other_keys)}"
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got map but previously saw #{inspect(type)}"
     end
   end
 
@@ -1400,6 +1425,41 @@ defmodule Adbc.Column do
       integer when is_integer(integer) ->
         integer
     end)
+  end
+
+  defp encode_struct(keys, data, opts) do
+    {per_key_values, validity, bit_offset} =
+      Enum.reduce(data, {Map.new(keys, fn k -> {k, []} end), <<>>, 0}, fn
+        nil, {cols, bitmap, pending} ->
+          cols = Map.new(cols, fn {k, vs} -> {k, [nil | vs]} end)
+          {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+          {cols, bitmap, pending}
+
+        %{} = row, {cols, bitmap, pending} ->
+          cols = Map.new(cols, fn {k, vs} -> {k, [Map.get(row, k) | vs]} end)
+          {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+          {cols, bitmap, pending}
+      end)
+
+    {_data, validity, bit_offset} = bitmap_finish(<<>>, validity, bit_offset)
+
+    children =
+      Enum.map(keys, fn key ->
+        values = per_key_values |> Map.fetch!(key) |> Enum.reverse()
+        new(values, name: key)
+      end)
+
+    child_fields = Enum.map(children, & &1.field)
+    child_data = Enum.map(children, & &1.data)
+
+    %Adbc.Column{
+      field: %Adbc.Field{
+        name: opts[:name],
+        type: {:struct, child_fields}
+      },
+      data: %Adbc.StructData{validity: validity, bit_offset: bit_offset, values: child_data},
+      size: length(data)
+    }
   end
 
   defp encode_integer(integer) when is_integer(integer), do: integer

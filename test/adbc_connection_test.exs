@@ -1223,7 +1223,11 @@ defmodule Adbc.ConnectionTest do
     test "bulk inserts from IPC stream", %{db: db} do
       conn = start_supervised!({Connection, database: db})
       Connection.query!(conn, "CREATE TABLE ipc_source (id BIGINT, name VARCHAR)")
-      Connection.query!(conn, "INSERT INTO ipc_source VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')")
+
+      Connection.query!(
+        conn,
+        "INSERT INTO ipc_source VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')"
+      )
 
       {:ok, ipc_data} =
         Connection.query_pointer(conn, "SELECT * FROM ipc_source ORDER BY id", fn stream ->
@@ -1377,7 +1381,11 @@ defmodule Adbc.ConnectionTest do
     test "IPC stream-based ingest", %{db: db} do
       conn = start_supervised!({Connection, database: db})
       Connection.query!(conn, "CREATE TABLE ipc_ingest_source (id BIGINT, code VARCHAR)")
-      Connection.query!(conn, "INSERT INTO ipc_ingest_source VALUES (10, 'X'), (20, 'Y'), (30, 'Z')")
+
+      Connection.query!(
+        conn,
+        "INSERT INTO ipc_ingest_source VALUES (10, 'X'), (20, 'Y'), (30, 'Z')"
+      )
 
       {:ok, ipc_data} =
         Connection.query_pointer(conn, "SELECT * FROM ipc_ingest_source ORDER BY id", fn stream ->

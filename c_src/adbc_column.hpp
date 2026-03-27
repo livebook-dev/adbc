@@ -439,6 +439,109 @@ int do_get_list_interval(ErlNifEnv *env, ERL_NIF_TERM list, ArrowType nanoarrow_
     return do_get_buffer_datas(env, list, element_bytes, array_out, schema_out, error_out);
 }
 
+int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM type_term, ERL_NIF_TERM data_term, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
+    // type_term is {:struct, [%Adbc.Field{}, ...]}
+    // data_term is %Adbc.StructData{validity: binary|nil, bit_offset: int, values: [child_data, ...]}
+
+    int arity;
+    const ERL_NIF_TERM *tuple_elems;
+    if (!enif_get_tuple(env, type_term, &arity, &tuple_elems) || arity != 2) {
+        snprintf(error_out->message, sizeof(error_out->message),
+            "struct type must be {:struct, [fields]}");
+        return 1;
+    }
+    ERL_NIF_TERM fields_list = tuple_elems[1];
+
+    ERL_NIF_TERM validity_term, bit_offset_term, values_term;
+    if (!enif_is_map(env, data_term) ||
+        !enif_get_map_value(env, data_term, kAtomValidity, &validity_term) ||
+        !enif_get_map_value(env, data_term, kAtomBitOffsetKey, &bit_offset_term) ||
+        !enif_get_map_value(env, data_term, kAtomValues, &values_term)) {
+        snprintf(error_out->message, sizeof(error_out->message),
+            "Expected struct data to be %%Adbc.StructData{} with validity, bit_offset, and values");
+        return 1;
+    }
+
+    unsigned n_children = 0;
+    if (!enif_get_list_length(env, fields_list, &n_children) || n_children == 0) {
+        snprintf(error_out->message, sizeof(error_out->message),
+            "struct type must have at least one field");
+        return 1;
+    }
+
+    NANOARROW_RETURN_NOT_OK(ArrowSchemaSetTypeStruct(schema_out, n_children));
+
+    // Build each child into its schema slot and collect child arrays
+    std::vector<nanoarrow::UniqueArray> child_arrays(n_children);
+    ERL_NIF_TERM field_head, field_tail = fields_list;
+    ERL_NIF_TERM value_head, value_tail = values_term;
+
+    for (unsigned i = 0; i < n_children; i++) {
+        if (!enif_get_list_cell(env, field_tail, &field_head, &field_tail) ||
+            !enif_get_list_cell(env, value_tail, &value_head, &value_tail)) {
+            snprintf(error_out->message, sizeof(error_out->message),
+                "struct fields and values lists have different lengths");
+            return 1;
+        }
+
+        ERL_NIF_TERM child_name_term, child_type_term, child_metadata_term;
+        if (!enif_is_map(env, field_head) ||
+            !enif_get_map_value(env, field_head, kAtomNameKey, &child_name_term) ||
+            !enif_get_map_value(env, field_head, kAtomTypeKey, &child_type_term)) {
+            snprintf(error_out->message, sizeof(error_out->message),
+                "Expected struct child to be %%Adbc.Field{} with name and type");
+            return 1;
+        }
+        if (!enif_get_map_value(env, field_head, kAtomMetadataKey, &child_metadata_term)) {
+            child_metadata_term = kAtomNil;
+        }
+
+        struct AdbcColumnNifTerm child_column;
+        child_column.is_nil = 0;
+        child_column.type_term = child_type_term;
+        child_column.data_term = value_head;
+        child_column.name_term = child_name_term;
+        child_column.metadata_term = child_metadata_term;
+        child_column.struct_name_term = kAtomAdbcFieldModule;
+        child_column.n_items = 0;
+
+        if (schema_out->children[i]->release) {
+            schema_out->children[i]->release(schema_out->children[i]);
+        }
+
+        struct ArrowSchema child_schema{};
+        int ret = adbc_column_to_adbc_field(env, &child_column, true, child_arrays[i].get(), &child_schema, error_out);
+        if (ret != 0) {
+            if (child_schema.release) child_schema.release(&child_schema);
+            return ret;
+        }
+        ArrowSchemaMove(&child_schema, schema_out->children[i]);
+    }
+
+    // Init array from the fully-populated schema
+    NANOARROW_RETURN_NOT_OK(ArrowArrayInitFromSchema(array_out, schema_out, error_out));
+    NANOARROW_RETURN_NOT_OK(ArrowArrayStartAppending(array_out));
+
+    int64_t child_length = (n_children > 0) ? child_arrays[0].get()->length : 0;
+    for (unsigned i = 0; i < n_children; i++) {
+        ArrowArrayMove(child_arrays[i].get(), array_out->children[i]);
+    }
+
+    // Apply struct-level validity bitmap
+    bool has_validity = !enif_is_identical(validity_term, kAtomNil);
+    if (has_validity) {
+        ErlNifBinary validity_bin;
+        int bit_offset = 0;
+        if (!enif_inspect_binary(env, validity_term, &validity_bin)) return 1;
+        if (!enif_get_int(env, bit_offset_term, &bit_offset)) return 1;
+        NANOARROW_RETURN_NOT_OK(copy_validity_bitmap(validity_bin.data, bit_offset, child_length, array_out));
+    }
+
+    array_out->length = child_length;
+    NANOARROW_RETURN_NOT_OK(ArrowArrayFinishBuildingDefault(array_out, error_out));
+    return 0;
+}
+
 int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term, ERL_NIF_TERM list, struct AdbcColumnType * column_type, struct ArrowArray* array_out, struct ArrowSchema* schema_out, struct ArrowError* error_out) {
     if (column_type == nullptr) {
         enif_snprintf(error_out->message, sizeof(error_out->message), "internal error: column_type is null in do_get_list:%d", __LINE__);
@@ -751,6 +854,8 @@ struct AdbcColumnType adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF
                         ret.arrow_type = NANOARROW_TYPE_LIST;
                     } else if (enif_is_identical(tuple[0], kAdbcColumnTypeLargeList)) {
                         ret.arrow_type = NANOARROW_TYPE_LARGE_LIST;
+                    } else if (enif_is_identical(tuple[0], kAdbcColumnTypeStruct)) {
+                        ret.arrow_type = NANOARROW_TYPE_STRUCT;
                     } else if (enif_is_identical(tuple[0], kAtomFixedSizeBinary)) {
                         int32_t fixed_size;
                         if (erlang::nif::get(env, tuple[1], &fixed_size)) {
@@ -949,6 +1054,8 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm * column,
         ret = do_get_list_decimal(env, data_term, column_type.arrow_type, column_type.bits, column_type.precision, column_type.scale, array_out, schema_out, error_out);
     } else if (column_type.arrow_type == NANOARROW_TYPE_DICTIONARY) {
         ret = do_get_dictionary(env, column->type_term, data_term, array_out, schema_out, error_out);
+    } else if (column_type.arrow_type == NANOARROW_TYPE_STRUCT) {
+        ret = do_get_struct(env, column->type_term, data_term, array_out, schema_out, error_out);
     }
 
     if (ret == kErrorBufferUnknownType) {

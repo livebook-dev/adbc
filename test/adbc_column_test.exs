@@ -123,6 +123,41 @@ defmodule Adbc.ColumnTest do
       end
     end
 
+    test "structs" do
+      col = Adbc.Column.new([%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}])
+
+      assert {:struct, fields} = col.field.type
+      assert [%Adbc.Field{name: "x", type: :s64}, %Adbc.Field{name: "y", type: :string}] = fields
+
+      assert Adbc.Column.to_list(col) == [
+               %{"x" => 1, "y" => "a"},
+               %{"x" => 2, "y" => "b"}
+             ]
+    end
+
+    test "structs with nils" do
+      col = Adbc.Column.new([%{"x" => 1}, nil, %{"x" => 3}])
+      assert {:struct, _} = col.field.type
+
+      assert Adbc.Column.to_list(col) == [
+               %{"x" => 1},
+               nil,
+               %{"x" => 3}
+             ]
+    end
+
+    test "structs with mixed child types" do
+      col = Adbc.Column.new([%{"x" => 1}, %{"x" => 2.0}])
+      assert {:struct, [%Adbc.Field{name: "x", type: :f64}]} = col.field.type
+      assert Adbc.Column.to_list(col) == [%{"x" => 1.0}, %{"x" => 2.0}]
+    end
+
+    test "structs raise on mismatched keys" do
+      assert_raise ArgumentError, ~r/mixed struct keys/, fn ->
+        Adbc.Column.new([%{"x" => 1}, %{"y" => 2}])
+      end
+    end
+
     test "unsupported types raise" do
       assert_raise ArgumentError, ~r"cannot infer type", fn ->
         Adbc.Column.new([Decimal.new("1.23")])

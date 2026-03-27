@@ -20,32 +20,46 @@ defmodule Adbc.DuckDBTest do
   end
 
   test "structs", %{conn: conn} do
-    assert %Adbc.Result{
-             data: [
-               [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "struct_pack(col1 := 1, col2 := 2)",
-                     type:
-                       {:struct,
-                        [
-                          %Adbc.Field{
-                            name: "col1",
-                            type: :s32,
-                            metadata: nil
-                          },
-                          %Adbc.Field{
-                            name: "col2",
-                            type: :s32,
-                            metadata: nil
-                          }
-                        ]}
-                   }
+    Connection.query!(conn, "CREATE TABLE structs (id BIGINT, info STRUCT(x BIGINT, y VARCHAR))")
+
+    columns = [
+      Adbc.Column.s64([1, 2, 3], name: "id"),
+      Adbc.Column.new(
+        [%{"x" => 10, "y" => "a"}, %{"x" => 20, "y" => "b"}, nil],
+        name: "info"
+      )
+    ]
+
+    assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "structs", mode: :append)
+
+    {:ok, result} = Connection.query(conn, "SELECT * FROM structs ORDER BY id")
+
+    assert %{
+             "id" => [%Adbc.Column{field: %Adbc.Field{name: "id", type: :s64}}],
+             "info" => [
+               %Adbc.Column{
+                 field: %Adbc.Field{
+                   name: "info",
+                   type:
+                     {:struct,
+                      [
+                        %Adbc.Field{name: "x", type: :s64},
+                        %Adbc.Field{name: "y", type: :string}
+                      ]}
                  }
-               ]
-             ],
-             num_rows: nil
-           } = Adbc.Connection.query!(conn, "SELECT struct_pack(col1 := 1, col2 := 2)")
+               }
+             ]
+           } = Adbc.Result.to_columns(result)
+
+    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+
+    assert map["id"] == [1, 2, 3]
+
+    assert map["info"] == [
+             %{"x" => 10, "y" => "a"},
+             %{"x" => 20, "y" => "b"},
+             nil
+           ]
   end
 
   test "decimal128", %{conn: conn} do
