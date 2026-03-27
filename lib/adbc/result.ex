@@ -187,6 +187,14 @@ defmodule Adbc.Result do
   @doc """
   Returns a map of columns as a result.
   """
+  def to_map(%Adbc.Result{data: [single_batch]}) do
+    # Fast path for single-batch results (the common case).
+    # Avoids Enum.zip_with + Enum.flat_map overhead.
+    Map.new(single_batch, fn %{field: %{name: name}} = col ->
+      {name, col |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
+    end)
+  end
+
   def to_map(%Adbc.Result{data: batches}) do
     batches
     |> Enum.zip_with(fn [%{field: %{name: name}} | _] = columns ->

@@ -1694,9 +1694,13 @@ defmodule Adbc.Column do
 
   def to_list(%Adbc.Column{
         field: %{type: :date32},
-        data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+        data: %Adbc.BufferData{data: binary, validity: validity, bit_offset: bit_offset}
       }) do
-    decode_signed_32(binary, bitmap, bit_offset, &days_to_date/1)
+    if all_valid?(validity) do
+      decode_date32_plain(binary)
+    else
+      decode_signed_32(binary, validity, bit_offset, &days_to_date/1)
+    end
   end
 
   def to_list(%Adbc.Column{
@@ -1769,6 +1773,29 @@ defmodule Adbc.Column do
     decode_signed_256(binary, bitmap, bit_offset, &coef_to_decimal(&1, scale))
   end
 
+  # Fast path: integer types with no nulls — skip bitmap check and decoder closure.
+  # DuckDB always sends validity bitmaps (even when all valid), so we check
+  # if all bytes are 0xFF to trigger the fast path.
+  for {type, specifier} <- [
+        s8: quote(do: signed - integer - little - 8),
+        s16: quote(do: signed - integer - little - 16),
+        s32: quote(do: signed - integer - little - 32),
+        s64: quote(do: signed - integer - little - 64),
+        u8: quote(do: unsigned - integer - little - 8),
+        u16: quote(do: unsigned - integer - little - 16),
+        u32: quote(do: unsigned - integer - little - 32),
+        u64: quote(do: unsigned - integer - little - 64)
+      ] do
+    fast_name = :"decode_#{type}_plain"
+
+    defp unquote(fast_name)(<<int::unquote(specifier), rest::binary>>) do
+      [int | unquote(fast_name)(rest)]
+    end
+
+    defp unquote(fast_name)(<<>>), do: []
+  end
+
+  # Integer types: dispatch to fast or generic path
   for {type, decode_fun} <- [
         s8: :decode_signed_8,
         s16: :decode_signed_16,
@@ -1779,24 +1806,31 @@ defmodule Adbc.Column do
         u32: :decode_unsigned_32,
         u64: :decode_unsigned_64
       ] do
+    fast_name = :"decode_#{type}_plain"
+
     def to_list(%Adbc.Column{
           field: %{type: unquote(type)},
-          data: %Adbc.BufferData{data: binary, validity: bitmap, bit_offset: bit_offset}
+          data: %Adbc.BufferData{data: binary, validity: validity, bit_offset: bit_offset}
         }) do
-      unquote(decode_fun)(binary, bitmap, bit_offset, &Function.identity/1)
+      if all_valid?(validity) do
+        unquote(fast_name)(binary)
+      else
+        unquote(decode_fun)(binary, validity, bit_offset, &Function.identity/1)
+      end
     end
   end
 
-  def to_list(%Adbc.Column{field: %{type: :f16}, data: %Adbc.BufferData{} = buffer}) do
-    decode_float_16(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  # Float types: dispatch to fast or generic path
+  def to_list(%Adbc.Column{field: %{type: :f16}, data: %Adbc.BufferData{} = b}) do
+    if all_valid?(b.validity), do: decode_float_16_plain(b.data), else: decode_float_16(b.data, b.validity, b.bit_offset, 0)
   end
 
-  def to_list(%Adbc.Column{field: %{type: :f32}, data: %Adbc.BufferData{} = buffer}) do
-    decode_float_32(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  def to_list(%Adbc.Column{field: %{type: :f32}, data: %Adbc.BufferData{} = b}) do
+    if all_valid?(b.validity), do: decode_float_32_plain(b.data), else: decode_float_32(b.data, b.validity, b.bit_offset, 0)
   end
 
-  def to_list(%Adbc.Column{field: %{type: :f64}, data: %Adbc.BufferData{} = buffer}) do
-    decode_float_64(buffer.data, buffer.validity, buffer.bit_offset, 0)
+  def to_list(%Adbc.Column{field: %{type: :f64}, data: %Adbc.BufferData{} = b}) do
+    if all_valid?(b.validity), do: decode_float_64_plain(b.data), else: decode_float_64(b.data, b.validity, b.bit_offset, 0)
   end
 
   def to_list(%Adbc.Column{
@@ -1810,24 +1844,22 @@ defmodule Adbc.Column do
     decode_boolean(buffer.data, buffer.validity, buffer.bit_offset, buffer.size, 0)
   end
 
-  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = binary_data})
+  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = b})
       when type in [:string, :binary] do
-    decode_string_32(
-      binary_data.offsets,
-      binary_data.data,
-      binary_data.validity,
-      binary_data.bit_offset
-    )
+    if all_valid?(b.validity) do
+      decode_string_32_plain(b.offsets, b.data)
+    else
+      decode_string_32(b.offsets, b.data, b.validity, b.bit_offset)
+    end
   end
 
-  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = binary_data})
+  def to_list(%Adbc.Column{field: %{type: type}, data: %Adbc.BinaryData{} = b})
       when type in [:large_string, :large_binary] do
-    decode_string_64(
-      binary_data.offsets,
-      binary_data.data,
-      binary_data.validity,
-      binary_data.bit_offset
-    )
+    if all_valid?(b.validity) do
+      decode_string_64_plain(b.offsets, b.data)
+    else
+      decode_string_64(b.offsets, b.data, b.validity, b.bit_offset)
+    end
   end
 
   def to_list(%Adbc.Column{field: %{type: type}, data: data})
@@ -1980,6 +2012,31 @@ defmodule Adbc.Column do
     end
   end
 
+  # Fast-path float decoders: no validity bitmap
+  for {name, size, infinity, neg_infinity} <- [
+        {:decode_float_16_plain, 16, 0x7C00, 0xFC00},
+        {:decode_float_32_plain, 32, 0x7F800000, 0xFF800000},
+        {:decode_float_64_plain, 64, 0x7FF0000000000000, 0xFFF0000000000000}
+      ] do
+    defp unquote(name)(<<n::float-native-size(unquote(size)), rest::binary>>) do
+      [n | unquote(name)(rest)]
+    end
+
+    defp unquote(name)(<<unquote(infinity)::unsigned-integer-native-size(unquote(size)), rest::binary>>) do
+      [:infinity | unquote(name)(rest)]
+    end
+
+    defp unquote(name)(<<unquote(neg_infinity)::unsigned-integer-native-size(unquote(size)), rest::binary>>) do
+      [:neg_infinity | unquote(name)(rest)]
+    end
+
+    defp unquote(name)(<<_::unsigned-integer-native-size(unquote(size)), rest::binary>>) do
+      [:nan | unquote(name)(rest)]
+    end
+
+    defp unquote(name)(<<>>), do: []
+  end
+
   for {name, specifier} <- [
         decode_list_32: quote(do: signed - integer - little - 32),
         decode_list_64: quote(do: signed - integer - little - 64)
@@ -2093,6 +2150,39 @@ defmodule Adbc.Column do
       end
 
     [value | decode_boolean(data, validity, bit_offset, count, index + 1)]
+  end
+
+  # Fast-path string decoders: no validity bitmap
+  for {name, offset_specifier} <- [
+        decode_string_32_plain: quote(do: signed - integer - little - 32),
+        decode_string_64_plain: quote(do: signed - integer - little - 64)
+      ] do
+    defp unquote(name)(offsets, data) do
+      <<first::unquote(offset_specifier), rest::binary>> = offsets
+      unquote(name)(rest, data, first)
+    end
+
+    defp unquote(name)(<<next::unquote(offset_specifier), rest::binary>>, data, prev) do
+      [binary_part(data, prev, next - prev) | unquote(name)(rest, data, next)]
+    end
+
+    defp unquote(name)(<<>>, _data, _prev), do: []
+  end
+
+  # Fast-path date32 decoder: no validity bitmap
+  defp decode_date32_plain(<<days::signed-integer-little-32, rest::binary>>) do
+    [days_to_date(days) | decode_date32_plain(rest)]
+  end
+
+  defp decode_date32_plain(<<>>), do: []
+
+  # Check if a validity bitmap indicates all values are valid.
+  # DuckDB always sends bitmaps (even for non-null columns), so we compare
+  # against an all-0xFF bitmap. O(1) via binary comparison.
+  @compile {:inline, all_valid?: 1}
+  defp all_valid?(nil), do: true
+  defp all_valid?(bitmap) when is_binary(bitmap) do
+    bitmap == :binary.copy(<<255>>, byte_size(bitmap))
   end
 
   @compile {:inline, bitmap_valid?: 3}
