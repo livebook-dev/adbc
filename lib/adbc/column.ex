@@ -129,6 +129,7 @@ defmodule Adbc.Column do
   defp encode_data(:date32, data), do: encode_date32(data)
   defp encode_data({:time64, unit}, data), do: encode_time(data, unit, 64)
   defp encode_data({:timestamp, unit, _timezone}, data), do: encode_timestamp(data, unit)
+  defp encode_data({:struct, fields}, data), do: encode_struct(fields, data)
 
   @float_atoms [:nan, :infinity, :neg_infinity]
 
@@ -257,8 +258,34 @@ defmodule Adbc.Column do
     end
   end
 
+  defp infer_type([%{} = map | rest], type) when not is_struct(map) do
+    inferred = infer_struct_type(map)
+
+    case type do
+      nil ->
+        infer_type(rest, inferred)
+
+      {:struct, _} ->
+        infer_type(rest, type)
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got map but previously saw #{inspect(type)}"
+    end
+  end
+
   defp infer_type([value | _rest], _type) do
     raise ArgumentError, "cannot infer type for value in column: #{inspect(value)}"
+  end
+
+  defp infer_struct_type(map) when is_map(map) do
+    fields =
+      Enum.map(map, fn {key, value} ->
+        child_type = infer_type([value], nil)
+        Adbc.Field.new(child_type, name: to_string(key))
+      end)
+
+    {:struct, fields}
   end
 
   @doc """
@@ -1227,6 +1254,37 @@ defmodule Adbc.Column do
       data: %Adbc.DictionaryData{key: key.data, value: value.data},
       size: key.size
     }
+  end
+
+  defp encode_struct(fields, data) do
+    keys = Enum.map(fields, & &1.name)
+
+    # Transpose rows into per-field value lists and track validity
+    {per_field_values, validity, bit_offset} =
+      Enum.reduce(data, {Map.new(keys, fn k -> {k, []} end), <<>>, 0}, fn
+        nil, {cols, bitmap, pending} ->
+          # Null struct row — append nil to each child
+          cols = Map.new(cols, fn {k, vs} -> {k, [nil | vs]} end)
+          {bitmap, pending} = bitmap_mark_null(bitmap, pending)
+          {cols, bitmap, pending}
+
+        %{} = row, {cols, bitmap, pending} ->
+          cols = Map.new(cols, fn {k, vs} -> {k, [Map.get(row, k) | vs]} end)
+          {bitmap, pending} = bitmap_mark_valid(bitmap, pending)
+          {cols, bitmap, pending}
+      end)
+
+    {_data, validity, bit_offset} = bitmap_finish(<<>>, validity, bit_offset)
+
+    # Encode each child field's values
+    child_data =
+      Enum.map(fields, fn field ->
+        values = per_field_values |> Map.fetch!(field.name) |> Enum.reverse()
+        child = new(values, name: field.name)
+        child.data
+      end)
+
+    %Adbc.StructData{validity: validity, bit_offset: bit_offset, values: child_data}
   end
 
   defp encode_list(data, offset_size) do

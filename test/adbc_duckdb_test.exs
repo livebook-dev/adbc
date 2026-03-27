@@ -277,6 +277,105 @@ defmodule Adbc.DuckDBTest do
     assert map["iv_col"] == [{14, 3, 1_000_000_000}, {0, 0, 0}, nil]
   end
 
+  describe "Elixir-built struct columns" do
+    test "Column.new infers struct type from maps", %{conn: conn} do
+      col = Adbc.Column.new(
+        [%{"x" => 1, "y" => "a"}, %{"x" => 2, "y" => "b"}],
+        name: "s"
+      )
+
+      assert {:struct, fields} = col.field.type
+      assert length(fields) == 2
+      assert Enum.any?(fields, &(&1.name == "x"))
+      assert Enum.any?(fields, &(&1.name == "y"))
+    end
+
+    test "bulk_insert and read back", %{conn: conn} do
+      struct_col = Adbc.Column.new(
+        [%{"name" => "Alice", "age" => 30}, %{"name" => "Bob", "age" => 25}],
+        name: "info"
+      )
+
+      columns = [Adbc.Column.s64([1, 2], name: "id"), struct_col]
+      assert {:ok, 2} = Connection.bulk_insert(conn, columns, table: "struct_insert")
+
+      {:ok, result} = Connection.query(conn, "SELECT id, info FROM struct_insert ORDER BY id")
+      map = Adbc.Result.to_map(Adbc.Result.materialize(result))
+      assert map["id"] == [1, 2]
+      assert [%{"name" => "Alice", "age" => 30}, %{"name" => "Bob", "age" => 25}] = map["info"]
+    end
+
+    test "with null struct rows", %{conn: conn} do
+      struct_col = Adbc.Column.new(
+        [%{"val" => 10}, nil, %{"val" => 30}],
+        name: "s"
+      )
+
+      columns = [Adbc.Column.s64([1, 2, 3], name: "id"), struct_col]
+      assert {:ok, 3} = Connection.bulk_insert(conn, columns, table: "struct_nulls")
+
+      {:ok, result} = Connection.query(conn, "SELECT id, s FROM struct_nulls ORDER BY id")
+      map = Adbc.Result.to_map(Adbc.Result.materialize(result))
+      assert [%{"val" => 10}, nil, %{"val" => 30}] = map["s"]
+    end
+
+    test "to_py round-trip for Elixir-built structs", %{conn: conn} do
+      struct_col = Adbc.Column.new(
+        [%{"a" => 1, "b" => "x"}, %{"a" => 2, "b" => "y"}],
+        name: "s"
+      )
+
+      assert {:ok, 2} = Connection.bulk_insert(conn, [struct_col], table: "struct_to_py")
+
+      {:ok, result} = Connection.query(conn, "SELECT * FROM struct_to_py")
+      result = Adbc.Result.materialize(result)
+      {:ok, py_table} = Adbc.Result.to_py(result)
+
+      {:ok, round_tripped} = Adbc.Result.from_py(py_table)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(round_tripped))
+      assert [%{"a" => 1, "b" => "x"}, %{"a" => 2, "b" => "y"}] = map["s"]
+    end
+
+    test "Elixir → DuckDB → Python → Elixir round-trip", %{conn: conn} do
+      # Build struct in Elixir
+      original = [%{"name" => "Alice", "score" => 95}, %{"name" => "Bob", "score" => 87}]
+      col = Adbc.Column.new(original, name: "person")
+
+      # Ingest into DuckDB
+      assert {:ok, 2} = Connection.bulk_insert(conn, [col], table: "struct_roundtrip")
+
+      # Query back from DuckDB
+      {:ok, from_db} = Connection.query(conn, "SELECT * FROM struct_roundtrip")
+      from_db = Adbc.Result.materialize(from_db)
+
+      # Export to Python
+      {:ok, py_table} = Adbc.Result.to_py(from_db)
+
+      # Verify in Python
+      {_, globals} = Pythonx.eval("rows = table.to_pylist()", %{"table" => py_table})
+      py_rows = Pythonx.decode(globals["rows"])
+      assert length(py_rows) == 2
+      assert hd(py_rows)["person"]["name"] == "Alice"
+
+      # Import back from Python
+      {:ok, from_py} = Adbc.Result.from_py(py_table)
+      map = Adbc.Result.to_map(Adbc.Result.materialize(from_py))
+      assert [%{"name" => "Alice", "score" => 95}, %{"name" => "Bob", "score" => 87}] = map["person"]
+    end
+
+    test "Column.new rejects mixed map and non-map types" do
+      assert_raise ArgumentError, ~r/mixed types/, fn ->
+        Adbc.Column.new([%{"x" => 1}, 42])
+      end
+    end
+
+    test "Column.new with all-nil struct column still works" do
+      col = Adbc.Column.new([nil, nil, nil])
+      # All nils infers as string (default) — not struct
+      assert col.field.type == :string
+    end
+  end
+
   describe "stream to IPC" do
     test "struct columns via stream", %{conn: conn} do
       {:ok, ipc} =
