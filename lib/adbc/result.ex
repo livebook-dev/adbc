@@ -67,6 +67,23 @@ defmodule Adbc.StreamResult do
       {:error, reason} -> raise reason
     end
   end
+
+  @doc """
+  Dump the stream to in-memory IPC stream data.
+
+  The stream can only be consumed once. Raises if the stream
+  has already been consumed.
+  """
+  @spec to_ipc_stream(t()) :: binary
+  def to_ipc_stream(%Adbc.StreamResult{ref: ref}) do
+    case Adbc.Nif.adbc_ipc_dump_stream_ref(ref) do
+      {:ok, data} ->
+        data
+
+      {:error, reason} ->
+        raise Adbc.Helper.error_to_exception(reason)
+    end
+  end
 end
 
 defmodule Adbc.IngestResult do
@@ -146,20 +163,6 @@ defmodule Adbc.Result do
     case from_ipc_stream(data) do
       {:ok, result} -> result
       {:error, reason} -> raise reason
-    end
-  end
-
-  @doc """
-  Dump an `Adbc.Result` to in-memory IPC stream data.
-  """
-  @spec to_ipc_stream(t()) :: binary
-  def to_ipc_stream(%Adbc.Result{data: batches}) when is_list(batches) do
-    case Adbc.Nif.adbc_ipc_dump_stream_binary(batches) do
-      {:error, reason} ->
-        raise error_to_exception(reason)
-
-      {:ok, data} ->
-        data
     end
   end
 

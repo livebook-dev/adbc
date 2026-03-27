@@ -1222,22 +1222,16 @@ defmodule Adbc.ConnectionTest do
 
     test "bulk inserts from IPC stream", %{db: db} do
       conn = start_supervised!({Connection, database: db})
+      Connection.query!(conn, "CREATE TABLE ipc_source (id BIGINT, name VARCHAR)")
+      Connection.query!(conn, "INSERT INTO ipc_source VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')")
 
-      # Build IPC stream data from columns
-      result = %Adbc.Result{
-        data: [
-          [
-            Adbc.Column.s64([1, 2, 3], name: "id"),
-            Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
-          ]
-        ],
-        num_rows: 3
-      }
+      {:ok, ipc_data} =
+        Connection.query_pointer(conn, "SELECT * FROM ipc_source ORDER BY id", fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
 
-      ipc_data = Adbc.Result.to_ipc_stream(result)
-      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(ipc_data)
-
-      assert {:ok, 3} = Connection.bulk_insert(conn, stream, table: "ipc_users")
+      {:ok, reloaded} = Adbc.StreamResult.from_ipc_stream(ipc_data)
+      assert {:ok, 3} = Connection.bulk_insert(conn, reloaded, table: "ipc_users")
 
       {:ok, verify} = Connection.query(conn, "SELECT * FROM ipc_users ORDER BY id")
       map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
@@ -1382,22 +1376,17 @@ defmodule Adbc.ConnectionTest do
 
     test "IPC stream-based ingest", %{db: db} do
       conn = start_supervised!({Connection, database: db})
+      Connection.query!(conn, "CREATE TABLE ipc_ingest_source (id BIGINT, code VARCHAR)")
+      Connection.query!(conn, "INSERT INTO ipc_ingest_source VALUES (10, 'X'), (20, 'Y'), (30, 'Z')")
 
-      # Build IPC stream data from columns
-      result = %Adbc.Result{
-        data: [
-          [
-            Adbc.Column.s64([10, 20, 30], name: "id"),
-            Adbc.Column.string(["X", "Y", "Z"], name: "code")
-          ]
-        ],
-        num_rows: 3
-      }
+      {:ok, ipc_data} =
+        Connection.query_pointer(conn, "SELECT * FROM ipc_ingest_source ORDER BY id", fn stream ->
+          Adbc.StreamResult.to_ipc_stream(stream)
+        end)
 
-      ipc_data = Adbc.Result.to_ipc_stream(result)
-      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(ipc_data)
+      {:ok, reloaded} = Adbc.StreamResult.from_ipc_stream(ipc_data)
 
-      assert {:ok, %Adbc.IngestResult{} = ingest_result} = Connection.ingest(conn, stream)
+      assert {:ok, %Adbc.IngestResult{} = ingest_result} = Connection.ingest(conn, reloaded)
       assert ingest_result.num_rows == 3
 
       {:ok, verify} =

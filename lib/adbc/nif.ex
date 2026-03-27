@@ -76,7 +76,7 @@ defmodule Adbc.Nif do
 
   def adbc_ipc_load_stream_binary(_binary), do: :erlang.nif_error(:not_loaded)
 
-  def adbc_ipc_dump_stream_binary(_data), do: :erlang.nif_error(:not_loaded)
+  def adbc_ipc_dump_stream_ref(_stream_ref), do: :erlang.nif_error(:not_loaded)
 
   def adbc_delete_on_gc_new(_pid, _table_name), do: :erlang.nif_error(:not_loaded)
 end

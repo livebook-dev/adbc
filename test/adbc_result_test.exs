@@ -174,13 +174,18 @@ defmodule Adbc.ResultTest do
   end
 
   describe "to_ipc_stream" do
-    test "dumps columns as in-memory IPC format data" do
-      result = %Adbc.Result{
-        data: [[Adbc.Column.s64([1, 2, 3]), Adbc.Column.f32([1.1, 2.2, 3.3])]],
-        num_rows: 3
-      }
+    test "dumps stream as in-memory IPC format data" do
+      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(@iris_ipc_stream)
+      assert is_binary(Adbc.StreamResult.to_ipc_stream(stream))
+    end
 
-      assert is_binary(Result.to_ipc_stream(result))
+    test "raises when stream is consumed twice" do
+      {:ok, stream} = Adbc.StreamResult.from_ipc_stream(@iris_ipc_stream)
+      assert is_binary(Adbc.StreamResult.to_ipc_stream(stream))
+
+      assert_raise ArgumentError, "stream has already been consumed", fn ->
+        Adbc.StreamResult.to_ipc_stream(stream)
+      end
     end
   end
 end

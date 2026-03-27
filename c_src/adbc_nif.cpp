@@ -875,96 +875,51 @@ static ERL_NIF_TERM adbc_ipc_load_stream_binary(ErlNifEnv *env, int argc, const 
 }
 
 // argv[0] is a list of batches, each batch is a list of columns
-static ERL_NIF_TERM adbc_ipc_dump_stream_binary(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
-    if (!enif_is_list(env, argv[0])) {
-        return enif_make_badarg(env);
+static ERL_NIF_TERM adbc_ipc_dump_stream_ref(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+    using res_type = NifRes<struct ArrowArrayStream>;
+    ERL_NIF_TERM error{};
+
+    res_type * res = res_type::get_resource(env, argv[0], error);
+    if (res == nullptr) {
+        return error;
+    }
+    if (res->val.release == nullptr) {
+        return erlang::nif::error(env, "stream has already been consumed");
     }
 
-    AdbcStatusCode code{};
-    struct ArrowSchema schema{};
     struct ArrowError arrow_error{};
     nanoarrow::UniqueBuffer output;
-    nanoarrow::ipc::UniqueOutputStream stream;
-    code = ArrowIpcOutputStreamInitBuffer(stream.get(), output.get());
+    nanoarrow::ipc::UniqueOutputStream ostream;
+    int code = ArrowIpcOutputStreamInitBuffer(ostream.get(), output.get());
     if (code != NANOARROW_OK) {
-        return erlang::nif::error(env, "Failed to initialize Arrow IPC output stream and buffer");
+        return erlang::nif::error(env, "invalid Arrow IPC output stream");
     }
 
     nanoarrow::ipc::UniqueWriter writer;
-    code = ArrowIpcWriterInit(writer.get(), stream.get());
+    code = ArrowIpcWriterInit(writer.get(), ostream.get());
     if (code != NANOARROW_OK) {
-        return erlang::nif::error(env, "Failed to initialize Arrow IPC writer");
+        return erlang::nif::error(env, "invalid Arrow IPC writer");
     }
 
-    schema.release = nullptr;
-    bool schema_written = false;
-    ERL_NIF_TERM ret{};
+    code = ArrowIpcWriterWriteArrayStream(writer.get(), &res->val, &arrow_error);
 
-    ERL_NIF_TERM batch_head, batch_tail = argv[0];
-    while (enif_get_list_cell(env, batch_tail, &batch_head, &batch_tail)) {
-        nanoarrow::UniqueArray array;
-        if (adbc_column_to_arrow_type_struct(env, batch_head, array.get(), &schema, &arrow_error)) {
-            ret = erlang::nif::error(env, arrow_error.message);
-            goto cleanup;
-        }
-
-        if (!schema_written) {
-            code = ArrowIpcWriterWriteSchema(writer.get(), &schema, &arrow_error);
-            if (code != NANOARROW_OK) {
-                ret = nif_error_from_arrow_error(env, &arrow_error);
-                goto cleanup;
-            }
-            schema_written = true;
-        }
-
-        nanoarrow::UniqueArrayView array_view;
-        code = ArrowArrayViewInitFromSchema(array_view.get(), &schema, &arrow_error);
-        if (code != NANOARROW_OK) {
-            ret = nif_error_from_arrow_error(env, &arrow_error);
-            goto cleanup;
-        }
-
-        code = ArrowArrayViewSetArray(array_view.get(), array.get(), &arrow_error);
-        if (code != NANOARROW_OK) {
-            ret = nif_error_from_arrow_error(env, &arrow_error);
-            goto cleanup;
-        }
-
-        code = ArrowIpcWriterWriteArrayView(writer.get(), array_view.get(), &arrow_error);
-        if (code != NANOARROW_OK) {
-            ret = nif_error_from_arrow_error(env, &arrow_error);
-            goto cleanup;
-        }
-
-        // Release schema from this batch (will be rebuilt for next batch)
-        if (schema.release) {
-            schema.release(&schema);
-            schema.release = nullptr;
-        }
+    // Release the stream so it cannot be consumed again
+    if (res->val.release) {
+        res->val.release(&res->val);
     }
 
-    // write `nullptr` to end the stream
-    code = ArrowIpcWriterWriteArrayView(writer.get(), nullptr, &arrow_error);
     if (code != NANOARROW_OK) {
-        ret = nif_error_from_arrow_error(env, &arrow_error);
-        goto cleanup;
+        return nif_error_from_arrow_error(env, &arrow_error);
     }
 
-    {
-        ErlNifBinary binary;
-        if (!enif_alloc_binary(output->size_bytes, &binary)) {
-            ret = erlang::nif::error(env, "out of memory");
-            goto cleanup;
-        }
-
-        memcpy(binary.data, output->data, output->size_bytes);
-        ArrowIpcWriterReset(writer.get());
-        ret = erlang::nif::ok(env, enif_make_binary(env, &binary));
+    ErlNifBinary binary;
+    if (!enif_alloc_binary(output->size_bytes, &binary)) {
+        return erlang::nif::error(env, "out of memory");
     }
 
-cleanup:
-    if (schema.release) schema.release(&schema);
-    return ret;
+    memcpy(binary.data, output->data, output->size_bytes);
+    ArrowIpcWriterReset(writer.get());
+    return erlang::nif::ok(env, enif_make_binary(env, &binary));
 }
 
 static ERL_NIF_TERM adbc_ipc_system_endianness(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
@@ -1225,7 +1180,7 @@ static ErlNifFunc nif_functions[] = {
 
     {"adbc_ipc_system_endianness", 0, adbc_ipc_system_endianness, 0},
     {"adbc_ipc_load_stream_binary", 1, adbc_ipc_load_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
-    {"adbc_ipc_dump_stream_binary", 1, adbc_ipc_dump_stream_binary, ERL_NIF_DIRTY_JOB_CPU_BOUND},
+    {"adbc_ipc_dump_stream_ref", 1, adbc_ipc_dump_stream_ref, ERL_NIF_DIRTY_JOB_CPU_BOUND},
 };
 
 ERL_NIF_INIT(Elixir.Adbc.Nif, nif_functions, on_load, on_reload, on_upgrade, NULL);
