@@ -399,9 +399,10 @@ ERL_NIF_TERM get_arrow_run_end_encoded(ErlNifEnv *env, struct ArrowSchema * sche
 
 // Slice a validity bitmap at the given element offset, returning {validity_term, bit_offset}.
 // The bitmap is sliced to start at byte offset/8, with bit_offset = offset%8.
-static void slice_validity_bitmap(ErlNifEnv *env, const uint8_t *bitmap, int64_t offset, int64_t count, void* resource, ERL_NIF_TERM &validity_out, int &bit_offset_out) {
+// Returns nil if the bitmap is null or null_count is 0 (all values valid).
+static void slice_validity_bitmap(ErlNifEnv *env, const uint8_t *bitmap, int64_t offset, int64_t count, int64_t null_count, void* resource, ERL_NIF_TERM &validity_out, int &bit_offset_out) {
     bit_offset_out = (int)(offset % 8);
-    if (bitmap == nullptr) {
+    if (bitmap == nullptr || null_count == 0) {
         validity_out = kAtomNil;
     } else {
         size_t bitmap_start = offset / 8;
@@ -446,7 +447,7 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env, struct ArrowSchema * 
     const uint8_t * bitmap_buffer = (const uint8_t *)values->buffers[0];
     ERL_NIF_TERM validity_term;
     int bit_offset;
-    slice_validity_bitmap(env, bitmap_buffer, offset, count, resource, validity_term, bit_offset);
+    slice_validity_bitmap(env, bitmap_buffer, offset, count, values->null_count, resource, validity_term, bit_offset);
 
     // Offsets
     ERL_NIF_TERM offsets_term;
@@ -534,7 +535,7 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env, struct ArrowSchema * sche
 
     // Validity bitmap
     int bit_offset_int;
-    slice_validity_bitmap(env, bitmap_buffer, offset, count, resource, validity_term, bit_offset_int);
+    slice_validity_bitmap(env, bitmap_buffer, offset, count, values->null_count, resource, validity_term, bit_offset_int);
 
     // Offsets and sizes as raw binaries
     if (list_type == NANOARROW_TYPE_LIST) {
@@ -575,13 +576,9 @@ ERL_NIF_TERM make_binary_data(ErlNifEnv *env, struct ArrowArray * values, int64_
     ERL_NIF_TERM data_term = enif_make_resource_binary(env, resource, data_ptr + data_start, data_end - data_start);
 
     ERL_NIF_TERM validity_term;
-    ERL_NIF_TERM offset_term = enif_make_int(env, (int)offset);
-    if (validity_bitmap == nullptr) {
-        validity_term = kAtomNil;
-    } else {
-        size_t total_bitmap_bytes = (values->length + 7) / 8;
-        validity_term = enif_make_resource_binary(env, resource, validity_bitmap, total_bitmap_bytes);
-    }
+    int bit_offset;
+    slice_validity_bitmap(env, validity_bitmap, offset, count, values->null_count, resource, validity_term, bit_offset);
+    ERL_NIF_TERM offset_term = enif_make_int(env, bit_offset);
 
     std::vector<ERL_NIF_TERM> keys = {
         kAtomStructKey,
@@ -614,7 +611,7 @@ ERL_NIF_TERM make_buffer_data(ErlNifEnv *env, struct ArrowArray * values, int64_
 
     ERL_NIF_TERM validity_term;
     int bit_offset;
-    slice_validity_bitmap(env, validity_bitmap, offset, count, resource, validity_term, bit_offset);
+    slice_validity_bitmap(env, validity_bitmap, offset, count, values->null_count, resource, validity_term, bit_offset);
 
     std::vector<ERL_NIF_TERM> keys = {
         kAtomStructKey,
@@ -769,7 +766,6 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
             current_term = make_buffer_data(env, values, offset, count, sizeof(double), data_buffer_index, bitmap_buffer_index, resource);
         } else if (format[0] == 'b') {
             // NANOARROW_TYPE_BOOL
-            using value_type = bool;
             term_type = kAdbcColumnTypeBool;
             if (count == -1) count = values->length;
             if (count > values->length) count = values->length - offset;
@@ -785,7 +781,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
                 const uint8_t * validity_bitmap = (const uint8_t *)values->buffers[bitmap_buffer_index];
                 ERL_NIF_TERM validity_term;
                 int bit_offset_val;
-                slice_validity_bitmap(env, validity_bitmap, offset, count, resource, validity_term, bit_offset_val);
+                slice_validity_bitmap(env, validity_bitmap, offset, count, values->null_count, resource, validity_term, bit_offset_val);
 
                 std::vector<ERL_NIF_TERM> keys = {
                     kAtomStructKey, kAtomDataKey, kAtomValidity, kAtomBitOffsetKey, kAtomSizeKey,
@@ -848,7 +844,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema * schema, struct 
             const uint8_t * struct_bitmap = (const uint8_t *)values->buffers[0];
             ERL_NIF_TERM struct_validity_term;
             int struct_bit_offset;
-            slice_validity_bitmap(env, struct_bitmap, offset, count, resource, struct_validity_term, struct_bit_offset);
+            slice_validity_bitmap(env, struct_bitmap, offset, count, values->null_count, resource, struct_validity_term, struct_bit_offset);
 
             ERL_NIF_TERM values_list = enif_make_list_from_array(env, children.data(), (unsigned)children.size());
 
