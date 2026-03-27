@@ -370,4 +370,223 @@ defmodule Adbc.PythonxTest do
                [["foo", "bar"], ["baz", "foo", "bar"], ["bar", "baz"]]
     end
   end
+
+  describe "to_py" do
+    test "round-trips simple columns" do
+      result =
+        eval!("""
+        import pyarrow
+        n_legs = pyarrow.array([2, 4, 5, 100])
+        animals = pyarrow.array(["Flamingo", "Horse", "Brittle stars", "Centipede"])
+        names = ["n_legs", "animals"]
+        pyarrow.Table.from_arrays([n_legs, animals], names=names)
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+
+      {:ok, round_tripped} = Result.from_py(py_table)
+      round_tripped = Result.materialize(round_tripped)
+
+      assert %{
+               "n_legs" => [2, 4, 5, 100],
+               "animals" => ["Flamingo", "Horse", "Brittle stars", "Centipede"]
+             } == Result.to_map(round_tripped)
+    end
+
+    test "exports and verifies in Python" do
+      result =
+        eval!("""
+        import pyarrow
+        pyarrow.Table.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+
+      # Verify via Python that the table has the right shape and data
+      {row_count, _} = Pythonx.eval("len(table)", %{"table" => py_table})
+      assert Pythonx.decode(row_count) == 3
+
+      {col_names, _} = Pythonx.eval("table.column_names", %{"table" => py_table})
+      assert Pythonx.decode(col_names) == ["x", "y"]
+    end
+
+    test "round-trips nulls" do
+      result =
+        eval!("""
+        import pyarrow
+        pyarrow.Table.from_pydict({
+          "ints": [1, None, 3],
+          "strs": ["a", None, "c"],
+          "bools": [True, None, False],
+        })
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+      {:ok, round_tripped} = Result.from_py(py_table)
+      map = Result.to_map(Result.materialize(round_tripped))
+
+      assert map["ints"] == [1, nil, 3]
+      assert map["strs"] == ["a", nil, "c"]
+      assert map["bools"] == [true, nil, false]
+    end
+
+    test "round-trips struct columns" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array(
+          [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}],
+          type=pyarrow.struct([("x", pyarrow.int32()), ("y", pyarrow.string())])
+        )
+        pyarrow.Table.from_arrays([data], names=["structs"])
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+      {:ok, round_tripped} = Result.from_py(py_table)
+      round_tripped = Result.materialize(round_tripped)
+
+      assert Adbc.Column.to_list(hd(hd(round_tripped.data))) == [
+               %{"x" => 1, "y" => "a"},
+               %{"x" => 2, "y" => "b"}
+             ]
+    end
+
+    test "round-trips nested list columns via IPC" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([[1, 2], [3], None, [4, 5, 6]], type=pyarrow.list_(pyarrow.int32()))
+        pyarrow.Table.from_arrays([data], names=["lists"])
+        """)
+
+      # Verify the data survives Elixir materialization
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [[1, 2], [3], nil, [4, 5, 6]]
+
+      # IPC round-trip works for these types
+      ipc = Result.to_ipc_stream(result)
+      assert is_binary(ipc)
+
+      {_, globals} =
+        Pythonx.eval(
+          """
+          import pyarrow as pa
+          reader = pa.ipc.open_stream(pa.BufferReader(ipc))
+          table = reader.read_all()
+          col_val = table.column('lists').to_pylist()
+          """,
+          %{"ipc" => Pythonx.encode!(ipc)}
+        )
+
+      assert Pythonx.decode(globals["col_val"]) == [[1, 2], [3], nil, [4, 5, 6]]
+    end
+
+    test "round-trips diverse numeric types" do
+      result =
+        eval!("""
+        import pyarrow
+        pyarrow.Table.from_arrays([
+          pyarrow.array([1.5, 2.5], type=pyarrow.float32()),
+          pyarrow.array([100.0, 200.0], type=pyarrow.float64()),
+          pyarrow.array([True, False]),
+          pyarrow.array([127, -128], type=pyarrow.int8()),
+        ], names=["f32", "f64", "bool", "i8"])
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+
+      # Verify types preserved in Python
+      {schema_str, _} = Pythonx.eval("str(table.schema)", %{"table" => py_table})
+      schema = Pythonx.decode(schema_str)
+      assert schema =~ "float"
+      assert schema =~ "bool"
+      assert schema =~ "int8"
+
+      {:ok, round_tripped} = Result.from_py(py_table)
+      map = Result.to_map(Result.materialize(round_tripped))
+      assert map["bool"] == [true, false]
+      assert map["i8"] == [127, -128]
+
+      for {actual, expected} <- Enum.zip(map["f32"], [1.5, 2.5]) do
+        assert_in_delta actual, expected, 1.0e-5
+      end
+
+      for {actual, expected} <- Enum.zip(map["f64"], [100.0, 200.0]) do
+        assert_in_delta actual, expected, 1.0e-9
+      end
+    end
+
+    test "round-trips dictionary columns" do
+      result =
+        eval!("""
+        import pyarrow
+        indices = pyarrow.array([0, 1, 0, 2])
+        dictionary = pyarrow.array(["foo", "bar", "baz"])
+        data = pyarrow.DictionaryArray.from_arrays(indices, dictionary)
+        pyarrow.Table.from_arrays([data], names=["dict"])
+        """)
+
+      {:ok, py_table} = Result.to_py(result)
+      {:ok, round_tripped} = Result.from_py(py_table)
+      round_tripped = Result.materialize(round_tripped)
+
+      assert Adbc.Column.to_list(hd(hd(round_tripped.data))) == ["foo", "bar", "foo", "baz"]
+    end
+
+    test "raises on unmaterialized result" do
+      assert_raise ArgumentError, ~r/materialize/, fn ->
+        bad = %Adbc.Result{
+          data: [[%Adbc.Column{field: %Adbc.Field{name: "x", type: :s64}, data: make_ref()}]]
+        }
+
+        Result.to_py!(bad)
+      end
+    end
+
+    test "empty table round-trip" do
+      result =
+        eval!("""
+        import pyarrow
+        pyarrow.table({"x": pyarrow.array([], type=pyarrow.int32())})
+        """)
+
+      assert result.data == []
+
+      # to_py on an empty materialized result produces a valid pyarrow table
+      {:ok, py_table} = Result.to_py(result)
+      {num_cols, _} = Pythonx.eval("table.num_columns", %{"table" => py_table})
+      assert Pythonx.decode(num_cols) == 0
+    end
+
+    test "binary data round-trip" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([b"hello", b"world", None], type=pyarrow.binary())
+        pyarrow.table({"bin": data})
+        """)
+
+      assert Result.to_map(result) == %{"bin" => ["hello", "world", nil]}
+
+      {:ok, py_table} = Result.to_py(result)
+      {:ok, round_tripped} = Result.from_py(py_table)
+      map = Result.to_map(Result.materialize(round_tripped))
+      assert map["bin"] == ["hello", "world", nil]
+    end
+
+    test "all-null column round-trip" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array([None, None, None], type=pyarrow.int64())
+        pyarrow.table({"x": data})
+        """)
+
+      assert Result.to_map(result) == %{"x" => [nil, nil, nil]}
+
+      {:ok, py_table} = Result.to_py(result)
+      {:ok, round_tripped} = Result.from_py(py_table)
+      map = Result.to_map(Result.materialize(round_tripped))
+      assert map["x"] == [nil, nil, nil]
+    end
+  end
 end
