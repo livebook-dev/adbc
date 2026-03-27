@@ -181,6 +181,12 @@ defmodule Adbc.Result do
   @doc """
   Returns a map of columns as `Adbc.Column` without materializing them.
   """
+  def to_columns(%Adbc.Result{data: [batch]}) do
+    Map.new(batch, fn %{field: %{name: name}} = col ->
+      {name, [col]}
+    end)
+  end
+
   def to_columns(%Adbc.Result{data: batches}) do
     batches
     |> Enum.zip_with(fn [%{field: %{name: name}} | _] = columns -> {name, columns} end)
@@ -190,6 +196,12 @@ defmodule Adbc.Result do
   @doc """
   Returns a map of columns as a result.
   """
+  def to_map(%Adbc.Result{data: [batch]}) do
+    Map.new(batch, fn %{field: %{name: name}} = col ->
+      {name, col |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
+    end)
+  end
+
   def to_map(%Adbc.Result{data: batches}) do
     batches
     |> Enum.zip_with(fn [%{field: %{name: name}} | _] = columns ->
