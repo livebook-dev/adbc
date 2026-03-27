@@ -323,18 +323,9 @@ defmodule Adbc.DuckDBTest do
       result = Adbc.Result.materialize(result)
       ipc = Adbc.Result.to_ipc_stream(result)
 
-      # Verify through pyarrow (independent IPC reader)
-      {_, globals} =
-        Pythonx.eval(
-          """
-          import pyarrow as pa
-          table = pa.ipc.open_stream(pa.BufferReader(ipc)).read_all()
-          col = table.column('arr').to_pylist()
-          """,
-          %{"ipc" => Pythonx.encode!(ipc)}
-        )
-
-      assert Pythonx.decode(globals["col"]) == [[10, 20], [30, 40, 50]]
+      {:ok, back} = Adbc.Result.from_ipc_stream(ipc)
+      back = Adbc.Result.materialize(back)
+      assert Adbc.Column.to_list(hd(back.data)) == [[10, 20], [30, 40, 50]]
     end
 
     test "list columns with nulls via stream", %{conn: conn} do

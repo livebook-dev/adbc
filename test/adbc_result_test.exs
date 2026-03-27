@@ -224,8 +224,9 @@ defmodule Adbc.ResultTest do
 
       {:ok, stream_ref} = Adbc.Nif.adbc_columns_to_arrow_array_stream(columns)
       {:ok, ipc} = Adbc.Nif.adbc_arrow_array_stream_to_ipc(stream_ref)
-      assert is_binary(ipc)
-      assert byte_size(ipc) > 0
+      {:ok, result} = Result.from_ipc_stream(ipc)
+      result = Result.materialize(result)
+      assert Adbc.Column.to_list(hd(result.data)) == [[1, 2, 3], [4, 5]]
     end
 
     test "rejects unmaterialized columns" do
