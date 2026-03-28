@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.11.0
+
+#### Enhancements
+
+* Allow maps to be given to `Adbc.Column.new`
+* Optimize `Adbc.Column.to_list` when there is no validity
+* Add `Adbc.Connection.execute` which does not return a result set
+
+#### Backwards incompatible changes
+
+* Move `Adbc.Result.to_ipc_stream` to `Adbc.StreamResult.to_ipc_stream`
+
 ## v0.10.0
 
 #### Enhancements
