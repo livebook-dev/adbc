@@ -3,10 +3,11 @@
 # 2. Update version, CHANGELOG, commit, and push tag
 # 3. Once CI finishes, run MIX_ENV=prod mix elixir_make.checksum --all
 # 4. Publish to Hex with MIX_ENV=docs mix hex.publish
+# 5. Add -dev version back
 defmodule Adbc.MixProject do
   use Mix.Project
 
-  @version "0.11.0"
+  @version "0.11.1-dev"
   @github_url "https://github.com/elixir-explorer/adbc"
 
   def project do
