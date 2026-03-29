@@ -2,12 +2,11 @@
 #define ADBC_NIF_RESOURCE_HPP
 
 #include <arrow-adbc/adbc.h>
-#include <atomic>
 #include <erl_nif.h>
-#include <memory>
 #include <type_traits>
-#include "nif_utils.hpp"
+
 #include "adbc_arrow_array_stream_record.hpp"
+#include "nif_utils.hpp"
 
 // Only for debugging:
 #include <cstdio>
@@ -47,16 +46,18 @@ template <typename T> struct NifRes {
 
   val_type val;
 
-  // only used when T = struct 
-  void * private_data = nullptr;
+  // only used when T = struct
+  void *private_data = nullptr;
 
   static ErlNifResourceType *type;
 
   /// Creates a new NifRes<T> using `enif_alloc_resource`, returning it as an
   /// owned pointer. When this owned pointer leaves the scope,
   /// `enif_release_resource` is automatically called.
-  static auto allocate_resource(ErlNifEnv *env, ERL_NIF_TERM &error) -> res_type * {
-    auto res =  static_cast<res_type *>(enif_alloc_resource(res_type::type, sizeof(res_type)));
+  static auto allocate_resource(ErlNifEnv *env, ERL_NIF_TERM &error)
+      -> res_type * {
+    auto res = static_cast<res_type *>(
+        enif_alloc_resource(res_type::type, sizeof(res_type)));
     if (res == nullptr) {
       error = erlang::nif::error(env, "cannot allocate Nif resource\n");
       return res;
@@ -107,14 +108,16 @@ static void destruct_adbc_database_resource(ErlNifEnv *env, void *args) {
 static void destruct_adbc_connection_resource(ErlNifEnv *env, void *args) {
   auto res = (NifRes<struct AdbcConnection> *)args;
   struct AdbcError adbc_error{};
-  if(res->private_data != nullptr) enif_release_resource(&res->private_data);
+  if (res->private_data != nullptr)
+    enif_release_resource(&res->private_data);
   AdbcConnectionRelease(&res->val, &adbc_error);
 }
 
 static void destruct_adbc_statement_resource(ErlNifEnv *env, void *args) {
   auto res = (NifRes<struct AdbcStatement> *)args;
   struct AdbcError adbc_error{};
-  if(res->private_data != nullptr) enif_release_resource(&res->private_data);
+  if (res->private_data != nullptr)
+    enif_release_resource(&res->private_data);
   AdbcStatementRelease(&res->val, &adbc_error);
 }
 
@@ -128,7 +131,7 @@ static void destruct_adbc_error(ErlNifEnv *env, void *args) {
 static void destruct_adbc_arrow_array_stream(ErlNifEnv *env, void *args) {
   auto res = (NifRes<struct AdbcStatement> *)args;
   if (res->private_data) {
-    auto schema = (struct ArrowSchema*)res->private_data;
+    auto schema = (struct ArrowSchema *)res->private_data;
     if (schema->release) {
       schema->release(schema);
     }
@@ -146,11 +149,10 @@ static void destruct_adbc_execute_on_gc(ErlNifEnv *env, void *args) {
   auto res = (NifRes<struct AdbcExecuteOnGC> *)args;
   ErlNifEnv *msg_env = enif_alloc_env();
   if (msg_env) {
-    ERL_NIF_TERM statement_term = erlang::nif::make_binary(msg_env, res->val.statement);
-    ERL_NIF_TERM msg = enif_make_tuple2(msg_env,
-      erlang::nif::atom(msg_env, "execute_on_gc"),
-      statement_term
-    );
+    ERL_NIF_TERM statement_term =
+        erlang::nif::make_binary(msg_env, res->val.statement);
+    ERL_NIF_TERM msg = enif_make_tuple2(
+        msg_env, erlang::nif::atom(msg_env, "execute_on_gc"), statement_term);
     enif_send(NULL, &res->val.pid, msg_env, msg);
     enif_free_env(msg_env);
   }
