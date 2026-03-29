@@ -6,13 +6,15 @@
 #include <cstdbool>
 #include <cstdint>
 #include <erl_nif.h>
+#include <map>
 #include <stdio.h>
+#include <string>
 #include <vector>
 
+#include "adbc_arrow_array_stream_record.hpp"
 #include "adbc_arrow_metadata.hpp"
 #include "adbc_column.hpp"
 #include "adbc_consts.h"
-#include "adbc_nif_resource.hpp"
 #include "nif_utils.hpp"
 
 static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
@@ -49,20 +51,12 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema *schema,
         make_adbc_field(env, child_schema, child_type, child_metadata);
 
     if (level == 0) {
-      using record_type = NifRes<struct ArrowArrayStreamRecord>;
-      auto *record = record_type::allocate_resource(env, error);
-      if (record == nullptr) {
-        return 1;
-      }
-      if (record->val.allocate_schema_and_values()) {
-        error = erlang::nif::error(env, "out of memory");
-        return 1;
-      }
+      auto record = fine::make_resource<ArrowArrayStreamRecord>();
       struct ArrowArray *child_array = array->children[child_i];
-      ArrowSchemaDeepCopy(child_schema, record->val.schema);
-      ArrowArrayMove(child_array, record->val.values);
+      ArrowSchemaDeepCopy(child_schema, &record->schema);
+      ArrowArrayMove(child_array, &record->values);
       memset(array->children[child_i], 0, sizeof(struct ArrowArray));
-      ERL_NIF_TERM data_ref = record->make_resource(env);
+      ERL_NIF_TERM data_ref = fine::encode(env, record);
 
       children[child_i] = make_adbc_column(env, child_schema, child_type,
                                            child_metadata, data_ref);
@@ -241,6 +235,41 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                     ERL_NIF_TERM &type_term,
                                     ERL_NIF_TERM &metadata,
                                     ERL_NIF_TERM &error) {
+  static const std::map<std::string, std::vector<ERL_NIF_TERM>>
+      primitiveFormatMapping = {
+          {"n", {kAtomNil}},
+          {"b", {kAdbcColumnTypeBool}},
+          {"c", {kAdbcColumnTypeS8}},
+          {"C", {kAdbcColumnTypeU8}},
+          {"s", {kAdbcColumnTypeS16}},
+          {"S", {kAdbcColumnTypeU16}},
+          {"i", {kAdbcColumnTypeS32}},
+          {"I", {kAdbcColumnTypeU32}},
+          {"l", {kAdbcColumnTypeS64}},
+          {"L", {kAdbcColumnTypeU64}},
+          {"e", {kAdbcColumnTypeF16}},
+          {"f", {kAdbcColumnTypeF32}},
+          {"g", {kAdbcColumnTypeF64}},
+          {"z", {kAdbcColumnTypeBinary}},
+          {"Z", {kAdbcColumnTypeLargeBinary}},
+          {"vz", {kAdbcColumnTypeBinaryView}},
+          {"u", {kAdbcColumnTypeString}},
+          {"U", {kAdbcColumnTypeLargeString}},
+          {"vu", {kAdbcColumnTypeStringView}},
+          {"tdD", {kAdbcColumnTypeDate32}},
+          {"tdm", {kAdbcColumnTypeDate64}},
+          {"tts", {kAtomTime32, kAtomSeconds}},
+          {"ttm", {kAtomTime32, kAtomMilliseconds}},
+          {"ttu", {kAtomTime64, kAtomMicroseconds}},
+          {"ttn", {kAtomTime64, kAtomNanoseconds}},
+          {"tDs", {kAtomDuration, kAtomSeconds}},
+          {"tDm", {kAtomDuration, kAtomMilliseconds}},
+          {"tDu", {kAtomDuration, kAtomMicroseconds}},
+          {"tDn", {kAtomDuration, kAtomNanoseconds}},
+          {"tiM", {kAtomInterval, kAtomMonth}},
+          {"tiD", {kAtomInterval, kAtomDayTime}},
+          {"tin", {kAtomInterval, kAtomMonthDayNano}},
+      };
   if (schema == nullptr) {
     error = erlang::nif::error(
         env, "invalid ArrowSchema (nullptr) when invoking next");

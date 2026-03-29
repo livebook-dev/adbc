@@ -1,7 +1,6 @@
 #ifndef ADBC_COLUMN_HPP
 #pragma once
 
-#include "nif_utils.hpp"
 #include <arrow-adbc/adbc.h>
 #include <cstdbool>
 #include <cstdint>
@@ -11,6 +10,7 @@
 #include <time.h>
 
 #include "adbc_consts.h"
+#include "nif_utils.hpp"
 
 struct AdbcColumnType {
   int valid = 0;

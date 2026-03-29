@@ -2,115 +2,121 @@
 #pragma once
 
 #include <erl_nif.h>
-#include <map>
-#include <string>
+#include <fine.hpp>
 
-static std::map<std::string, std::vector<ERL_NIF_TERM>> primitiveFormatMapping;
+// Wrapper around fine::Atom that is implicitly convertible to ERL_NIF_TERM.
+// After FINE_INIT's load callback, operator ERL_NIF_TERM() is safe to call.
+struct FAtom : fine::Atom {
+    using fine::Atom::Atom;
+    operator ERL_NIF_TERM() const {
+        return fine::encode(nullptr, static_cast<const fine::Atom&>(*this));
+    }
+};
 
 // Atoms
-static ERL_NIF_TERM kAtomAdbcError;
-static ERL_NIF_TERM kAtomNil;
-static ERL_NIF_TERM kAtomTrue;
-static ERL_NIF_TERM kAtomFalse;
-static ERL_NIF_TERM kAtomKey;
-static ERL_NIF_TERM kAtomValue;
-static ERL_NIF_TERM kAtomInfinity;
-static ERL_NIF_TERM kAtomNegInfinity;
-static ERL_NIF_TERM kAtomNaN;
-static ERL_NIF_TERM kAtomEndOfSeries;
-static ERL_NIF_TERM kAtomStructKey;
-static ERL_NIF_TERM kAtomBig;
-static ERL_NIF_TERM kAtomLittle;
-static ERL_NIF_TERM kAtomValidity;
-static ERL_NIF_TERM kAtomOffsets;
-static ERL_NIF_TERM kAtomSizes;
-static ERL_NIF_TERM kAtomValues;
-static ERL_NIF_TERM kAtomRunEnds;
+inline FAtom kAtomAdbcError("adbc_error");
+inline FAtom kAtomNil("nil");
+inline FAtom kAtomTrue("true");
+inline FAtom kAtomFalse("false");
+inline FAtom kAtomKey("key");
+inline FAtom kAtomValue("value");
+inline FAtom kAtomInfinity("infinity");
+inline FAtom kAtomNegInfinity("neg_infinity");
+inline FAtom kAtomNaN("nan");
+inline FAtom kAtomEndOfSeries("end_of_series");
+inline FAtom kAtomStructKey("__struct__");
+inline FAtom kAtomBig("big");
+inline FAtom kAtomLittle("little");
+inline FAtom kAtomValidity("validity");
+inline FAtom kAtomOffsets("offsets");
+inline FAtom kAtomSizes("sizes");
+inline FAtom kAtomValues("values");
+inline FAtom kAtomRunEnds("run_ends");
 
-static ERL_NIF_TERM kAtomDecimal128;
-static ERL_NIF_TERM kAtomDecimal256;
-static ERL_NIF_TERM kAtomFixedSizeBinary;
-static ERL_NIF_TERM kAtomFixedSizeList;
-static ERL_NIF_TERM kAtomTime32;
-static ERL_NIF_TERM kAtomTime64;
-static ERL_NIF_TERM kAtomTimestamp;
-static ERL_NIF_TERM kAtomDuration;
-static ERL_NIF_TERM kAtomInterval;
-static ERL_NIF_TERM kAtomSeconds;
-static ERL_NIF_TERM kAtomMilliseconds;
-static ERL_NIF_TERM kAtomMicroseconds;
-static ERL_NIF_TERM kAtomNanoseconds;
-static ERL_NIF_TERM kAtomMonth;
-static ERL_NIF_TERM kAtomDayTime;
-static ERL_NIF_TERM kAtomMonthDayNano;
+inline FAtom kAtomDecimal128("decimal128");
+inline FAtom kAtomDecimal256("decimal256");
+inline FAtom kAtomFixedSizeBinary("fixed_size_binary");
+inline FAtom kAtomFixedSizeList("fixed_size_list");
+inline FAtom kAtomTime32("time32");
+inline FAtom kAtomTime64("time64");
+inline FAtom kAtomTimestamp("timestamp");
+inline FAtom kAtomDuration("duration");
+inline FAtom kAtomInterval("interval");
+inline FAtom kAtomSeconds("seconds");
+inline FAtom kAtomMilliseconds("milliseconds");
+inline FAtom kAtomMicroseconds("microseconds");
+inline FAtom kAtomNanoseconds("nanoseconds");
+inline FAtom kAtomMonth("month");
+inline FAtom kAtomDayTime("day_time");
+inline FAtom kAtomMonthDayNano("month_day_nano");
 
 
-static ERL_NIF_TERM kAtomAdbcColumnModule;
-static ERL_NIF_TERM kAtomAdbcFieldModule;
-static ERL_NIF_TERM kAtomAdbcDictionaryDataModule;
-static ERL_NIF_TERM kAtomAdbcRunEndEncodedDataModule;
-static ERL_NIF_TERM kAtomAdbcListViewDataModule;
-static ERL_NIF_TERM kAtomAdbcListDataModule;
-static ERL_NIF_TERM kAtomAdbcBufferDataModule;
-static ERL_NIF_TERM kAtomAdbcBinaryDataModule;
-static ERL_NIF_TERM kAtomAdbcStructDataModule;
-static ERL_NIF_TERM kAtomAdbcBooleanDataModule;
-static ERL_NIF_TERM kAtomFieldKey;
-static ERL_NIF_TERM kAtomNameKey;
-static ERL_NIF_TERM kAtomTypeKey;
-static ERL_NIF_TERM kAtomMetadataKey;
-static ERL_NIF_TERM kAtomDataKey;
-static ERL_NIF_TERM kAtomSizeKey;
-static ERL_NIF_TERM kAtomLengthKey;
-static ERL_NIF_TERM kAtomOffsetKey;
-static ERL_NIF_TERM kAtomBitOffsetKey;
+inline FAtom kAtomAdbcColumnModule("Elixir.Adbc.Column");
+inline FAtom kAtomAdbcFieldModule("Elixir.Adbc.Field");
+inline FAtom kAtomAdbcDictionaryDataModule("Elixir.Adbc.DictionaryData");
+inline FAtom kAtomAdbcRunEndEncodedDataModule("Elixir.Adbc.RunEndEncodedData");
+inline FAtom kAtomAdbcListViewDataModule("Elixir.Adbc.ListViewData");
+inline FAtom kAtomAdbcListDataModule("Elixir.Adbc.ListData");
+inline FAtom kAtomAdbcBufferDataModule("Elixir.Adbc.BufferData");
+inline FAtom kAtomAdbcBinaryDataModule("Elixir.Adbc.BinaryData");
+inline FAtom kAtomAdbcStructDataModule("Elixir.Adbc.StructData");
+inline FAtom kAtomAdbcBooleanDataModule("Elixir.Adbc.BooleanData");
+inline FAtom kAtomFieldKey("field");
+inline FAtom kAtomNameKey("name");
+inline FAtom kAtomTypeKey("type");
+inline FAtom kAtomMetadataKey("metadata");
+inline FAtom kAtomDataKey("data");
+inline FAtom kAtomSizeKey("size");
+inline FAtom kAtomLengthKey("length");
+inline FAtom kAtomOffsetKey("offset");
+inline FAtom kAtomBitOffsetKey("bit_offset");
 
 // https://arrow.apache.org/docs/format/CDataInterface.html
-static ERL_NIF_TERM kAdbcColumnTypeBool;
-static ERL_NIF_TERM kAdbcColumnTypeS8;
-static ERL_NIF_TERM kAdbcColumnTypeU8;
-static ERL_NIF_TERM kAdbcColumnTypeS16;
-static ERL_NIF_TERM kAdbcColumnTypeU16;
-static ERL_NIF_TERM kAdbcColumnTypeS32;
-static ERL_NIF_TERM kAdbcColumnTypeU32;
-static ERL_NIF_TERM kAdbcColumnTypeS64;
-static ERL_NIF_TERM kAdbcColumnTypeU64;
-static ERL_NIF_TERM kAdbcColumnTypeF16;
-static ERL_NIF_TERM kAdbcColumnTypeF32;
-static ERL_NIF_TERM kAdbcColumnTypeF64;
-static ERL_NIF_TERM kAdbcColumnTypeBinary;
-static ERL_NIF_TERM kAdbcColumnTypeLargeBinary;
-static ERL_NIF_TERM kAdbcColumnTypeBinaryView;
-static ERL_NIF_TERM kAdbcColumnTypeString;
-static ERL_NIF_TERM kAdbcColumnTypeLargeString;
-static ERL_NIF_TERM kAdbcColumnTypeStringView;
-#define kAdbcColumnTypeDecimal128(precision, scale) enif_make_tuple3(env, kAtomDecimal128, enif_make_int(env, precision), enif_make_int(env, scale))
-#define kAdbcColumnTypeDecimal256(precision, scale) enif_make_tuple3(env, kAtomDecimal256, enif_make_int(env, precision), enif_make_int(env, scale))
-#define kAdbcColumnTypeFixedSizeBinary(nbytes) enif_make_tuple2(env, kAtomFixedSizeBinary, enif_make_int64(env, nbytes))
-static ERL_NIF_TERM kAdbcColumnTypeDate32;
-static ERL_NIF_TERM kAdbcColumnTypeDate64;
-#define kAdbcColumnTypeTime32Seconds enif_make_tuple2(env, kAtomTime32, kAtomSeconds)
-#define kAdbcColumnTypeTime32Milliseconds enif_make_tuple2(env, kAtomTime32, kAtomMilliseconds)
-#define kAdbcColumnTypeTime64Microseconds enif_make_tuple2(env, kAtomTime64, kAtomMicroseconds)
-#define kAdbcColumnTypeTime64Nanoseconds enif_make_tuple2(env, kAtomTime64, kAtomNanoseconds)
-#define kAdbcColumnTypeDurationSeconds enif_make_tuple2(env, kAtomDuration, kAtomSeconds)
-#define kAdbcColumnTypeDurationMilliseconds enif_make_tuple2(env, kAtomDuration, kAtomMilliseconds)
-#define kAdbcColumnTypeDurationMicroseconds enif_make_tuple2(env, kAtomDuration, kAtomMicroseconds)
-#define kAdbcColumnTypeDurationNanoseconds enif_make_tuple2(env, kAtomDuration, kAtomNanoseconds)
-#define kAdbcColumnTypeIntervalMonth enif_make_tuple2(env, kAtomInterval, kAtomMonth)
-#define kAdbcColumnTypeIntervalDayTime enif_make_tuple2(env, kAtomInterval, kAtomDayTime)
-#define kAdbcColumnTypeIntervalMonthDayNano enif_make_tuple2(env, kAtomInterval, kAtomMonthDayNano)
-static ERL_NIF_TERM kAdbcColumnTypeList;
-static ERL_NIF_TERM kAdbcColumnTypeLargeList;
-static ERL_NIF_TERM kAdbcColumnTypeListView;
-static ERL_NIF_TERM kAdbcColumnTypeLargeListView;
-#define kAdbcColumnTypeFixedSizeList(inner_field, n_items) enif_make_tuple3(env, kAtomFixedSizeList, inner_field, enif_make_int64(env, n_items))
-static ERL_NIF_TERM kAdbcColumnTypeStruct;
-static ERL_NIF_TERM kAdbcColumnTypeMap;
-static ERL_NIF_TERM kAdbcColumnTypeDenseUnion;
-static ERL_NIF_TERM kAdbcColumnTypeSparseUnion;
-static ERL_NIF_TERM kAdbcColumnTypeRunEndEncoded;
-static ERL_NIF_TERM kAdbcColumnTypeDictionary;
+inline FAtom kAdbcColumnTypeBool("boolean");
+inline FAtom kAdbcColumnTypeS8("s8");
+inline FAtom kAdbcColumnTypeU8("u8");
+inline FAtom kAdbcColumnTypeS16("s16");
+inline FAtom kAdbcColumnTypeU16("u16");
+inline FAtom kAdbcColumnTypeS32("s32");
+inline FAtom kAdbcColumnTypeU32("u32");
+inline FAtom kAdbcColumnTypeS64("s64");
+inline FAtom kAdbcColumnTypeU64("u64");
+inline FAtom kAdbcColumnTypeF16("f16");
+inline FAtom kAdbcColumnTypeF32("f32");
+inline FAtom kAdbcColumnTypeF64("f64");
+inline FAtom kAdbcColumnTypeBinary("binary");
+inline FAtom kAdbcColumnTypeLargeBinary("large_binary");
+inline FAtom kAdbcColumnTypeBinaryView("binary_view");
+inline FAtom kAdbcColumnTypeString("string");
+inline FAtom kAdbcColumnTypeLargeString("large_string");
+inline FAtom kAdbcColumnTypeStringView("string_view");
+#define kAdbcColumnTypeDecimal128(precision, scale) enif_make_tuple3(env, static_cast<ERL_NIF_TERM>(kAtomDecimal128), enif_make_int(env, precision), enif_make_int(env, scale))
+#define kAdbcColumnTypeDecimal256(precision, scale) enif_make_tuple3(env, static_cast<ERL_NIF_TERM>(kAtomDecimal256), enif_make_int(env, precision), enif_make_int(env, scale))
+#define kAdbcColumnTypeFixedSizeBinary(nbytes) enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomFixedSizeBinary), enif_make_int64(env, nbytes))
+inline FAtom kAdbcColumnTypeDate32("date32");
+inline FAtom kAdbcColumnTypeDate64("date64");
+#define kAdbcColumnTypeTime32Seconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomTime32), static_cast<ERL_NIF_TERM>(kAtomSeconds))
+#define kAdbcColumnTypeTime32Milliseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomTime32), static_cast<ERL_NIF_TERM>(kAtomMilliseconds))
+#define kAdbcColumnTypeTime64Microseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomTime64), static_cast<ERL_NIF_TERM>(kAtomMicroseconds))
+#define kAdbcColumnTypeTime64Nanoseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomTime64), static_cast<ERL_NIF_TERM>(kAtomNanoseconds))
+#define kAdbcColumnTypeDurationSeconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomDuration), static_cast<ERL_NIF_TERM>(kAtomSeconds))
+#define kAdbcColumnTypeDurationMilliseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomDuration), static_cast<ERL_NIF_TERM>(kAtomMilliseconds))
+#define kAdbcColumnTypeDurationMicroseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomDuration), static_cast<ERL_NIF_TERM>(kAtomMicroseconds))
+#define kAdbcColumnTypeDurationNanoseconds enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomDuration), static_cast<ERL_NIF_TERM>(kAtomNanoseconds))
+#define kAdbcColumnTypeIntervalMonth enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomInterval), static_cast<ERL_NIF_TERM>(kAtomMonth))
+#define kAdbcColumnTypeIntervalDayTime enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomInterval), static_cast<ERL_NIF_TERM>(kAtomDayTime))
+#define kAdbcColumnTypeIntervalMonthDayNano enif_make_tuple2(env, static_cast<ERL_NIF_TERM>(kAtomInterval), static_cast<ERL_NIF_TERM>(kAtomMonthDayNano))
+inline FAtom kAdbcColumnTypeList("list");
+inline FAtom kAdbcColumnTypeLargeList("large_list");
+inline FAtom kAdbcColumnTypeListView("list_view");
+inline FAtom kAdbcColumnTypeLargeListView("large_list_view");
+#define kAdbcColumnTypeFixedSizeList(inner_field, n_items) enif_make_tuple3(env, static_cast<ERL_NIF_TERM>(kAtomFixedSizeList), inner_field, enif_make_int64(env, n_items))
+inline FAtom kAdbcColumnTypeStruct("struct");
+inline FAtom kAdbcColumnTypeMap("map");
+inline FAtom kAdbcColumnTypeDenseUnion("dense_union");
+inline FAtom kAdbcColumnTypeSparseUnion("sparse_union");
+inline FAtom kAdbcColumnTypeRunEndEncoded("run_end_encoded");
+inline FAtom kAdbcColumnTypeDictionary("dictionary");
 
 // error codes
 constexpr int kErrorBufferIsNotAMap = 1;
