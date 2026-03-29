@@ -24,6 +24,7 @@ inline FAtom kAtomInfinity("infinity");
 inline FAtom kAtomNegInfinity("neg_infinity");
 inline FAtom kAtomNaN("nan");
 inline FAtom kAtomEndOfSeries("end_of_series");
+inline FAtom kAtomExecuteOnGC("execute_on_gc");
 inline FAtom kAtomStructKey("__struct__");
 inline FAtom kAtomBig("big");
 inline FAtom kAtomLittle("little");

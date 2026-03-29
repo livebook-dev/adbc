@@ -30,8 +30,8 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema *schema,
                              std::vector<ERL_NIF_TERM> &fields,
                              ERL_NIF_TERM &error) {
   if (schema->n_children > 0 && schema->children == nullptr) {
-    error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == "
-                                    "nullptr while schema->n_children > 0");
+    error = encode_error(env, "invalid ArrowSchema, schema->children == "
+                              "nullptr while schema->n_children > 0");
     return 1;
   }
   children.resize(schema->n_children);
@@ -74,21 +74,21 @@ static int get_run_end_encoded_schema(ErlNifEnv *env,
                                       ERL_NIF_TERM &run_ends_schema,
                                       ERL_NIF_TERM &error) {
   if (schema->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (run_end_encoded), schema->n_children != 2");
   }
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowArray (run_end_encoded), schema->children == nullptr");
   }
   if (strcmp("run_ends", schema->children[0]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "first child is not named run_ends");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "first child is not named run_ends");
   }
   if (strcmp("values", schema->children[1]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "second child is not named values");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "second child is not named values");
   }
 
   std::vector<ERL_NIF_TERM> children(2);
@@ -121,22 +121,22 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema *schema,
   //   As specified in the Arrow columnar format, the map type has a single
   //   child type named entries, itself a 2-child struct type of (key, value).
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (map), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (map), schema->n_children != 1");
   }
 
   struct ArrowSchema *entries_schema = schema->children[0];
   if (strcmp("entries", entries_schema->name) != 0) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowSchema (map), its single child is not named entries");
   }
   if (entries_schema->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), its entries n_children != 2");
   }
 
@@ -188,19 +188,19 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema *schema,
                                    uint64_t level, ERL_NIF_TERM &element_schema,
                                    ERL_NIF_TERM &error) {
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (list), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (list), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (list), schema->n_children != 1");
   }
 
   struct ArrowSchema *items_schema = schema->children[0];
   if (!(strcmp("item", items_schema->name) == 0 ||
         strcmp("l", items_schema->name) == 0)) {
-    return erlang::nif::error(env, "invalid ArrowSchema (list), its single "
-                                   "child is not named 'item' or 'l'");
+    return encode_error(env, "invalid ArrowSchema (list), its single "
+                             "child is not named 'item' or 'l'");
   }
 
   std::vector<ERL_NIF_TERM> childrens;
@@ -214,8 +214,9 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema *schema,
   // Always use "item" as the canonical name for list elements, regardless of
   // what the driver provides; using "item" appears to be conventional but
   // duckdb uses "l"
-  element_schema = make_adbc_field(env, erlang::nif::make_binary(env, "item"),
-                                   child_type, child_metadata);
+  element_schema =
+      make_adbc_field(env, fine::encode(env, std::string_view("item")),
+                      child_type, child_metadata);
   return 0;
 }
 
@@ -271,12 +272,12 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           {"tin", {kAtomInterval, kAtomMonthDayNano}},
       };
   if (schema == nullptr) {
-    error = erlang::nif::error(
-        env, "invalid ArrowSchema (nullptr) when invoking next");
+    error =
+        encode_error(env, "invalid ArrowSchema (nullptr) when invoking next");
     return 1;
   }
   if (level == 0 && array == nullptr) {
-    error = erlang::nif::error(
+    error = encode_error(
         env, "invalid ArrowArray (nullptr) is nullptr at top-level entry");
     return 1;
   }
@@ -324,8 +325,9 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     } else {
       key_type_term = kAdbcColumnTypeS32; // default to s32 for index
     }
-    ERL_NIF_TERM key_field = make_adbc_field(
-        env, erlang::nif::make_binary(env, "key"), key_type_term, kAtomNil);
+    ERL_NIF_TERM key_field =
+        make_adbc_field(env, fine::encode(env, std::string_view("key")),
+                        key_type_term, kAtomNil);
     ERL_NIF_TERM value_field =
         make_adbc_field(env, schema->dictionary, value_type, value_metadata);
 
@@ -457,7 +459,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         if (format_processed) {
           if (format_len > 4 && format[3] == ':') {
             std::string timezone(&format[4]);
-            term_timezone = erlang::nif::make_binary(env, timezone);
+            term_timezone = fine::encode(env, timezone);
           }
           type_term =
               enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
@@ -563,7 +565,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   if (!format_processed) {
     snprintf(err_msg_buf, sizeof(err_msg_buf) / sizeof(err_msg_buf[0]),
              "not yet implemented for format: `%s`", schema->format);
-    error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+    error = encode_error(env, err_msg_buf);
     return 1;
     // printf("not implemented for format: `%s`\r\n", schema->format);
     // printf("length: %lld\r\n", values->length);

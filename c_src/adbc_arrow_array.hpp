@@ -11,6 +11,7 @@
 
 #include "adbc_arrow_metadata.hpp"
 #include "adbc_column.hpp"
+#include "nif_utils.hpp"
 
 static int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                    struct ArrowArray *values, uint64_t level,
@@ -90,15 +91,15 @@ string_views_from_buffer(ErlNifEnv *env, int64_t element_offset,
       values[i - element_offset] = kAtomNil;
     } else if (length <= 12) {
       // Short string: data is stored inline in bytes [4..4+length)
-      values[i - element_offset] = erlang::nif::make_binary(
-          env, (const char *)(view + 4), (size_t)length);
+      values[i - element_offset] =
+          fine::make_new_binary(env, (const char *)(view + 4), (size_t)length);
     } else {
       // Long string: bytes [8..12) = buf_index, bytes [12..16) = offset into
       // buffer
       int32_t buf_index, buf_offset;
       memcpy(&buf_index, view + 8, 4);
       memcpy(&buf_offset, view + 12, 4);
-      values[i - element_offset] = erlang::nif::make_binary(
+      values[i - element_offset] = fine::make_new_binary(
           env, (const char *)(data_buffers[buf_index] + buf_offset),
           (size_t)length);
     }
@@ -112,18 +113,18 @@ int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema *schema,
                      uint64_t level, std::vector<ERL_NIF_TERM> &children,
                      ERL_NIF_TERM &error, void *resource) {
   if (schema->n_children > 0 && schema->children == nullptr) {
-    error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == "
-                                    "nullptr while schema->n_children > 0");
+    error = encode_error(env, "invalid ArrowSchema, schema->children == "
+                              "nullptr while schema->n_children > 0");
     return 1;
   }
   if (values->n_children > 0 && values->children == nullptr) {
-    error = erlang::nif::error(env, "invalid ArrowArray, values->children == "
-                                    "nullptr while values->n_children > 0");
+    error = encode_error(env, "invalid ArrowArray, values->children == "
+                              "nullptr while values->n_children > 0");
     return 1;
   }
   if (values->n_children != schema->n_children) {
-    error = erlang::nif::error(env, "invalid ArrowArray or ArrowSchema, "
-                                    "values->n_children != schema->n_children");
+    error = encode_error(env, "invalid ArrowArray or ArrowSchema, "
+                              "values->n_children != schema->n_children");
     return 1;
   }
 
@@ -217,31 +218,31 @@ ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env,
 
   ERL_NIF_TERM error{}, map_out{};
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (map), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (map), schema->n_children != 1");
   }
   if (values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (map), values->children == nullptr");
   }
   if (values->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowArray (map), values->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowArray (map), values->n_children != 1");
   }
 
   struct ArrowSchema *entries_schema = schema->children[0];
   struct ArrowArray *entries_values = values->children[0];
   if (strcmp("entries", entries_schema->name) != 0) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowSchema (map), its single child is not named entries");
   }
   if (entries_schema->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), its entries n_children != 2");
   }
 
@@ -260,7 +261,7 @@ ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env,
     value_schema = entries_schema->children[0];
     value_values = entries_values->children[0];
   } else {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid map entries, key or value or both are missing");
   }
 
@@ -270,12 +271,12 @@ ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env,
   if (arrow_array_to_nif_term(env, key_schema, key_values, offset, count,
                               level + 1, nif_keys, key_type, key_metadata,
                               error, false, resource) == 1) {
-    return erlang::nif::error(env, "failed to get map keys");
+    return encode_error(env, "failed to get map keys");
   }
   if (arrow_array_to_nif_term(env, value_schema, value_values, offset, count,
                               level + 1, nif_values, value_type, value_metadata,
                               error, false, resource) == 1) {
-    return erlang::nif::error(env, "failed to get map values");
+    return encode_error(env, "failed to get map values");
   }
 
   ERL_NIF_TERM map_keys[] = {kAtomKey, kAtomValue};
@@ -304,29 +305,29 @@ ERL_NIF_TERM get_arrow_array_dense_union_children(
     int64_t offset, int64_t count, uint64_t level, void *resource) {
   ERL_NIF_TERM error{};
   if (schema->n_children > 0 && schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (dense union), schema->children == nullptr "
              "while schema->n_children > 0 ");
   }
   if (values->n_children > 0 && values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (dense union), values->children == nullptr "
              "while values->n_children > 0");
   }
   if (offset < 0 || offset >= values->length) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid offset value when parsing ArrowArray (dense union), "
              "offset < 0 || offset >= values->length");
   }
   if (count == -1)
     count = values->length;
   if ((offset + count) > values->length) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid offset or count value when parsing ArrowArray (dense "
              "union), (offset + count) > values->length");
   }
   if (values->n_buffers != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (dense union), values->n_buffers != 2");
   }
 
@@ -342,7 +343,7 @@ ERL_NIF_TERM get_arrow_array_dense_union_children(
     uint8_t child_type = types_buffer[child_i];
     int32_t child_offset = offsets_buffer[child_i];
     if (child_type >= schema->n_children || child_type >= values->n_children) {
-      return erlang::nif::error(
+      return encode_error(
           env, "invalid child type when parsing ArrowArray (dense union), "
                "child_type >= schema->n_children || child_type >= "
                "values->n_children");
@@ -352,7 +353,8 @@ ERL_NIF_TERM get_arrow_array_dense_union_children(
 
     std::vector<ERL_NIF_TERM> union_element_name(1), union_element_value(1);
     std::vector<ERL_NIF_TERM> field_values;
-    union_element_name[0] = erlang::nif::make_binary(env, field_schema->name);
+    union_element_name[0] =
+        fine::encode(env, std::string_view(field_schema->name));
 
     ERL_NIF_TERM field_type;
     ERL_NIF_TERM field_metadata;
@@ -367,14 +369,14 @@ ERL_NIF_TERM get_arrow_array_dense_union_children(
     } else if (field_values.size() == 2) {
       union_element_value[0] = field_values[1];
     } else {
-      return erlang::nif::error(env, "invalid dense union field value");
+      return encode_error(env, "invalid dense union field value");
     }
 
     ERL_NIF_TERM element{};
     if (!enif_make_map_from_arrays(env, union_element_name.data(),
                                    union_element_value.data(), 1, &element)) {
-      return erlang::nif::error(env, "failed to enif_make_map_from_arrays when "
-                                     "parsing ArrowSchema (dense union)");
+      return encode_error(env, "failed to enif_make_map_from_arrays when "
+                               "parsing ArrowSchema (dense union)");
     }
     elements[child_i - offset] = element;
   }
@@ -397,29 +399,29 @@ ERL_NIF_TERM get_arrow_array_sparse_union_children(
     int64_t offset, int64_t count, uint64_t level, void *resource) {
   ERL_NIF_TERM error{};
   if (schema->n_children > 0 && schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (sparse union), schema->children == nullptr "
              "while schema->n_children > 0 ");
   }
   if (values->n_children > 0 && values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (sparse union), values->children == nullptr "
              "while values->n_children > 0");
   }
   if (offset < 0 || offset >= values->length) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid offset value when parsing ArrowArray (sparse union), "
              "offset < 0 || offset >= values->length");
   }
   if (count == -1)
     count = values->length;
   if ((offset + count) > values->length) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid offset or count value when parsing ArrowArray (sparse "
              "union), (offset + count) > values->length");
   }
   if (values->n_buffers != 1) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (sparse union), values->n_buffers != 1");
   }
 
@@ -431,7 +433,7 @@ ERL_NIF_TERM get_arrow_array_sparse_union_children(
   for (int64_t child_i = offset; child_i < offset + count; child_i++) {
     uint8_t child_type = types_buffer[child_i];
     if (child_type >= schema->n_children || child_type >= values->n_children) {
-      return erlang::nif::error(
+      return encode_error(
           env, "invalid child type when parsing ArrowArray (sparse union), "
                "child_type >= schema->n_children || child_type >= "
                "values->n_children");
@@ -441,7 +443,8 @@ ERL_NIF_TERM get_arrow_array_sparse_union_children(
 
     std::vector<ERL_NIF_TERM> union_element_name(1), union_element_value(1);
     std::vector<ERL_NIF_TERM> field_values;
-    union_element_name[0] = erlang::nif::make_binary(env, field_schema->name);
+    union_element_name[0] =
+        fine::encode(env, std::string_view(field_schema->name));
 
     ERL_NIF_TERM field_type;
     // todo: use field_metadata
@@ -457,14 +460,14 @@ ERL_NIF_TERM get_arrow_array_sparse_union_children(
     } else if (field_values.size() == 2) {
       union_element_value[0] = field_values[1];
     } else {
-      return erlang::nif::error(env, "invalid sparse union field value");
+      return encode_error(env, "invalid sparse union field value");
     }
 
     ERL_NIF_TERM element{};
     if (!enif_make_map_from_arrays(env, union_element_name.data(),
                                    union_element_value.data(), 1, &element)) {
-      return erlang::nif::error(env, "failed to enif_make_map_from_arrays when "
-                                     "parsing ArrowSchema (sparse union)");
+      return encode_error(env, "failed to enif_make_map_from_arrays when "
+                               "parsing ArrowSchema (sparse union)");
     }
     elements[child_i - offset] = element;
   }
@@ -489,22 +492,22 @@ ERL_NIF_TERM get_arrow_run_end_encoded(ErlNifEnv *env,
                                        uint64_t level, void *resource) {
   ERL_NIF_TERM error{};
   if (schema->n_children != 2 || values->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (run_end_encoded), schema->n_children != 2 "
              "|| values->n_children != 2");
   }
   if (schema->children == nullptr || values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (run_end_encoded), schema->children == "
              "nullptr || values->children == nullptr");
   }
   if (strcmp("run_ends", schema->children[0]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "first child is not named run_ends");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "first child is not named run_ends");
   }
   if (strcmp("values", schema->children[1]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "second child is not named values");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "second child is not named values");
   }
 
   std::vector<ERL_NIF_TERM> children(2);
@@ -576,25 +579,25 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env,
                                            unsigned n_items, void *resource) {
   ERL_NIF_TERM error{};
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (list), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (list), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (list), schema->n_children != 1");
   }
   if (values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (list), values->children == nullptr");
   }
   if (values->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowArray (list), values->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowArray (list), values->n_children != 1");
   }
   if (list_type != NANOARROW_TYPE_LIST &&
       list_type != NANOARROW_TYPE_LARGE_LIST &&
       list_type != NANOARROW_TYPE_FIXED_SIZE_LIST) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (list), internal error: unexpected list type");
   }
 
@@ -631,8 +634,7 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env,
     const int32_t *offsets_ptr =
         (const int32_t *)values->buffers[offset_buffer_index];
     if (offsets_ptr == nullptr)
-      return erlang::nif::error(
-          env, "invalid ArrowArray (list), offsets == nullptr");
+      return encode_error(env, "invalid ArrowArray (list), offsets == nullptr");
     // offsets has count+1 elements
     offsets_term = enif_make_resource_binary(
         env, resource, &offsets_ptr[offset], (count + 1) * sizeof(int32_t));
@@ -641,8 +643,7 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env,
     const int64_t *offsets_ptr =
         (const int64_t *)values->buffers[offset_buffer_index];
     if (offsets_ptr == nullptr)
-      return erlang::nif::error(
-          env, "invalid ArrowArray (list), offsets == nullptr");
+      return encode_error(env, "invalid ArrowArray (list), offsets == nullptr");
     offsets_term = enif_make_resource_binary(
         env, resource, &offsets_ptr[offset], (count + 1) * sizeof(int64_t));
   } else {
@@ -677,24 +678,24 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env,
                                        void *resource) {
   ERL_NIF_TERM error{};
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (list view), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (list view), schema->n_children != 1");
   }
   if (values->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (list view), values->children == nullptr");
   }
   if (values->n_children != 1) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowArray (list view), values->n_children != 1");
   }
   if (list_type != NANOARROW_TYPE_LIST &&
       list_type != NANOARROW_TYPE_LARGE_LIST) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowArray (list view), internal error: unexpected list type");
   }
@@ -707,18 +708,18 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env,
   const void *offsets_ptr = (const void *)values->buffers[offsets_buffer_index];
   const void *sizes_ptr = (const void *)values->buffers[sizes_buffer_index];
   if (offsets_ptr == nullptr)
-    return erlang::nif::error(
-        env, "invalid ArrowArray (list view), offsets == nullptr");
+    return encode_error(env,
+                        "invalid ArrowArray (list view), offsets == nullptr");
   if (sizes_ptr == nullptr)
-    return erlang::nif::error(
-        env, "invalid ArrowArray (list view), sizes == nullptr");
+    return encode_error(env,
+                        "invalid ArrowArray (list view), sizes == nullptr");
 
   struct ArrowSchema *items_schema = schema->children[0];
   struct ArrowArray *items_values = values->children[0];
   if (!(strcmp("item", items_schema->name) == 0 ||
         strcmp("l", items_schema->name) == 0)) {
-    return erlang::nif::error(env, "invalid ArrowSchema (list), its single "
-                                   "child is not named `item` or `l`");
+    return encode_error(env, "invalid ArrowSchema (list), its single "
+                             "child is not named `item` or `l`");
   }
   if (count == -1)
     count = values->length;
@@ -887,13 +888,13 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                             ERL_NIF_TERM &arrow_metadata, ERL_NIF_TERM &error,
                             bool skip_dictionary_check, void *resource) {
   if (schema == nullptr) {
-    error = erlang::nif::error(
-        env, "invalid ArrowSchema (nullptr) when invoking next");
+    error =
+        encode_error(env, "invalid ArrowSchema (nullptr) when invoking next");
     return 1;
   }
   if (values == nullptr) {
-    error = erlang::nif::error(
-        env, "invalid ArrowArray (nullptr) when invoking next");
+    error =
+        encode_error(env, "invalid ArrowArray (nullptr) when invoking next");
     return 1;
   }
 
@@ -932,18 +933,18 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                children, error, resource) == 1) {
         return 1;
       }
-      out_terms.emplace_back(erlang::nif::make_binary(env, name));
+      out_terms.emplace_back(fine::encode(env, std::string_view(name)));
       out_terms.emplace_back(children[0]);
       return 0;
     }
     if (schema->dictionary != nullptr && values->dictionary == nullptr) {
-      error = erlang::nif::error(
+      error = encode_error(
           env,
           "invalid ArrowArray (dictionary), values->dictionary == nullptr");
       return 1;
     }
     if (schema->dictionary == nullptr && values->dictionary != nullptr) {
-      error = erlang::nif::error(
+      error = encode_error(
           env,
           "invalid ArrowArray (dictionary), schema->dictionary == nullptr");
       return 1;
@@ -1000,8 +1001,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                  "invalid n_buffers value for ArrowArray (format=%s), "
                  "values->n_buffers != 2",
                  schema->format);
-        error =
-            erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+        error = encode_error(env, err_msg_buf);
         return 1;
       }
       current_term =
@@ -1015,9 +1015,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 2) {
-        error =
-            erlang::nif::error(env, "invalid n_buffers value for ArrowArray "
-                                    "(format=e), values->n_buffers != 2");
+        error = encode_error(env, "invalid n_buffers value for ArrowArray "
+                                  "(format=e), values->n_buffers != 2");
         return 1;
       }
       current_term =
@@ -1031,9 +1030,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 2) {
-        error =
-            erlang::nif::error(env, "invalid n_buffers value for ArrowArray "
-                                    "(format=f), values->n_buffers != 2");
+        error = encode_error(env, "invalid n_buffers value for ArrowArray "
+                                  "(format=f), values->n_buffers != 2");
         return 1;
       }
       current_term =
@@ -1047,9 +1045,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 2) {
-        error =
-            erlang::nif::error(env, "invalid n_buffers value for ArrowArray "
-                                    "(format=g), values->n_buffers != 2");
+        error = encode_error(env, "invalid n_buffers value for ArrowArray "
+                                  "(format=g), values->n_buffers != 2");
         return 1;
       }
       current_term =
@@ -1063,9 +1060,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 2) {
-        error =
-            erlang::nif::error(env, "invalid n_buffers value for ArrowArray "
-                                    "(format=b), values->n_buffers != 2");
+        error = encode_error(env, "invalid n_buffers value for ArrowArray "
+                                  "(format=b), values->n_buffers != 2");
         return 1;
       }
       {
@@ -1112,7 +1108,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 3) {
-        error = erlang::nif::error(
+        error = encode_error(
             env, "invalid n_buffers value for ArrowArray (format=u or "
                  "format=z), values->n_buffers != 3");
         return 1;
@@ -1135,7 +1131,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       if (count > values->length)
         count = values->length - offset;
       if (values->n_buffers != 3) {
-        error = erlang::nif::error(
+        error = encode_error(
             env, "invalid n_buffers value for ArrowArray (format=U or "
                  "format=Z), values->n_buffers != 3");
         return 1;
@@ -1217,7 +1213,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       // Buffer layout: validity bitmap (0), views buffer (1), data buffers
       // (2..n_buffers-1)
       if (values->n_buffers < 2) {
-        error = erlang::nif::error(
+        error = encode_error(
             env, "invalid n_buffers value for ArrowArray (format=vu or "
                  "format=vz), values->n_buffers < 2");
         return 1;
@@ -1264,8 +1260,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                        "invalid n_buffers value for ArrowArray (format=%s), "
                        "values->n_buffers != 2",
                        schema->format);
-              error = erlang::nif::error(
-                  env, erlang::nif::make_binary(env, err_msg_buf));
+              error = encode_error(env, err_msg_buf);
               return 1;
             }
             current_term = make_buffer_data(env, values, offset, count,
@@ -1304,7 +1299,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
             if (count > values->length)
               count = values->length - offset;
             if (values->n_buffers != 2) {
-              error = erlang::nif::error(
+              error = encode_error(
                   env, "invalid n_buffers value for ArrowArray (format=tt), "
                        "values->n_buffers != 2");
               return 1;
@@ -1348,7 +1343,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
             if (count > values->length)
               count = values->length - offset;
             if (values->n_buffers != 2) {
-              error = erlang::nif::error(
+              error = encode_error(
                   env, "invalid n_buffers value for ArrowArray (format=tD), "
                        "values->n_buffers != 2");
               return 1;
@@ -1397,8 +1392,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                        "invalid n_buffers value for ArrowArray (format=%s), "
                        "values->n_buffers != 2",
                        schema->format);
-              error = erlang::nif::error(
-                  env, erlang::nif::make_binary(env, err_msg_buf));
+              error = encode_error(env, err_msg_buf);
               return 1;
             }
             current_term = make_buffer_data(env, values, offset, count,
@@ -1447,7 +1441,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         if (format_processed) {
           if (format_len > 4 && format[3] == ':') {
             std::string timezone(&format[4]);
-            term_timezone = erlang::nif::make_binary(env, timezone);
+            term_timezone = fine::encode(env, timezone);
           }
           term_type =
               enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
@@ -1457,9 +1451,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           if (count > values->length)
             count = values->length - offset;
           if (values->n_buffers != 2) {
-            error = erlang::nif::error(env,
-                                       "invalid n_buffers value for ArrowArray "
-                                       "(format=ts), values->n_buffers != 2");
+            error = encode_error(env, "invalid n_buffers value for ArrowArray "
+                                      "(format=ts), values->n_buffers != 2");
             return 1;
           }
 
@@ -1504,8 +1497,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                    "invalid n_buffers value for ArrowArray (format=%s), "
                    "values->n_buffers != 2",
                    schema->format);
-          error = erlang::nif::error(
-              env, erlang::nif::make_binary(env, err_msg_buf));
+          error = encode_error(env, err_msg_buf);
           return 1;
         }
         size_t nbytes = 0;
@@ -1567,8 +1559,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                      "invalid n_buffers value for ArrowArray (format=%s), "
                      "values->n_buffers != 2",
                      schema->format);
-            error = erlang::nif::error(
-                env, erlang::nif::make_binary(env, err_msg_buf));
+            error = encode_error(env, err_msg_buf);
             return 1;
           }
           {
@@ -1589,7 +1580,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   if (!format_processed) {
     snprintf(err_msg_buf, sizeof(err_msg_buf) / sizeof(err_msg_buf[0]),
              "not yet implemented for format: `%s`", schema->format);
-    error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+    error = encode_error(env, err_msg_buf);
     return 1;
     // printf("not implemented for format: `%s`\r\n", schema->format);
     // printf("length: %lld\r\n", values->length);
@@ -1603,15 +1594,15 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   out_terms.clear();
   if (is_struct) {
     if (level > 0) {
-      out_terms.emplace_back(erlang::nif::make_binary(env, name));
+      out_terms.emplace_back(fine::encode(env, std::string_view(name)));
     }
     out_terms.emplace_back(children_term);
   } else {
     if (schema->children) {
-      out_terms.emplace_back(erlang::nif::make_binary(env, name));
+      out_terms.emplace_back(fine::encode(env, std::string_view(name)));
       out_terms.emplace_back(children_term);
     } else {
-      out_terms.emplace_back(erlang::nif::make_binary(env, name));
+      out_terms.emplace_back(fine::encode(env, std::string_view(name)));
       out_terms.emplace_back(current_term);
     }
   }

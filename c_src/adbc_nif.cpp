@@ -11,7 +11,6 @@
 #include "adbc_arrow_schema.hpp"
 #include "adbc_column.hpp"
 #include "adbc_consts.h"
-#include "nif_utils.hpp"
 
 FINE_RESOURCE(ArrowArrayStreamRecord);
 
@@ -71,9 +70,8 @@ struct AdbcExecuteOnGCResource {
   void destructor(ErlNifEnv *env) {
     auto msg_env = enif_alloc_env();
     if (msg_env) {
-      auto statement_term = erlang::nif::make_binary(msg_env, statement);
-      auto msg = enif_make_tuple2(
-          msg_env, erlang::nif::atom(msg_env, "execute_on_gc"), statement_term);
+      auto statement_term = fine::encode(msg_env, statement);
+      auto msg = enif_make_tuple2(msg_env, kAtomExecuteOnGC, statement_term);
       enif_send(NULL, &pid, msg_env, msg);
       enif_free_env(msg_env);
     }
@@ -88,9 +86,9 @@ static fine::Term adbc_error_term(ErlNifEnv *env,
   const char *message =
       (adbc_error->message == nullptr) ? "unknown error" : adbc_error->message;
   auto term = fine::Term(enif_make_tuple4(
-      env, kAtomAdbcError, erlang::nif::make_binary(env, message),
+      env, kAtomAdbcError, fine::encode(env, std::string_view(message)),
       enif_make_int(env, adbc_error->vendor_code),
-      erlang::nif::make_binary(env, adbc_error->sqlstate, 5)));
+      fine::make_new_binary(env, adbc_error->sqlstate, 5)));
   if (adbc_error->release != nullptr) {
     adbc_error->release(adbc_error);
   }
@@ -100,8 +98,9 @@ static fine::Term adbc_error_term(ErlNifEnv *env,
 static fine::Term arrow_error_term(ErlNifEnv *env,
                                    struct ArrowError *arrow_error) {
   return fine::Term(enif_make_tuple4(
-      env, kAtomAdbcError, erlang::nif::make_binary(env, arrow_error->message),
-      kAtomNil, kAtomNil));
+      env, kAtomAdbcError,
+      fine::encode(env, std::string_view(arrow_error->message)), kAtomNil,
+      kAtomNil));
 }
 
 // Type alias for ADBC results
@@ -158,14 +157,14 @@ adbc_get_option_impl(ErlNifEnv *env, fine::ResourcePtr<ResType> res,
                             fine::Error(adbc_error_term(env, &adbc_error)));
       }
       // minus 1 to remove the null terminator for strings
-      auto ret = erlang::nif::make_binary(env, (const char *)out_value,
-                                          value_len - (is_string ? 1 : 0));
+      auto ret = fine::make_new_binary(env, (const char *)out_value,
+                                       value_len - (is_string ? 1 : 0));
       enif_free(out_value);
       return fine::encode(env, fine::Ok(fine::Term(ret)));
     } else {
       // minus 1 to remove the null terminator for strings
-      auto ret = erlang::nif::make_binary(env, (const char *)value,
-                                          value_len - (is_string ? 1 : 0));
+      auto ret = fine::make_new_binary(env, (const char *)value,
+                                       value_len - (is_string ? 1 : 0));
       return fine::encode(env, fine::Ok(fine::Term(ret)));
     }
   } else if (type == "integer") {
@@ -501,7 +500,7 @@ AdbcResult<> adbc_statement_bind(ErlNifEnv *env,
   if (adbc_column_to_arrow_type_struct(env, values, &arr, &schema,
                                        &arrow_error)) {
     ret = fine::Error(
-        fine::Term(erlang::nif::make_binary(env, arrow_error.message)));
+        fine::Term(fine::encode(env, std::string_view(arrow_error.message))));
   } else {
     struct AdbcError adbc_error{};
     AdbcStatusCode code =
@@ -570,9 +569,10 @@ adbc_arrow_array_stream_next(ErlNifEnv *env,
   if (code != 0) {
     const char *reason = res->value.get_last_error(&res->value);
     return fine::encode(
-        env,
-        fine::Error(fine::Term(erlang::nif::make_binary(
-            env, reason ? reason : "unknown error: cannot get next record"))));
+        env, fine::Error(fine::Term(fine::encode(
+                 env, std::string_view(
+                          reason ? reason
+                                 : "unknown error: cannot get next record")))));
   }
 
   // if no error and the array is released, the stream has ended
@@ -590,8 +590,9 @@ adbc_arrow_array_stream_next(ErlNifEnv *env,
       res->schema = {};
       if (array.release)
         array.release(&array);
-      return fine::encode(env, fine::Error(fine::Term(erlang::nif::make_binary(
-                                   env, reason ? reason : "unknown error"))));
+      return fine::encode(
+          env, fine::Error(fine::Term(fine::encode(
+                   env, std::string_view(reason ? reason : "unknown error")))));
     }
   }
 

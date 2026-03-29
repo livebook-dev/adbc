@@ -10,7 +10,6 @@
 #include <time.h>
 
 #include "adbc_consts.h"
-#include "nif_utils.hpp"
 
 struct AdbcColumnType {
   int valid = 0;
@@ -118,8 +117,8 @@ ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, ERL_NIF_TERM name_term,
 
 ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, struct ArrowSchema *schema,
                              ERL_NIF_TERM type_term, ERL_NIF_TERM metadata) {
-  ERL_NIF_TERM name_term = erlang::nif::make_binary(
-      env, schema->name == nullptr ? "" : schema->name);
+  ERL_NIF_TERM name_term = fine::encode(
+      env, std::string_view(schema->name == nullptr ? "" : schema->name));
   return make_adbc_field(env, name_term, type_term, metadata);
 }
 
@@ -180,7 +179,7 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema *schema,
                               struct ArrowArray *values, ERL_NIF_TERM name_term,
                               const char *type, ERL_NIF_TERM metadata,
                               ERL_NIF_TERM data) {
-  ERL_NIF_TERM type_term = erlang::nif::make_binary(env, type);
+  ERL_NIF_TERM type_term = fine::encode(env, std::string_view(type));
   return make_adbc_column(env, schema, values, name_term, type_term, metadata,
                           data);
 }
@@ -190,7 +189,7 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema *schema,
                               const char *type, ERL_NIF_TERM metadata,
                               ERL_NIF_TERM data) {
   ERL_NIF_TERM name_term =
-      erlang::nif::make_binary(env, name == nullptr ? "" : name);
+      fine::encode(env, std::string_view(name == nullptr ? "" : name));
   return make_adbc_column(env, schema, values, name_term, type, metadata, data);
 }
 
@@ -1051,10 +1050,11 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
             ret.arrow_type = NANOARROW_TYPE_STRUCT;
           } else if (enif_is_identical(tuple[0], kAtomFixedSizeBinary)) {
             int32_t fixed_size;
-            if (erlang::nif::get(env, tuple[1], &fixed_size)) {
+            try {
+              fixed_size = fine::decode<int64_t>(env, tuple[1]);
               ret.arrow_type = NANOARROW_TYPE_FIXED_SIZE_BINARY;
               ret.fixed_size = fixed_size;
-            } else {
+            } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
           } else {
@@ -1063,10 +1063,11 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
         } else if (arity == 3) {
           if (enif_is_identical(tuple[0], kAtomFixedSizeList)) {
             int32_t fixed_size;
-            if (erlang::nif::get(env, tuple[2], &fixed_size)) {
+            try {
+              fixed_size = fine::decode<int64_t>(env, tuple[2]);
               ret.arrow_type = NANOARROW_TYPE_FIXED_SIZE_LIST;
               ret.fixed_size = fixed_size;
-            } else {
+            } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
           } else if (enif_is_identical(tuple[0], kAdbcColumnTypeDictionary)) {
@@ -1074,49 +1075,55 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
           } else if (enif_is_identical(tuple[0], kAtomTimestamp)) {
             ret.arrow_type = NANOARROW_TYPE_TIMESTAMP;
             std::string timezone;
-            if (erlang::nif::get(env, tuple[2], timezone) &&
-                !timezone.empty()) {
-              ret.timezone = timezone;
-              if (enif_is_identical(tuple[1], kAtomSeconds)) {
-                ret.time_unit = NANOARROW_TIME_UNIT_SECOND;
+            try {
+              timezone = fine::decode<std::string>(env, tuple[2]);
+              if (!timezone.empty()) {
+                ret.timezone = timezone;
+                if (enif_is_identical(tuple[1], kAtomSeconds)) {
+                  ret.time_unit = NANOARROW_TIME_UNIT_SECOND;
 
-              } else if (enif_is_identical(tuple[1], kAtomMilliseconds)) {
-                ret.time_unit = NANOARROW_TIME_UNIT_MILLI;
+                } else if (enif_is_identical(tuple[1], kAtomMilliseconds)) {
+                  ret.time_unit = NANOARROW_TIME_UNIT_MILLI;
 
-              } else if (enif_is_identical(tuple[1], kAtomMicroseconds)) {
-                ret.time_unit = NANOARROW_TIME_UNIT_MICRO;
+                } else if (enif_is_identical(tuple[1], kAtomMicroseconds)) {
+                  ret.time_unit = NANOARROW_TIME_UNIT_MICRO;
 
-              } else if (enif_is_identical(tuple[1], kAtomNanoseconds)) {
-                ret.time_unit = NANOARROW_TIME_UNIT_NANO;
+                } else if (enif_is_identical(tuple[1], kAtomNanoseconds)) {
+                  ret.time_unit = NANOARROW_TIME_UNIT_NANO;
 
+                } else {
+                  ret.valid = 0;
+                }
               } else {
                 ret.valid = 0;
               }
-            } else {
+            } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
           } else if (enif_is_identical(tuple[0], kAtomDecimal128)) {
             int precision = 0;
             int scale = 0;
-            if (erlang::nif::get(env, tuple[1], &precision) &&
-                erlang::nif::get(env, tuple[2], &scale)) {
+            try {
+              precision = fine::decode<int64_t>(env, tuple[1]);
+              scale = fine::decode<int64_t>(env, tuple[2]);
               ret.bits = 128;
               ret.precision = precision;
               ret.scale = scale;
               ret.arrow_type = NANOARROW_TYPE_DECIMAL128;
-            } else {
+            } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
           } else if (enif_is_identical(tuple[0], kAtomDecimal256)) {
             int precision = 0;
             int scale = 0;
-            if (erlang::nif::get(env, tuple[1], &precision) &&
-                erlang::nif::get(env, tuple[2], &scale)) {
+            try {
+              precision = fine::decode<int64_t>(env, tuple[1]);
+              scale = fine::decode<int64_t>(env, tuple[2]);
               ret.bits = 256;
               ret.precision = precision;
               ret.scale = scale;
               ret.arrow_type = NANOARROW_TYPE_DECIMAL256;
-            } else {
+            } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
           } else {
@@ -1146,9 +1153,14 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm *column,
   }
 
   std::string name;
-  if (!enif_is_identical(column->name_term, kAtomNil)) {
-    if (!erlang::nif::get(env, column->name_term, name)) {
-      erlang::nif::get_atom(env, column->name_term, name);
+  auto decoded_name =
+      fine::decode<std::optional<std::variant<std::string, fine::Atom>>>(
+          env, column->name_term);
+  if (decoded_name) {
+    if (auto string = std::get_if<std::string>(&*decoded_name)) {
+      name = *string;
+    } else if (auto atom = std::get_if<fine::Atom>(&*decoded_name)) {
+      name = atom->to_string();
     }
   }
 

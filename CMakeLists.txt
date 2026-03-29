@@ -45,7 +45,6 @@ if(WIN32)
     string(REPLACE "\\" "/" NANOARROW_SRC "${NANOARROW_SRC}")
 endif()
 set(SOURCE_FILES
-    "${C_SRC}/nif_utils.cpp"
     "${C_SRC}/adbc_nif.cpp"
 )
 
