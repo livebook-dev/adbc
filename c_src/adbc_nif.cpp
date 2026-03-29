@@ -52,6 +52,8 @@ FINE_RESOURCE(AdbcStatementResource);
 struct ArrowArrayStreamResource {
   struct ArrowArrayStream value{};
   struct ArrowSchema schema{};
+  // Keeps the statement alive while reading.
+  fine::ResourcePtr<AdbcStatementResource> statement;
 
   void destructor(ErlNifEnv *env) {
     if (schema.release)
@@ -435,6 +437,7 @@ adbc_statement_execute_query(ErlNifEnv *env,
   if (code != ADBC_STATUS_OK) {
     return fine::Error(adbc_error_term(env, &adbc_error));
   }
+  stream_res->statement = stmt;
   return fine::Ok(stream_res, rows_affected);
 }
 FINE_NIF(adbc_statement_execute_query, ERL_NIF_DIRTY_JOB_IO_BOUND);
