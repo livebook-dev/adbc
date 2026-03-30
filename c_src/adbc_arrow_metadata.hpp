@@ -13,7 +13,7 @@
 static int arrow_metadata_to_nif_term(ErlNifEnv *env, const char *metadata,
                                       ERL_NIF_TERM *out_metadata) {
   std::vector<ERL_NIF_TERM> metadata_keys, metadata_values;
-  *out_metadata = kAtomNil;
+  *out_metadata = fine::encode(env, atoms::nil);
   if (metadata == nullptr)
     return NANOARROW_OK;
 

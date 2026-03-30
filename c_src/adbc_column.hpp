@@ -62,7 +62,7 @@ int must_be_adbc_column(ErlNifEnv *env, ERL_NIF_TERM adbc_column,
 
 int AdbcColumnNifTerm::from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column,
                                  bool allow_nil, AdbcColumnNifTerm *out) {
-  if (enif_is_identical(adbc_column, kAtomNil)) {
+  if (enif_is_identical(adbc_column, fine::encode(env, atoms::nil))) {
     if (allow_nil) {
       if (out) {
         out->is_nil = 1;
@@ -97,13 +97,13 @@ int AdbcColumnNifTerm::from_term(ErlNifEnv *env, ERL_NIF_TERM adbc_column,
 ERL_NIF_TERM make_adbc_field(ErlNifEnv *env, ERL_NIF_TERM name_term,
                              ERL_NIF_TERM type_term, ERL_NIF_TERM metadata) {
   std::vector<ERL_NIF_TERM> keys = {
-      kAtomStructKey,
-      kAtomNameKey,
-      kAtomTypeKey,
-      kAtomMetadataKey,
+      fine::encode(env, atoms::struct_key),
+      fine::encode(env, atoms::name),
+      fine::encode(env, atoms::type),
+      fine::encode(env, atoms::metadata),
   };
   std::vector<ERL_NIF_TERM> values = {
-      kAtomAdbcFieldModule,
+      fine::encode(env, atoms::ElixirAdbcField),
       name_term,
       type_term,
       metadata,
@@ -127,19 +127,20 @@ make_adbc_column(ErlNifEnv *env, struct ArrowSchema *schema,
                  ERL_NIF_TERM type_term, ERL_NIF_TERM metadata,
                  std::optional<ERL_NIF_TERM> data_ref = std::nullopt) {
   ERL_NIF_TERM field_term = make_adbc_field(env, schema, type_term, metadata);
-  ERL_NIF_TERM data_ref_list = data_ref ? data_ref.value() : kAtomNil;
+  ERL_NIF_TERM data_ref_list =
+      data_ref ? data_ref.value() : fine::encode(env, atoms::nil);
 
   std::vector<ERL_NIF_TERM> keys = {
-      kAtomStructKey,
-      kAtomFieldKey,
-      kAtomDataKey,
-      kAtomSizeKey,
+      fine::encode(env, atoms::struct_key),
+      fine::encode(env, atoms::field),
+      fine::encode(env, atoms::data),
+      fine::encode(env, atoms::size),
   };
   std::vector<ERL_NIF_TERM> values = {
-      kAtomAdbcColumnModule,
+      fine::encode(env, atoms::ElixirAdbcColumn),
       field_term,
       data_ref_list,
-      kAtomNil,
+      fine::encode(env, atoms::nil),
   };
 
   ERL_NIF_TERM adbc_column;
@@ -156,17 +157,17 @@ ERL_NIF_TERM make_adbc_column(ErlNifEnv *env, struct ArrowSchema *schema,
       make_adbc_field(env, name_term, type_term, metadata);
 
   std::vector<ERL_NIF_TERM> keys = {
-      kAtomStructKey,
-      kAtomFieldKey,
-      kAtomDataKey,
-      kAtomSizeKey,
+      fine::encode(env, atoms::struct_key),
+      fine::encode(env, atoms::field),
+      fine::encode(env, atoms::data),
+      fine::encode(env, atoms::size),
   };
 
   std::vector<ERL_NIF_TERM> values = {
-      kAtomAdbcColumnModule,
+      fine::encode(env, atoms::ElixirAdbcColumn),
       field_term,
       data,
-      kAtomNil,
+      fine::encode(env, atoms::nil),
   };
 
   ERL_NIF_TERM adbc_column;
@@ -251,11 +252,14 @@ static int copy_validity_bitmap(const uint8_t *src, int bit_offset,
 int get_buffer_data(ErlNifEnv *env, ERL_NIF_TERM data_term,
                     struct ArrowArray *write_array, size_t element_bytes) {
   ERL_NIF_TERM data_field, validity_field, bit_offset_field;
-  if (!enif_get_map_value(env, data_term, kAtomDataKey, &data_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::data),
+                          &data_field))
     return 1;
-  if (!enif_get_map_value(env, data_term, kAtomValidity, &validity_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::validity),
+                          &validity_field))
     return 1;
-  if (!enif_get_map_value(env, data_term, kAtomBitOffsetKey, &bit_offset_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::bit_offset),
+                          &bit_offset_field))
     return 1;
 
   ErlNifBinary binary;
@@ -268,7 +272,8 @@ int get_buffer_data(ErlNifEnv *env, ERL_NIF_TERM data_term,
   }
   size_t count = binary.size / element_bytes;
 
-  bool has_validity = !enif_is_identical(validity_field, kAtomNil);
+  bool has_validity =
+      !enif_is_identical(validity_field, fine::encode(env, atoms::nil));
   ErlNifBinary validity_bin;
   int bit_offset = 0;
   if (has_validity) {
@@ -344,38 +349,44 @@ int do_get_dictionary(ErlNifEnv *env, ERL_NIF_TERM type_term,
 
   // data is a %{key: data, value: data} map
   ERL_NIF_TERM key_data, value_data_term;
-  if (!enif_get_map_value(env, batches_list, kAtomKey, &key_data)) {
+  if (!enif_get_map_value(env, batches_list, fine::encode(env, atoms::key),
+                          &key_data)) {
     return kErrorBufferGetMapValue;
   }
-  if (!enif_get_map_value(env, batches_list, kAtomValue, &value_data_term)) {
+  if (!enif_get_map_value(env, batches_list, fine::encode(env, atoms::value),
+                          &value_data_term)) {
     return kErrorBufferGetMapValue;
   }
   struct AdbcColumnNifTerm keys;
   keys.is_nil = 0;
-  if (!enif_get_map_value(env, key_field_map, kAtomTypeKey, &keys.type_term))
+  if (!enif_get_map_value(env, key_field_map, fine::encode(env, atoms::type),
+                          &keys.type_term))
     return kErrorBufferGetMapValue;
-  if (!enif_get_map_value(env, key_field_map, kAtomNameKey, &keys.name_term))
+  if (!enif_get_map_value(env, key_field_map, fine::encode(env, atoms::name),
+                          &keys.name_term))
     return kErrorBufferGetMapValue;
-  if (!enif_get_map_value(env, key_field_map, kAtomMetadataKey,
+  if (!enif_get_map_value(env, key_field_map,
+                          fine::encode(env, atoms::metadata),
                           &keys.metadata_term))
     return kErrorBufferGetMapValue;
   keys.data_term = key_data;
-  keys.struct_name_term = kAtomAdbcFieldModule;
+  keys.struct_name_term = fine::encode(env, atoms::ElixirAdbcField);
   keys.n_items = 0;
 
   struct AdbcColumnNifTerm values;
   values.is_nil = 0;
-  if (!enif_get_map_value(env, value_field_map, kAtomTypeKey,
+  if (!enif_get_map_value(env, value_field_map, fine::encode(env, atoms::type),
                           &values.type_term))
     return kErrorBufferGetMapValue;
-  if (!enif_get_map_value(env, value_field_map, kAtomNameKey,
+  if (!enif_get_map_value(env, value_field_map, fine::encode(env, atoms::name),
                           &values.name_term))
     return kErrorBufferGetMapValue;
-  if (!enif_get_map_value(env, value_field_map, kAtomMetadataKey,
+  if (!enif_get_map_value(env, value_field_map,
+                          fine::encode(env, atoms::metadata),
                           &values.metadata_term))
     return kErrorBufferGetMapValue;
   values.data_term = value_data_term;
-  values.struct_name_term = kAtomAdbcFieldModule;
+  values.struct_name_term = fine::encode(env, atoms::ElixirAdbcField);
   values.n_items = 0;
 
   int ret = adbc_column_to_adbc_field(env, &keys, true, array_out, schema_out,
@@ -424,13 +435,17 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list,
   // Buffers: 0 = validity, 1 = offsets, 2 = data
   {
     ERL_NIF_TERM offsets_term, data_term, validity_term, offset_term;
-    if (!enif_get_map_value(env, list, kAtomOffsets, &offsets_term))
+    if (!enif_get_map_value(env, list, fine::encode(env, atoms::offsets),
+                            &offsets_term))
       return 1;
-    if (!enif_get_map_value(env, list, kAtomDataKey, &data_term))
+    if (!enif_get_map_value(env, list, fine::encode(env, atoms::data),
+                            &data_term))
       return 1;
-    if (!enif_get_map_value(env, list, kAtomValidity, &validity_term))
+    if (!enif_get_map_value(env, list, fine::encode(env, atoms::validity),
+                            &validity_term))
       return 1;
-    if (!enif_get_map_value(env, list, kAtomBitOffsetKey, &offset_term))
+    if (!enif_get_map_value(env, list, fine::encode(env, atoms::bit_offset),
+                            &offset_term))
       return 1;
 
     ErlNifBinary offsets_bin, data_bin;
@@ -447,7 +462,8 @@ int do_get_list_string(ErlNifEnv *env, ERL_NIF_TERM list,
     NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 2),
                                               data_bin.data, data_bin.size));
 
-    bool has_validity = !enif_is_identical(validity_term, kAtomNil);
+    bool has_validity =
+        !enif_is_identical(validity_term, fine::encode(env, atoms::nil));
     if (has_validity) {
       ErlNifBinary validity_bin;
       int bit_offset = 0;
@@ -476,13 +492,17 @@ int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term,
   // %Adbc.BooleanData{data: binary, validity: binary | nil, bit_offset: int,
   // size: int}
   ERL_NIF_TERM data_field, validity_field, bit_offset_field, size_field;
-  if (!enif_get_map_value(env, data_term, kAtomDataKey, &data_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::data),
+                          &data_field))
     return 1;
-  if (!enif_get_map_value(env, data_term, kAtomValidity, &validity_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::validity),
+                          &validity_field))
     return 1;
-  if (!enif_get_map_value(env, data_term, kAtomBitOffsetKey, &bit_offset_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::bit_offset),
+                          &bit_offset_field))
     return 1;
-  if (!enif_get_map_value(env, data_term, kAtomSizeKey, &size_field))
+  if (!enif_get_map_value(env, data_term, fine::encode(env, atoms::size),
+                          &size_field))
     return 1;
 
   ErlNifBinary data_bin;
@@ -506,7 +526,8 @@ int do_get_list_boolean(ErlNifEnv *env, ERL_NIF_TERM data_term,
   NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(write_array, 1),
                                             data_bin.data, data_bin.size));
 
-  bool has_validity = !enif_is_identical(validity_field, kAtomNil);
+  bool has_validity =
+      !enif_is_identical(validity_field, fine::encode(env, atoms::nil));
   if (has_validity) {
     ErlNifBinary validity_bin;
     if (!enif_inspect_binary(env, validity_field, &validity_bin))
@@ -597,10 +618,12 @@ int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM type_term,
 
   ERL_NIF_TERM validity_term, bit_offset_term, values_term;
   if (!enif_is_map(env, data_term) ||
-      !enif_get_map_value(env, data_term, kAtomValidity, &validity_term) ||
-      !enif_get_map_value(env, data_term, kAtomBitOffsetKey,
+      !enif_get_map_value(env, data_term, fine::encode(env, atoms::validity),
+                          &validity_term) ||
+      !enif_get_map_value(env, data_term, fine::encode(env, atoms::bit_offset),
                           &bit_offset_term) ||
-      !enif_get_map_value(env, data_term, kAtomValues, &values_term)) {
+      !enif_get_map_value(env, data_term, fine::encode(env, atoms::values),
+                          &values_term)) {
     snprintf(error_out->message, sizeof(error_out->message),
              "Expected struct data to be %%Adbc.StructData{} with validity, "
              "bit_offset, and values");
@@ -631,15 +654,17 @@ int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM type_term,
 
     ERL_NIF_TERM child_name_term, child_type_term, child_metadata_term;
     if (!enif_is_map(env, field_head) ||
-        !enif_get_map_value(env, field_head, kAtomNameKey, &child_name_term) ||
-        !enif_get_map_value(env, field_head, kAtomTypeKey, &child_type_term)) {
+        !enif_get_map_value(env, field_head, fine::encode(env, atoms::name),
+                            &child_name_term) ||
+        !enif_get_map_value(env, field_head, fine::encode(env, atoms::type),
+                            &child_type_term)) {
       snprintf(error_out->message, sizeof(error_out->message),
                "Expected struct child to be %%Adbc.Field{} with name and type");
       return 1;
     }
-    if (!enif_get_map_value(env, field_head, kAtomMetadataKey,
+    if (!enif_get_map_value(env, field_head, fine::encode(env, atoms::metadata),
                             &child_metadata_term)) {
-      child_metadata_term = kAtomNil;
+      child_metadata_term = fine::encode(env, atoms::nil);
     }
 
     struct AdbcColumnNifTerm child_column;
@@ -648,7 +673,7 @@ int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM type_term,
     child_column.data_term = value_head;
     child_column.name_term = child_name_term;
     child_column.metadata_term = child_metadata_term;
-    child_column.struct_name_term = kAtomAdbcFieldModule;
+    child_column.struct_name_term = fine::encode(env, atoms::ElixirAdbcField);
     child_column.n_items = 0;
 
     if (schema_out->children[i]->release) {
@@ -678,7 +703,8 @@ int do_get_struct(ErlNifEnv *env, ERL_NIF_TERM type_term,
   }
 
   // Apply struct-level validity bitmap
-  bool has_validity = !enif_is_identical(validity_term, kAtomNil);
+  bool has_validity =
+      !enif_is_identical(validity_term, fine::encode(env, atoms::nil));
   if (has_validity) {
     ErlNifBinary validity_bin;
     int bit_offset = 0;
@@ -717,7 +743,7 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term,
 
   // Extract inner field from parent type: {:list, inner_field} or {:large_list,
   // inner_field} or {:fixed_size_list, inner_field, size}
-  ERL_NIF_TERM inner_type_term = kAtomNil;
+  ERL_NIF_TERM inner_type_term = fine::encode(env, atoms::nil);
   {
     int arity;
     const ERL_NIF_TERM *tuple_elems;
@@ -725,13 +751,13 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term,
         arity >= 2) {
       ERL_NIF_TERM inner_field_term = tuple_elems[1];
       if (enif_is_map(env, inner_field_term)) {
-        enif_get_map_value(env, inner_field_term, kAtomTypeKey,
-                           &inner_type_term);
+        enif_get_map_value(env, inner_field_term,
+                           fine::encode(env, atoms::type), &inner_type_term);
       }
     }
   }
 
-  if (enif_is_identical(inner_type_term, kAtomNil)) {
+  if (enif_is_identical(inner_type_term, fine::encode(env, atoms::nil))) {
     snprintf(error_out->message, sizeof(error_out->message),
              "list type must be {:list, %%Adbc.Field{}} with inner type info");
     return 1;
@@ -747,10 +773,14 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term,
     }
 
     ERL_NIF_TERM offsets_term, validity_term, values_term, offset_term;
-    if (!enif_get_map_value(env, list, kAtomOffsets, &offsets_term) ||
-        !enif_get_map_value(env, list, kAtomValidity, &validity_term) ||
-        !enif_get_map_value(env, list, kAtomValues, &values_term) ||
-        !enif_get_map_value(env, list, kAtomBitOffsetKey, &offset_term)) {
+    if (!enif_get_map_value(env, list, fine::encode(env, atoms::offsets),
+                            &offsets_term) ||
+        !enif_get_map_value(env, list, fine::encode(env, atoms::validity),
+                            &validity_term) ||
+        !enif_get_map_value(env, list, fine::encode(env, atoms::values),
+                            &values_term) ||
+        !enif_get_map_value(env, list, fine::encode(env, atoms::bit_offset),
+                            &offset_term)) {
       snprintf(error_out->message, sizeof(error_out->message),
                "Expected list data batch to have offsets, validity, values, "
                "and bit_offset keys");
@@ -770,9 +800,9 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term,
       child_column.is_nil = 0;
       child_column.type_term = inner_type_term;
       child_column.data_term = val_head;
-      child_column.name_term = kAtomNil;
-      child_column.metadata_term = kAtomNil;
-      child_column.struct_name_term = kAtomAdbcFieldModule;
+      child_column.name_term = fine::encode(env, atoms::nil);
+      child_column.metadata_term = fine::encode(env, atoms::nil);
+      child_column.struct_name_term = fine::encode(env, atoms::ElixirAdbcField);
       child_column.n_items = 0;
 
       if (!child_initialized) {
@@ -831,7 +861,8 @@ int do_get_list(ErlNifEnv *env, ERL_NIF_TERM parent_type_term,
       return 1;
     }
 
-    bool has_validity = !enif_is_identical(validity_term, kAtomNil);
+    bool has_validity =
+        !enif_is_identical(validity_term, fine::encode(env, atoms::nil));
     ErlNifBinary validity_bin;
     int bit_offset = 0;
     if (has_validity) {
@@ -919,17 +950,20 @@ int must_be_adbc_column(ErlNifEnv *env, ERL_NIF_TERM adbc_column,
     return kErrorBufferIsNotAMap;
   }
 
-  if (!enif_get_map_value(env, adbc_column, kAtomStructKey,
+  if (!enif_get_map_value(env, adbc_column,
+                          fine::encode(env, atoms::struct_key),
                           &struct_name_term)) {
     return kErrorBufferGetMapValue;
   }
-  if (!enif_is_identical(struct_name_term, kAtomAdbcColumnModule)) {
+  if (!enif_is_identical(struct_name_term,
+                         fine::encode(env, atoms::ElixirAdbcColumn))) {
     return kErrorBufferWrongStruct;
   }
 
   // Get the field sub-map
   ERL_NIF_TERM field_term;
-  if (!enif_get_map_value(env, adbc_column, kAtomFieldKey, &field_term)) {
+  if (!enif_get_map_value(env, adbc_column, fine::encode(env, atoms::field),
+                          &field_term)) {
     return kErrorBufferGetMapValue;
   }
   if (!enif_is_map(env, field_term)) {
@@ -937,18 +971,22 @@ int must_be_adbc_column(ErlNifEnv *env, ERL_NIF_TERM adbc_column,
   }
 
   // Extract field properties from the Field struct
-  if (!enif_get_map_value(env, field_term, kAtomNameKey, &name_term)) {
+  if (!enif_get_map_value(env, field_term, fine::encode(env, atoms::name),
+                          &name_term)) {
     return kErrorBufferGetMapValue;
   }
-  if (!enif_get_map_value(env, field_term, kAtomTypeKey, &type_term)) {
+  if (!enif_get_map_value(env, field_term, fine::encode(env, atoms::type),
+                          &type_term)) {
     return kErrorBufferGetMapValue;
   }
-  if (!enif_get_map_value(env, field_term, kAtomMetadataKey, &metadata_term)) {
+  if (!enif_get_map_value(env, field_term, fine::encode(env, atoms::metadata),
+                          &metadata_term)) {
     return kErrorBufferGetMapValue;
   }
 
   // Get data from Column
-  if (!enif_get_map_value(env, adbc_column, kAtomDataKey, &data_term)) {
+  if (!enif_get_map_value(env, adbc_column, fine::encode(env, atoms::data),
+                          &data_term)) {
     return kErrorBufferGetMapValue;
   }
 
@@ -964,41 +1002,43 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
   struct AdbcColumnType ret{};
   ret.valid = 1;
 
-  if (enif_is_identical(type_term, kAdbcColumnTypeBool)) {
+  if (enif_is_identical(type_term, fine::encode(env, atoms::boolean))) {
     ret.arrow_type = NANOARROW_TYPE_BOOL;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeS8)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::s8))) {
     ret.arrow_type = NANOARROW_TYPE_INT8;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeU8)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::u8))) {
     ret.arrow_type = NANOARROW_TYPE_UINT8;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeS16)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::s16))) {
     ret.arrow_type = NANOARROW_TYPE_INT16;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeU16)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::u16))) {
     ret.arrow_type = NANOARROW_TYPE_UINT16;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeS32)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::s32))) {
     ret.arrow_type = NANOARROW_TYPE_INT32;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeU32)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::u32))) {
     ret.arrow_type = NANOARROW_TYPE_UINT32;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeS64)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::s64))) {
     ret.arrow_type = NANOARROW_TYPE_INT64;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeU64)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::u64))) {
     ret.arrow_type = NANOARROW_TYPE_UINT64;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeF16)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::f16))) {
     ret.arrow_type = NANOARROW_TYPE_HALF_FLOAT;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeF32)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::f32))) {
     ret.arrow_type = NANOARROW_TYPE_FLOAT;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeF64)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::f64))) {
     ret.arrow_type = NANOARROW_TYPE_DOUBLE;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeBinary)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::binary))) {
     ret.arrow_type = NANOARROW_TYPE_BINARY;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeLargeBinary)) {
+  } else if (enif_is_identical(type_term,
+                               fine::encode(env, atoms::large_binary))) {
     ret.arrow_type = NANOARROW_TYPE_LARGE_BINARY;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeString)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::string))) {
     ret.arrow_type = NANOARROW_TYPE_STRING;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeLargeString)) {
+  } else if (enif_is_identical(type_term,
+                               fine::encode(env, atoms::large_string))) {
     ret.arrow_type = NANOARROW_TYPE_LARGE_STRING;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeDate32)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::date32))) {
     ret.arrow_type = NANOARROW_TYPE_DATE32;
-  } else if (enif_is_identical(type_term, kAdbcColumnTypeDate64)) {
+  } else if (enif_is_identical(type_term, fine::encode(env, atoms::date64))) {
     ret.arrow_type = NANOARROW_TYPE_DATE64;
   } else if (enif_is_tuple(env, type_term)) {
     if (enif_is_identical(type_term, kAdbcColumnTypeTime32Seconds)) {
@@ -1042,13 +1082,17 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
       int arity;
       if (enif_get_tuple(env, type_term, &arity, &tuple)) {
         if (arity == 2) {
-          if (enif_is_identical(tuple[0], kAdbcColumnTypeList)) {
+          if (enif_is_identical(tuple[0], fine::encode(env, atoms::list))) {
             ret.arrow_type = NANOARROW_TYPE_LIST;
-          } else if (enif_is_identical(tuple[0], kAdbcColumnTypeLargeList)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::large_list))) {
             ret.arrow_type = NANOARROW_TYPE_LARGE_LIST;
-          } else if (enif_is_identical(tuple[0], kAdbcColumnTypeStruct)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::struct_))) {
             ret.arrow_type = NANOARROW_TYPE_STRUCT;
-          } else if (enif_is_identical(tuple[0], kAtomFixedSizeBinary)) {
+          } else if (enif_is_identical(
+                         tuple[0],
+                         fine::encode(env, atoms::fixed_size_binary))) {
             int32_t fixed_size;
             try {
               fixed_size = fine::decode<int64_t>(env, tuple[1]);
@@ -1061,7 +1105,8 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
             ret.valid = 0;
           }
         } else if (arity == 3) {
-          if (enif_is_identical(tuple[0], kAtomFixedSizeList)) {
+          if (enif_is_identical(tuple[0],
+                                fine::encode(env, atoms::fixed_size_list))) {
             int32_t fixed_size;
             try {
               fixed_size = fine::decode<int64_t>(env, tuple[2]);
@@ -1070,25 +1115,34 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
             } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
-          } else if (enif_is_identical(tuple[0], kAdbcColumnTypeDictionary)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::dictionary))) {
             ret.arrow_type = NANOARROW_TYPE_DICTIONARY;
-          } else if (enif_is_identical(tuple[0], kAtomTimestamp)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::timestamp))) {
             ret.arrow_type = NANOARROW_TYPE_TIMESTAMP;
             std::string timezone;
             try {
               timezone = fine::decode<std::string>(env, tuple[2]);
               if (!timezone.empty()) {
                 ret.timezone = timezone;
-                if (enif_is_identical(tuple[1], kAtomSeconds)) {
+                if (enif_is_identical(tuple[1],
+                                      fine::encode(env, atoms::seconds))) {
                   ret.time_unit = NANOARROW_TIME_UNIT_SECOND;
 
-                } else if (enif_is_identical(tuple[1], kAtomMilliseconds)) {
+                } else if (enif_is_identical(
+                               tuple[1],
+                               fine::encode(env, atoms::milliseconds))) {
                   ret.time_unit = NANOARROW_TIME_UNIT_MILLI;
 
-                } else if (enif_is_identical(tuple[1], kAtomMicroseconds)) {
+                } else if (enif_is_identical(
+                               tuple[1],
+                               fine::encode(env, atoms::microseconds))) {
                   ret.time_unit = NANOARROW_TIME_UNIT_MICRO;
 
-                } else if (enif_is_identical(tuple[1], kAtomNanoseconds)) {
+                } else if (enif_is_identical(
+                               tuple[1],
+                               fine::encode(env, atoms::nanoseconds))) {
                   ret.time_unit = NANOARROW_TIME_UNIT_NANO;
 
                 } else {
@@ -1100,7 +1154,8 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
             } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
-          } else if (enif_is_identical(tuple[0], kAtomDecimal128)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::decimal128))) {
             int precision = 0;
             int scale = 0;
             try {
@@ -1113,7 +1168,8 @@ adbc_column_type_to_nanoarrow_type(ErlNifEnv *env, ERL_NIF_TERM type_term) {
             } catch (const std::invalid_argument &) {
               ret.valid = 0;
             }
-          } else if (enif_is_identical(tuple[0], kAtomDecimal256)) {
+          } else if (enif_is_identical(tuple[0],
+                                       fine::encode(env, atoms::decimal256))) {
             int precision = 0;
             int scale = 0;
             try {
@@ -1171,8 +1227,10 @@ int adbc_column_to_adbc_field(ErlNifEnv *env, struct AdbcColumnNifTerm *column,
   {
     ERL_NIF_TERM validity_term;
     if (enif_is_map(env, data_term) &&
-        enif_get_map_value(env, data_term, kAtomValidity, &validity_term)) {
-      nullable = !enif_is_identical(validity_term, kAtomNil);
+        enif_get_map_value(env, data_term, fine::encode(env, atoms::validity),
+                           &validity_term)) {
+      nullable =
+          !enif_is_identical(validity_term, fine::encode(env, atoms::nil));
     }
   }
 
@@ -1370,7 +1428,8 @@ int adbc_column_to_arrow_type_struct(ErlNifEnv *env, ERL_NIF_TERM values,
 
     if (enif_is_map(env, head)) {
       ERL_NIF_TERM data_term;
-      if (!enif_get_map_value(env, head, kAtomDataKey, &data_term)) {
+      if (!enif_get_map_value(env, head, fine::encode(env, atoms::data),
+                              &data_term)) {
         snprintf(error_out->message, sizeof(error_out->message),
                  "Expected `%%Adbc.Column{}` to have a `data` field.");
         return 1;
@@ -1467,11 +1526,11 @@ int adbc_column_to_arrow_type_struct(ErlNifEnv *env, ERL_NIF_TERM values,
       } else if (enif_is_atom(env, head)) {
         int64_t val{};
         auto type = NANOARROW_TYPE_BOOL;
-        if (enif_is_identical(head, kAtomTrue)) {
+        if (enif_is_identical(head, fine::encode(env, atoms::true_))) {
           val = 1;
-        } else if (enif_is_identical(head, kAtomFalse)) {
+        } else if (enif_is_identical(head, fine::encode(env, atoms::false_))) {
           val = 0;
-        } else if (enif_is_identical(head, kAtomNil)) {
+        } else if (enif_is_identical(head, fine::encode(env, atoms::nil))) {
           type = NANOARROW_TYPE_NA;
         } else {
           enif_snprintf(error_out->message, sizeof(error_out->message),

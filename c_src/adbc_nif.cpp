@@ -71,7 +71,8 @@ struct AdbcExecuteOnGCResource {
     auto msg_env = enif_alloc_env();
     if (msg_env) {
       auto statement_term = fine::encode(msg_env, statement);
-      auto msg = enif_make_tuple2(msg_env, kAtomExecuteOnGC, statement_term);
+      auto msg = enif_make_tuple2(
+          msg_env, fine::encode(msg_env, atoms::execute_on_gc), statement_term);
       enif_send(NULL, &pid, msg_env, msg);
       enif_free_env(msg_env);
     }
@@ -85,10 +86,11 @@ static fine::Term adbc_error_term(ErlNifEnv *env,
                                   struct AdbcError *adbc_error) {
   const char *message =
       (adbc_error->message == nullptr) ? "unknown error" : adbc_error->message;
-  auto term = fine::Term(enif_make_tuple4(
-      env, kAtomAdbcError, fine::encode(env, std::string_view(message)),
-      enif_make_int(env, adbc_error->vendor_code),
-      fine::make_new_binary(env, adbc_error->sqlstate, 5)));
+  auto term = fine::Term(
+      enif_make_tuple4(env, fine::encode(env, atoms::adbc_error),
+                       fine::encode(env, std::string_view(message)),
+                       enif_make_int(env, adbc_error->vendor_code),
+                       fine::make_new_binary(env, adbc_error->sqlstate, 5)));
   if (adbc_error->release != nullptr) {
     adbc_error->release(adbc_error);
   }
@@ -98,9 +100,9 @@ static fine::Term adbc_error_term(ErlNifEnv *env,
 static fine::Term arrow_error_term(ErlNifEnv *env,
                                    struct ArrowError *arrow_error) {
   return fine::Term(enif_make_tuple4(
-      env, kAtomAdbcError,
-      fine::encode(env, std::string_view(arrow_error->message)), kAtomNil,
-      kAtomNil));
+      env, fine::encode(env, atoms::adbc_error),
+      fine::encode(env, std::string_view(arrow_error->message)),
+      fine::encode(env, atoms::nil), fine::encode(env, atoms::nil)));
 }
 
 // Type alias for ADBC results
@@ -577,7 +579,7 @@ adbc_arrow_array_stream_next(ErlNifEnv *env,
 
   // if no error and the array is released, the stream has ended
   if (array.release == nullptr) {
-    return fine::Term(kAtomEndOfSeries);
+    return fine::encode(env, atoms::end_of_series);
   }
 
   // only fetch schema once for the entire stream
@@ -647,9 +649,9 @@ FINE_NIF(adbc_column_materialize, ERL_NIF_DIRTY_JOB_CPU_BOUND);
 
 fine::Term adbc_ipc_system_endianness(ErlNifEnv *env) {
   if (ArrowIpcSystemEndianness() == NANOARROW_IPC_ENDIANNESS_BIG) {
-    return fine::Term(kAtomBig);
+    return fine::encode(env, atoms::big);
   } else {
-    return fine::Term(kAtomLittle);
+    return fine::encode(env, atoms::little);
   }
 }
 FINE_NIF(adbc_ipc_system_endianness, 0);

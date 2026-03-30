@@ -107,8 +107,8 @@ static int get_run_end_encoded_schema(ErlNifEnv *env,
   }
 
   // Return type as {:run_end_encoded, run_ends_field, values_field}
-  run_ends_schema = enif_make_tuple3(env, kAdbcColumnTypeRunEndEncoded,
-                                     children[0], children[1]);
+  run_ends_schema = enif_make_tuple3(
+      env, fine::encode(env, atoms::run_end_encoded), children[0], children[1]);
   return 0;
 }
 
@@ -176,7 +176,8 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema *schema,
     return 1;
   }
 
-  ERL_NIF_TERM map_kv_keys[] = {kAtomKey, kAtomValue};
+  ERL_NIF_TERM map_kv_keys[] = {fine::encode(env, atoms::key),
+                                fine::encode(env, atoms::value)};
   ERL_NIF_TERM map_kv_values[] = {key_schema, value_schema};
   // only fail if there are duplicated keys
   // so we don't need to check the return value
@@ -236,40 +237,40 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                     ERL_NIF_TERM &type_term,
                                     ERL_NIF_TERM &metadata,
                                     ERL_NIF_TERM &error) {
-  static const std::map<std::string, std::vector<ERL_NIF_TERM>>
+  static const std::map<std::string, std::vector<fine::Atom>>
       primitiveFormatMapping = {
-          {"n", {kAtomNil}},
-          {"b", {kAdbcColumnTypeBool}},
-          {"c", {kAdbcColumnTypeS8}},
-          {"C", {kAdbcColumnTypeU8}},
-          {"s", {kAdbcColumnTypeS16}},
-          {"S", {kAdbcColumnTypeU16}},
-          {"i", {kAdbcColumnTypeS32}},
-          {"I", {kAdbcColumnTypeU32}},
-          {"l", {kAdbcColumnTypeS64}},
-          {"L", {kAdbcColumnTypeU64}},
-          {"e", {kAdbcColumnTypeF16}},
-          {"f", {kAdbcColumnTypeF32}},
-          {"g", {kAdbcColumnTypeF64}},
-          {"z", {kAdbcColumnTypeBinary}},
-          {"Z", {kAdbcColumnTypeLargeBinary}},
-          {"vz", {kAdbcColumnTypeBinaryView}},
-          {"u", {kAdbcColumnTypeString}},
-          {"U", {kAdbcColumnTypeLargeString}},
-          {"vu", {kAdbcColumnTypeStringView}},
-          {"tdD", {kAdbcColumnTypeDate32}},
-          {"tdm", {kAdbcColumnTypeDate64}},
-          {"tts", {kAtomTime32, kAtomSeconds}},
-          {"ttm", {kAtomTime32, kAtomMilliseconds}},
-          {"ttu", {kAtomTime64, kAtomMicroseconds}},
-          {"ttn", {kAtomTime64, kAtomNanoseconds}},
-          {"tDs", {kAtomDuration, kAtomSeconds}},
-          {"tDm", {kAtomDuration, kAtomMilliseconds}},
-          {"tDu", {kAtomDuration, kAtomMicroseconds}},
-          {"tDn", {kAtomDuration, kAtomNanoseconds}},
-          {"tiM", {kAtomInterval, kAtomMonth}},
-          {"tiD", {kAtomInterval, kAtomDayTime}},
-          {"tin", {kAtomInterval, kAtomMonthDayNano}},
+          {"n", {atoms::nil}},
+          {"b", {atoms::boolean}},
+          {"c", {atoms::s8}},
+          {"C", {atoms::u8}},
+          {"s", {atoms::s16}},
+          {"S", {atoms::u16}},
+          {"i", {atoms::s32}},
+          {"I", {atoms::u32}},
+          {"l", {atoms::s64}},
+          {"L", {atoms::u64}},
+          {"e", {atoms::f16}},
+          {"f", {atoms::f32}},
+          {"g", {atoms::f64}},
+          {"z", {atoms::binary}},
+          {"Z", {atoms::large_binary}},
+          {"vz", {atoms::binary_view}},
+          {"u", {atoms::string}},
+          {"U", {atoms::large_string}},
+          {"vu", {atoms::string_view}},
+          {"tdD", {atoms::date32}},
+          {"tdm", {atoms::date64}},
+          {"tts", {atoms::time32, atoms::seconds}},
+          {"ttm", {atoms::time32, atoms::milliseconds}},
+          {"ttu", {atoms::time64, atoms::microseconds}},
+          {"ttn", {atoms::time64, atoms::nanoseconds}},
+          {"tDs", {atoms::duration, atoms::seconds}},
+          {"tDm", {atoms::duration, atoms::milliseconds}},
+          {"tDu", {atoms::duration, atoms::microseconds}},
+          {"tDn", {atoms::duration, atoms::nanoseconds}},
+          {"tiM", {atoms::interval, atoms::month}},
+          {"tiD", {atoms::interval, atoms::day_time}},
+          {"tin", {atoms::interval, atoms::month_day_nano}},
       };
   if (schema == nullptr) {
     error =
@@ -287,7 +288,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   ERL_NIF_TERM children_term{};
   size_t format_len = strlen(format);
 
-  type_term = kAtomNil;
+  type_term = fine::encode(env, atoms::nil);
   std::vector<ERL_NIF_TERM> children;
   NANOARROW_RETURN_NOT_OK(
       arrow_metadata_to_nif_term(env, schema->metadata, &metadata));
@@ -302,7 +303,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     // The same holds for ArrowArray structure: while the parent
     // structure points to the index data, the ArrowArray.dictionary
     // points to the dictionary values array.
-    type_term = kAdbcColumnTypeDictionary;
+    type_term = fine::encode(env, atoms::dictionary);
 
     // Get the value type from schema->dictionary
     std::vector<ERL_NIF_TERM> childrens;
@@ -321,18 +322,18 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     ERL_NIF_TERM key_type_term;
     if (key_iter != primitiveFormatMapping.end() &&
         key_iter->second.size() == 1) {
-      key_type_term = key_iter->second[0];
+      key_type_term = fine::encode(env, key_iter->second[0]);
     } else {
-      key_type_term = kAdbcColumnTypeS32; // default to s32 for index
+      key_type_term = fine::encode(env, atoms::s32); // default to s32 for index
     }
     ERL_NIF_TERM key_field =
         make_adbc_field(env, fine::encode(env, std::string_view("key")),
-                        key_type_term, kAtomNil);
+                        key_type_term, fine::encode(env, atoms::nil));
     ERL_NIF_TERM value_field =
         make_adbc_field(env, schema->dictionary, value_type, value_metadata);
 
-    type_term = enif_make_tuple3(env, kAdbcColumnTypeDictionary, key_field,
-                                 value_field);
+    type_term = enif_make_tuple3(env, fine::encode(env, atoms::dictionary),
+                                 key_field, value_field);
     children_term = make_adbc_column(env, schema, type_term, metadata);
     return 0;
   }
@@ -340,10 +341,13 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   auto iter = primitiveFormatMapping.find(format);
   if (iter != primitiveFormatMapping.end()) {
     if (iter->second.size() == 1) {
-      type_term = iter->second[0];
+      type_term = fine::encode(env, iter->second[0]);
     } else {
-      type_term = enif_make_tuple_from_array(env, iter->second.data(),
-                                             (unsigned)iter->second.size());
+      std::vector<ERL_NIF_TERM> atom_terms;
+      for (const auto &a : iter->second)
+        atom_terms.push_back(fine::encode(env, a));
+      type_term = enif_make_tuple_from_array(env, atom_terms.data(),
+                                             (unsigned)atom_terms.size());
     }
     children_term = make_adbc_column(env, schema, type_term, metadata);
   }
@@ -365,7 +369,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           env, fields.data(), (unsigned)fields.size());
       children_term = enif_make_list_from_array(env, children.data(),
                                                 (unsigned)children.size());
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeStruct, fields_term);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::struct_), fields_term);
     } else if (strncmp("+r", format, 2) == 0) {
       // NANOARROW_TYPE_RUN_END_ENCODED (maybe in nanoarrow v0.6.0)
       // https://github.com/apache/arrow-nanoarrow/pull/507
@@ -384,7 +389,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeMap, map_kv_schema);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::map), map_kv_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("+l", format, 2) == 0) {
       // NANOARROW_TYPE_LIST
@@ -394,7 +400,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeList, elem_schema);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::list), elem_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("+L", format, 2) == 0) {
       // NANOARROW_TYPE_LARGE_LIST
@@ -404,7 +411,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeLargeList, elem_schema);
+      type_term = enif_make_tuple2(env, fine::encode(env, atoms::large_list),
+                                   elem_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("vu", format, 2) == 0 || strncmp("vz", format, 2) == 0) {
       // NANOARROW_TYPE_STRING_VIEW
@@ -438,19 +446,19 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         // it should be in the format like `tsu:timezone`
         // NANOARROW_TYPE_TIMESTAMP
         ERL_NIF_TERM term_unit;
-        ERL_NIF_TERM term_timezone = kAtomNil;
+        ERL_NIF_TERM term_timezone = fine::encode(env, atoms::nil);
         switch (format[2]) {
         case 's': // seconds
-          term_unit = kAtomSeconds;
+          term_unit = fine::encode(env, atoms::seconds);
           break;
         case 'm': // milliseconds
-          term_unit = kAtomMilliseconds;
+          term_unit = fine::encode(env, atoms::milliseconds);
           break;
         case 'u': // microseconds
-          term_unit = kAtomMicroseconds;
+          term_unit = fine::encode(env, atoms::microseconds);
           break;
         case 'n': // nanoseconds
-          term_unit = kAtomNanoseconds;
+          term_unit = fine::encode(env, atoms::nanoseconds);
           break;
         default:
           format_processed = false;
@@ -461,8 +469,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
             std::string timezone(&format[4]);
             term_timezone = fine::encode(env, timezone);
           }
-          type_term =
-              enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
+          type_term = enif_make_tuple3(env, fine::encode(env, atoms::timestamp),
+                                       term_unit, term_timezone);
           children_term = make_adbc_column(env, schema, type_term, metadata);
         }
       } else {
@@ -477,7 +485,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term = enif_make_tuple2(env, kAdbcColumnTypeListView, elem_schema);
+        type_term = enif_make_tuple2(env, fine::encode(env, atoms::list_view),
+                                     elem_schema);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len == 3 && strncmp("+vL", format, 3) == 0) {
         // NANOARROW_TYPE_LARGE_LIST(VIEW)
@@ -487,8 +496,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term =
-            enif_make_tuple2(env, kAdbcColumnTypeLargeListView, elem_schema);
+        type_term = enif_make_tuple2(
+            env, fine::encode(env, atoms::large_list_view), elem_schema);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("+w:", format, 3) == 0) {
         // NANOARROW_TYPE_FIXED_SIZE_LIST
@@ -502,7 +511,9 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term = kAdbcColumnTypeFixedSizeList(elem_schema, n_items);
+        type_term =
+            enif_make_tuple3(env, fine::encode(env, atoms::fixed_size_list),
+                             elem_schema, enif_make_int64(env, n_items));
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("w:", format, 2) == 0) {
         // NANOARROW_TYPE_FIXED_SIZE_BINARY
@@ -514,11 +525,11 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len > 4 && (strncmp("+ud:", format, 4) == 0)) {
         // NANOARROW_TYPE_DENSE_UNION
-        type_term = kAdbcColumnTypeDenseUnion;
+        type_term = fine::encode(env, atoms::dense_union);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len > 4 && (strncmp("+us:", format, 4) == 0)) {
         // NANOARROW_TYPE_SPARSE_UNION
-        type_term = kAdbcColumnTypeSparseUnion;
+        type_term = fine::encode(env, atoms::sparse_union);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("d:", format, 2) == 0) {
         // NANOARROW_TYPE_DECIMAL128

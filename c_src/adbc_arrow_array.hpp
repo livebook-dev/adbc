@@ -78,7 +78,7 @@ string_views_from_buffer(ErlNifEnv *env, int64_t element_offset,
                     (validity_bitmap[i / 8] & (1 << (i % 8)));
 
     if (!is_valid) {
-      values[i - element_offset] = kAtomNil;
+      values[i - element_offset] = fine::encode(env, atoms::nil);
       continue;
     }
 
@@ -88,7 +88,7 @@ string_views_from_buffer(ErlNifEnv *env, int64_t element_offset,
     memcpy(&length, view, 4);
 
     if (length == 0) {
-      values[i - element_offset] = kAtomNil;
+      values[i - element_offset] = fine::encode(env, atoms::nil);
     } else if (length <= 12) {
       // Short string: data is stored inline in bytes [4..4+length)
       values[i - element_offset] =
@@ -146,7 +146,9 @@ int get_arrow_struct(ErlNifEnv *env, struct ArrowSchema *schema,
       children[child_i] = childrens[0];
     } else {
       children[child_i] =
-          enif_is_identical(childrens[1], kAtomNil) ? kAtomNil : childrens[1];
+          enif_is_identical(childrens[1], fine::encode(env, atoms::nil))
+              ? fine::encode(env, atoms::nil)
+              : childrens[1];
     }
   }
   return 0;
@@ -184,9 +186,11 @@ int get_arrow_dictionary(ErlNifEnv *env, struct ArrowSchema *index_schema,
   ERL_NIF_TERM key_data = keys[1];
   ERL_NIF_TERM value_data = values[1];
   ERL_NIF_TERM data;
-  ERL_NIF_TERM data_keys[] = {kAtomStructKey, kAtomKey, kAtomValue};
-  ERL_NIF_TERM data_values[] = {kAtomAdbcDictionaryDataModule, key_data,
-                                value_data};
+  ERL_NIF_TERM data_keys[] = {fine::encode(env, atoms::struct_key),
+                              fine::encode(env, atoms::key),
+                              fine::encode(env, atoms::value)};
+  ERL_NIF_TERM data_values[] = {
+      fine::encode(env, atoms::ElixirAdbcDictionaryData), key_data, value_data};
   enif_make_map_from_arrays(
       env, data_keys, data_values,
       (unsigned)(sizeof(data_keys) / sizeof(data_keys[0])), &data);
@@ -279,7 +283,8 @@ ERL_NIF_TERM get_arrow_array_map_children(ErlNifEnv *env,
     return encode_error(env, "failed to get map values");
   }
 
-  ERL_NIF_TERM map_keys[] = {kAtomKey, kAtomValue};
+  ERL_NIF_TERM map_keys[] = {fine::encode(env, atoms::key),
+                             fine::encode(env, atoms::value)};
   ERL_NIF_TERM map_values[] = {
       make_adbc_column(env, key_schema, key_values, nif_keys[0], key_type,
                        key_metadata, nif_keys[1]),
@@ -526,19 +531,22 @@ ERL_NIF_TERM get_arrow_run_end_encoded(ErlNifEnv *env,
     if (childrens.size() == 1) {
       children[child_i] = childrens[0];
     } else {
-      if (enif_is_identical(childrens[1], kAtomNil)) {
-        children[child_i] = kAtomNil;
+      if (enif_is_identical(childrens[1], fine::encode(env, atoms::nil))) {
+        children[child_i] = fine::encode(env, atoms::nil);
       } else {
         children[child_i] = childrens[1];
       }
     }
   }
 
-  ERL_NIF_TERM ree_keys[] = {kAtomStructKey, kAtomRunEnds, kAtomValues,
-                             kAtomLengthKey, kAtomOffsetKey};
-  ERL_NIF_TERM ree_vals[] = {kAtomAdbcRunEndEncodedDataModule, children[0],
-                             children[1], enif_make_int64(env, values->length),
-                             enif_make_int64(env, values->offset)};
+  ERL_NIF_TERM ree_keys[] = {
+      fine::encode(env, atoms::struct_key), fine::encode(env, atoms::run_ends),
+      fine::encode(env, atoms::values), fine::encode(env, atoms::length),
+      fine::encode(env, atoms::offset)};
+  ERL_NIF_TERM ree_vals[] = {
+      fine::encode(env, atoms::ElixirAdbcRunEndEncodedData), children[0],
+      children[1], enif_make_int64(env, values->length),
+      enif_make_int64(env, values->offset)};
   ERL_NIF_TERM ree_data;
   enif_make_map_from_arrays(env, ree_keys, ree_vals, 5, &ree_data);
   return ree_data;
@@ -562,7 +570,7 @@ static void slice_validity_bitmap(ErlNifEnv *env, const uint8_t *bitmap,
                                   int &bit_offset_out) {
   bit_offset_out = (int)(offset % 8);
   if (bitmap == nullptr || null_count == 0) {
-    validity_out = kAtomNil;
+    validity_out = fine::encode(env, atoms::nil);
   } else {
     size_t bitmap_start = offset / 8;
     size_t total_bitmap_bytes = (offset + count + 7) / 8 - bitmap_start;
@@ -652,10 +660,13 @@ ERL_NIF_TERM get_arrow_array_list_children(ErlNifEnv *env,
   }
 
   // Return %Adbc.ListData{}
-  ERL_NIF_TERM keys[] = {kAtomStructKey, kAtomOffsets, kAtomValidity,
-                         kAtomValues, kAtomBitOffsetKey};
-  ERL_NIF_TERM vals[] = {kAtomAdbcListDataModule, offsets_term, validity_term,
-                         values_term, enif_make_int(env, bit_offset)};
+  ERL_NIF_TERM keys[] = {
+      fine::encode(env, atoms::struct_key), fine::encode(env, atoms::offsets),
+      fine::encode(env, atoms::validity), fine::encode(env, atoms::values),
+      fine::encode(env, atoms::bit_offset)};
+  ERL_NIF_TERM vals[] = {fine::encode(env, atoms::ElixirAdbcListData),
+                         offsets_term, validity_term, values_term,
+                         enif_make_int(env, bit_offset)};
   ERL_NIF_TERM map_out;
   enif_make_map_from_arrays(env, keys, vals, 5, &map_out);
   return map_out;
@@ -745,8 +756,9 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env,
   if (childrens.size() == 1) {
     values_term = childrens[0];
   } else {
-    values_term =
-        enif_is_identical(childrens[1], kAtomNil) ? kAtomNil : childrens[1];
+    values_term = enif_is_identical(childrens[1], fine::encode(env, atoms::nil))
+                      ? fine::encode(env, atoms::nil)
+                      : childrens[1];
   }
 
   // Validity bitmap
@@ -772,15 +784,19 @@ ERL_NIF_TERM get_arrow_array_list_view(ErlNifEnv *env,
   }
 
   // Return %Adbc.ListViewData{}
-  ERL_NIF_TERM list_view_keys[] = {kAtomStructKey, kAtomOffsets,
-                                   kAtomSizes,     kAtomValidity,
-                                   kAtomValues,    kAtomBitOffsetKey};
-  ERL_NIF_TERM list_view_vals[] = {kAtomAdbcListViewDataModule,
-                                   offsets_term,
-                                   sizes_term,
-                                   validity_term,
-                                   values_term,
-                                   enif_make_int(env, bit_offset_int)};
+  ERL_NIF_TERM list_view_keys[] = {fine::encode(env, atoms::struct_key),
+                                   fine::encode(env, atoms::offsets),
+                                   fine::encode(env, atoms::sizes),
+                                   fine::encode(env, atoms::validity),
+                                   fine::encode(env, atoms::values),
+                                   fine::encode(env, atoms::bit_offset)};
+  ERL_NIF_TERM list_view_vals[] = {
+      fine::encode(env, atoms::ElixirAdbcListViewData),
+      offsets_term,
+      sizes_term,
+      validity_term,
+      values_term,
+      enif_make_int(env, bit_offset_int)};
   ERL_NIF_TERM map_out;
   enif_make_map_from_arrays(env, list_view_keys, list_view_vals, 6, &map_out);
   return map_out;
@@ -824,11 +840,12 @@ ERL_NIF_TERM make_binary_data(ErlNifEnv *env, struct ArrowArray *values,
   ERL_NIF_TERM offset_term = enif_make_int(env, bit_offset);
 
   std::vector<ERL_NIF_TERM> keys = {
-      kAtomStructKey, kAtomOffsets,      kAtomDataKey,
-      kAtomValidity,  kAtomBitOffsetKey,
+      fine::encode(env, atoms::struct_key), fine::encode(env, atoms::offsets),
+      fine::encode(env, atoms::data),       fine::encode(env, atoms::validity),
+      fine::encode(env, atoms::bit_offset),
   };
   std::vector<ERL_NIF_TERM> vals = {
-      kAtomAdbcBinaryDataModule,
+      fine::encode(env, atoms::ElixirAdbcBinaryData),
       offsets_term,
       data_term,
       validity_term,
@@ -862,13 +879,13 @@ ERL_NIF_TERM make_buffer_data(ErlNifEnv *env, struct ArrowArray *values,
                         resource, validity_term, bit_offset);
 
   std::vector<ERL_NIF_TERM> keys = {
-      kAtomStructKey,
-      kAtomDataKey,
-      kAtomValidity,
-      kAtomBitOffsetKey,
+      fine::encode(env, atoms::struct_key),
+      fine::encode(env, atoms::data),
+      fine::encode(env, atoms::validity),
+      fine::encode(env, atoms::bit_offset),
   };
   std::vector<ERL_NIF_TERM> vals = {
-      kAtomAdbcBufferDataModule,
+      fine::encode(env, atoms::ElixirAdbcBufferData),
       data_binary,
       validity_term,
       enif_make_int(env, bit_offset),
@@ -905,7 +922,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   size_t format_len = strlen(format);
   size_t element_bytes = 0;
 
-  term_type = kAtomNil;
+  term_type = fine::encode(env, atoms::nil);
   std::vector<ERL_NIF_TERM> children;
 
   constexpr int64_t bitmap_buffer_index = 0;
@@ -926,7 +943,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       // The same holds for ArrowArray structure: while the parent
       // structure points to the index data, the ArrowArray.dictionary
       // points to the dictionary values array.
-      term_type = kAdbcColumnTypeDictionary;
+      term_type = fine::encode(env, atoms::dictionary);
 
       if (get_arrow_dictionary(env, schema, values, schema->dictionary,
                                values->dictionary, offset, count, level,
@@ -955,39 +972,39 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   bool format_processed = true;
   if (format_len == 1) {
     if (format[0] == 'n') {
-      term_type = kAtomNil;
+      term_type = fine::encode(env, atoms::nil);
       if (count == -1)
         count = values->length;
       if (count > values->length)
         count = values->length - offset;
       std::vector<ERL_NIF_TERM> nils(count);
       for (int64_t i = offset; i < offset + count; i++) {
-        nils.push_back(kAtomNil);
+        nils.push_back(fine::encode(env, atoms::nil));
       }
-      current_term = kAtomNil;
+      current_term = fine::encode(env, atoms::nil);
     } else if (format[0] == 'l') {
-      term_type = kAdbcColumnTypeS64;
+      term_type = fine::encode(env, atoms::s64);
       element_bytes = 8;
     } else if (format[0] == 'c') {
-      term_type = kAdbcColumnTypeS8;
+      term_type = fine::encode(env, atoms::s8);
       element_bytes = 1;
     } else if (format[0] == 's') {
-      term_type = kAdbcColumnTypeS16;
+      term_type = fine::encode(env, atoms::s16);
       element_bytes = 2;
     } else if (format[0] == 'i') {
-      term_type = kAdbcColumnTypeS32;
+      term_type = fine::encode(env, atoms::s32);
       element_bytes = 4;
     } else if (format[0] == 'L') {
-      term_type = kAdbcColumnTypeU64;
+      term_type = fine::encode(env, atoms::u64);
       element_bytes = 8;
     } else if (format[0] == 'C') {
-      term_type = kAdbcColumnTypeU8;
+      term_type = fine::encode(env, atoms::u8);
       element_bytes = 1;
     } else if (format[0] == 'S') {
-      term_type = kAdbcColumnTypeU16;
+      term_type = fine::encode(env, atoms::u16);
       element_bytes = 2;
     } else if (format[0] == 'I') {
-      term_type = kAdbcColumnTypeU32;
+      term_type = fine::encode(env, atoms::u32);
       element_bytes = 4;
     }
 
@@ -1009,7 +1026,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                            data_buffer_index, bitmap_buffer_index, resource);
     } else if (format[0] == 'e') {
       // NANOARROW_TYPE_HALF_FLOAT
-      term_type = kAdbcColumnTypeF16;
+      term_type = fine::encode(env, atoms::f16);
       if (count == -1)
         count = values->length;
       if (count > values->length)
@@ -1024,7 +1041,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                            data_buffer_index, bitmap_buffer_index, resource);
     } else if (format[0] == 'f') {
       // NANOARROW_TYPE_FLOAT
-      term_type = kAdbcColumnTypeF32;
+      term_type = fine::encode(env, atoms::f32);
       if (count == -1)
         count = values->length;
       if (count > values->length)
@@ -1039,7 +1056,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                            data_buffer_index, bitmap_buffer_index, resource);
     } else if (format[0] == 'g') {
       // NANOARROW_TYPE_DOUBLE
-      term_type = kAdbcColumnTypeF64;
+      term_type = fine::encode(env, atoms::f64);
       if (count == -1)
         count = values->length;
       if (count > values->length)
@@ -1054,7 +1071,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                            data_buffer_index, bitmap_buffer_index, resource);
     } else if (format[0] == 'b') {
       // NANOARROW_TYPE_BOOL
-      term_type = kAdbcColumnTypeBool;
+      term_type = fine::encode(env, atoms::boolean);
       if (count == -1)
         count = values->length;
       if (count > values->length)
@@ -1080,11 +1097,14 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                               bit_offset_val);
 
         std::vector<ERL_NIF_TERM> keys = {
-            kAtomStructKey,    kAtomDataKey, kAtomValidity,
-            kAtomBitOffsetKey, kAtomSizeKey,
+            fine::encode(env, atoms::struct_key),
+            fine::encode(env, atoms::data),
+            fine::encode(env, atoms::validity),
+            fine::encode(env, atoms::bit_offset),
+            fine::encode(env, atoms::size),
         };
         std::vector<ERL_NIF_TERM> vals = {
-            kAtomAdbcBooleanDataModule,
+            fine::encode(env, atoms::ElixirAdbcBooleanData),
             data_term,
             validity_term,
             enif_make_int(env, (int)offset),
@@ -1097,9 +1117,9 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       // NANOARROW_TYPE_BINARY
       // NANOARROW_TYPE_STRING
       if (format[0] == 'z') {
-        term_type = kAdbcColumnTypeBinary;
+        term_type = fine::encode(env, atoms::binary);
       } else {
-        term_type = kAdbcColumnTypeString;
+        term_type = fine::encode(env, atoms::string);
       }
       offset_buffer_index = 1;
       data_buffer_index = 2;
@@ -1120,9 +1140,9 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       // NANOARROW_TYPE_LARGE_STRING
       // NANOARROW_TYPE_LARGE_BINARY
       if (format[0] == 'Z') {
-        term_type = kAdbcColumnTypeLargeBinary;
+        term_type = fine::encode(env, atoms::large_binary);
       } else {
-        term_type = kAdbcColumnTypeLargeString;
+        term_type = fine::encode(env, atoms::large_string);
       }
       offset_buffer_index = 1;
       data_buffer_index = 2;
@@ -1146,7 +1166,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     if (strncmp("+s", format, 2) == 0) {
       // NANOARROW_TYPE_STRUCT
       is_struct = true;
-      term_type = kAdbcColumnTypeStruct;
+      term_type = fine::encode(env, atoms::struct_);
 
       if (count == -1)
         count = values->length;
@@ -1169,32 +1189,34 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           env, children.data(), (unsigned)children.size());
 
       // Build %Adbc.StructData{validity: ..., bit_offset: ..., values: ...}
-      ERL_NIF_TERM sd_keys[] = {kAtomStructKey, kAtomValidity,
-                                kAtomBitOffsetKey, kAtomValues};
-      ERL_NIF_TERM sd_vals[] = {kAtomAdbcStructDataModule, struct_validity_term,
-                                enif_make_int(env, struct_bit_offset),
-                                values_list};
+      ERL_NIF_TERM sd_keys[] = {fine::encode(env, atoms::struct_key),
+                                fine::encode(env, atoms::validity),
+                                fine::encode(env, atoms::bit_offset),
+                                fine::encode(env, atoms::values)};
+      ERL_NIF_TERM sd_vals[] = {
+          fine::encode(env, atoms::ElixirAdbcStructData), struct_validity_term,
+          enif_make_int(env, struct_bit_offset), values_list};
       enif_make_map_from_arrays(env, sd_keys, sd_vals, 4, &children_term);
     } else if (strncmp("+r", format, 2) == 0) {
       // NANOARROW_TYPE_RUN_END_ENCODED (maybe in nanoarrow v0.6.0)
       // https://github.com/apache/arrow-nanoarrow/pull/507
-      term_type = kAdbcColumnTypeRunEndEncoded;
+      term_type = fine::encode(env, atoms::run_end_encoded);
       children_term = get_arrow_run_end_encoded(env, schema, values, offset,
                                                 count, level, resource);
     } else if (strncmp("+m", format, 2) == 0) {
       // NANOARROW_TYPE_MAP
-      term_type = kAdbcColumnTypeMap;
+      term_type = fine::encode(env, atoms::map);
       children_term = get_arrow_array_map_children(env, schema, values, offset,
                                                    count, level, resource);
     } else if (strncmp("+l", format, 2) == 0) {
       // NANOARROW_TYPE_LIST
-      term_type = kAdbcColumnTypeList;
+      term_type = fine::encode(env, atoms::list);
       children_term = get_arrow_array_list_children(
           env, schema, values, offset, count, level, NANOARROW_TYPE_LIST, 0,
           resource);
     } else if (strncmp("+L", format, 2) == 0) {
       // NANOARROW_TYPE_LARGE_LIST
-      term_type = kAdbcColumnTypeLargeList;
+      term_type = fine::encode(env, atoms::large_list);
       children_term = get_arrow_array_list_children(
           env, schema, values, offset, count, level, NANOARROW_TYPE_LARGE_LIST,
           0, resource);
@@ -1202,9 +1224,9 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
       // NANOARROW_TYPE_STRING_VIEW
       // NANOARROW_TYPE_BINARY_VIEW
       if (format[1] == 'u') {
-        term_type = kAdbcColumnTypeStringView;
+        term_type = fine::encode(env, atoms::string_view);
       } else {
-        term_type = kAdbcColumnTypeBinaryView;
+        term_type = fine::encode(env, atoms::binary_view);
       }
       if (count == -1)
         count = values->length;
@@ -1245,10 +1267,10 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
             // NANOARROW_TYPE_DATE64
             size_t element_bytes;
             if (unit == 'D') {
-              term_type = kAdbcColumnTypeDate32;
+              term_type = fine::encode(env, atoms::date32);
               element_bytes = 4;
             } else {
-              term_type = kAdbcColumnTypeDate64;
+              term_type = fine::encode(env, atoms::date64);
               element_bytes = 8;
             }
             if (count == -1)
@@ -1420,19 +1442,19 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
 
         // NANOARROW_TYPE_TIMESTAMP
         ERL_NIF_TERM term_unit;
-        ERL_NIF_TERM term_timezone = kAtomNil;
+        ERL_NIF_TERM term_timezone = fine::encode(env, atoms::nil);
         switch (format[2]) {
         case 's': // seconds
-          term_unit = kAtomSeconds;
+          term_unit = fine::encode(env, atoms::seconds);
           break;
         case 'm': // milliseconds
-          term_unit = kAtomMilliseconds;
+          term_unit = fine::encode(env, atoms::milliseconds);
           break;
         case 'u': // microseconds
-          term_unit = kAtomMicroseconds;
+          term_unit = fine::encode(env, atoms::microseconds);
           break;
         case 'n': // nanoseconds
-          term_unit = kAtomNanoseconds;
+          term_unit = fine::encode(env, atoms::nanoseconds);
           break;
         default:
           format_processed = false;
@@ -1443,8 +1465,8 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
             std::string timezone(&format[4]);
             term_timezone = fine::encode(env, timezone);
           }
-          term_type =
-              enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
+          term_type = enif_make_tuple3(env, fine::encode(env, atoms::timestamp),
+                                       term_unit, term_timezone);
 
           if (count == -1)
             count = values->length;
@@ -1466,13 +1488,13 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     } else {
       if (format_len == 3 && strncmp("+vl", format, 3) == 0) {
         // NANOARROW_TYPE_LIST(VIEW)
-        term_type = kAdbcColumnTypeListView;
+        term_type = fine::encode(env, atoms::list_view);
         children_term =
             get_arrow_array_list_view(env, schema, values, offset, count, level,
                                       NANOARROW_TYPE_LIST, resource);
       } else if (format_len == 3 && strncmp("+vL", format, 3) == 0) {
         // NANOARROW_TYPE_LARGE_LIST(VIEW)
-        term_type = kAdbcColumnTypeLargeListView;
+        term_type = fine::encode(env, atoms::large_list_view);
         children_term =
             get_arrow_array_list_view(env, schema, values, offset, count, level,
                                       NANOARROW_TYPE_LARGE_LIST, resource);
@@ -1482,7 +1504,7 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         for (size_t i = 3; i < format_len; i++) {
           n_items = n_items * 10 + (format[i] - '0');
         }
-        term_type = kAtomFixedSizeList;
+        term_type = fine::encode(env, atoms::fixed_size_list);
         children_term = get_arrow_array_list_children(
             env, schema, values, offset, count, level,
             NANOARROW_TYPE_FIXED_SIZE_LIST, n_items, resource);
@@ -1510,12 +1532,12 @@ int arrow_array_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                              data_buffer_index, bitmap_buffer_index, resource);
       } else if (format_len > 4 && (strncmp("+ud:", format, 4) == 0)) {
         // NANOARROW_TYPE_DENSE_UNION
-        term_type = kAdbcColumnTypeDenseUnion;
+        term_type = fine::encode(env, atoms::dense_union);
         children_term = get_arrow_array_dense_union_children(
             env, schema, values, offset, count, level, resource);
       } else if (format_len > 4 && (strncmp("+us:", format, 4) == 0)) {
         // NANOARROW_TYPE_SPARSE_UNION
-        term_type = kAdbcColumnTypeSparseUnion;
+        term_type = fine::encode(env, atoms::sparse_union);
         children_term = get_arrow_array_sparse_union_children(
             env, schema, values, offset, count, level, resource);
       } else if (strncmp("d:", format, 2) == 0) {
