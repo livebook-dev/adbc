@@ -20,7 +20,8 @@ defmodule Adbc.MixProject do
       package: package(),
       docs: docs(),
       description: "Apache Arrow ADBC bindings for Elixir",
-      compilers: [:elixir_make] ++ Mix.compilers()
+      compilers: [:elixir_make] ++ Mix.compilers(),
+      make_env: fn -> %{"FINE_INCLUDE_DIR" => Fine.include_dir()} end
     ] ++ precompiled()
   end
 
@@ -77,6 +78,9 @@ defmodule Adbc.MixProject do
       # compilation
       {:cc_precompiler, "~> 0.1.8 or ~> 0.2", runtime: false},
       {:elixir_make, "~> 0.9", runtime: false},
+
+      # nif
+      {:fine, "~> 0.1.0", runtime: false},
 
       # runtime
       {:decimal, "~> 2.1"},

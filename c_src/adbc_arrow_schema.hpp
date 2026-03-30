@@ -6,13 +6,15 @@
 #include <cstdbool>
 #include <cstdint>
 #include <erl_nif.h>
+#include <map>
 #include <stdio.h>
+#include <string>
 #include <vector>
 
+#include "adbc_arrow_array_stream_record.hpp"
 #include "adbc_arrow_metadata.hpp"
 #include "adbc_column.hpp"
 #include "adbc_consts.h"
-#include "adbc_nif_resource.hpp"
 #include "nif_utils.hpp"
 
 static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
@@ -28,8 +30,8 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema *schema,
                              std::vector<ERL_NIF_TERM> &fields,
                              ERL_NIF_TERM &error) {
   if (schema->n_children > 0 && schema->children == nullptr) {
-    error = erlang::nif::error(env, "invalid ArrowSchema, schema->children == "
-                                    "nullptr while schema->n_children > 0");
+    error = encode_error(env, "invalid ArrowSchema, schema->children == "
+                              "nullptr while schema->n_children > 0");
     return 1;
   }
   children.resize(schema->n_children);
@@ -49,20 +51,12 @@ static int get_struct_schema(ErlNifEnv *env, struct ArrowSchema *schema,
         make_adbc_field(env, child_schema, child_type, child_metadata);
 
     if (level == 0) {
-      using record_type = NifRes<struct ArrowArrayStreamRecord>;
-      auto *record = record_type::allocate_resource(env, error);
-      if (record == nullptr) {
-        return 1;
-      }
-      if (record->val.allocate_schema_and_values()) {
-        error = erlang::nif::error(env, "out of memory");
-        return 1;
-      }
+      auto record = fine::make_resource<ArrowArrayStreamRecord>();
       struct ArrowArray *child_array = array->children[child_i];
-      ArrowSchemaDeepCopy(child_schema, record->val.schema);
-      ArrowArrayMove(child_array, record->val.values);
+      ArrowSchemaDeepCopy(child_schema, &record->schema);
+      ArrowArrayMove(child_array, &record->values);
       memset(array->children[child_i], 0, sizeof(struct ArrowArray));
-      ERL_NIF_TERM data_ref = record->make_resource(env);
+      ERL_NIF_TERM data_ref = fine::encode(env, record);
 
       children[child_i] = make_adbc_column(env, child_schema, child_type,
                                            child_metadata, data_ref);
@@ -80,21 +74,21 @@ static int get_run_end_encoded_schema(ErlNifEnv *env,
                                       ERL_NIF_TERM &run_ends_schema,
                                       ERL_NIF_TERM &error) {
   if (schema->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (run_end_encoded), schema->n_children != 2");
   }
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowArray (run_end_encoded), schema->children == nullptr");
   }
   if (strcmp("run_ends", schema->children[0]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "first child is not named run_ends");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "first child is not named run_ends");
   }
   if (strcmp("values", schema->children[1]->name) != 0) {
-    return erlang::nif::error(env, "invalid ArrowSchema (run_end_encoded), its "
-                                   "second child is not named values");
+    return encode_error(env, "invalid ArrowSchema (run_end_encoded), its "
+                             "second child is not named values");
   }
 
   std::vector<ERL_NIF_TERM> children(2);
@@ -113,8 +107,8 @@ static int get_run_end_encoded_schema(ErlNifEnv *env,
   }
 
   // Return type as {:run_end_encoded, run_ends_field, values_field}
-  run_ends_schema = enif_make_tuple3(env, kAdbcColumnTypeRunEndEncoded,
-                                     children[0], children[1]);
+  run_ends_schema = enif_make_tuple3(
+      env, fine::encode(env, atoms::run_end_encoded), children[0], children[1]);
   return 0;
 }
 
@@ -127,22 +121,22 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema *schema,
   //   As specified in the Arrow columnar format, the map type has a single
   //   child type named entries, itself a 2-child struct type of (key, value).
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (map), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (map), schema->n_children != 1");
   }
 
   struct ArrowSchema *entries_schema = schema->children[0];
   if (strcmp("entries", entries_schema->name) != 0) {
-    return erlang::nif::error(
+    return encode_error(
         env,
         "invalid ArrowSchema (map), its single child is not named entries");
   }
   if (entries_schema->n_children != 2) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (map), its entries n_children != 2");
   }
 
@@ -182,7 +176,8 @@ static int get_map_schema(ErlNifEnv *env, struct ArrowSchema *schema,
     return 1;
   }
 
-  ERL_NIF_TERM map_kv_keys[] = {kAtomKey, kAtomValue};
+  ERL_NIF_TERM map_kv_keys[] = {fine::encode(env, atoms::key),
+                                fine::encode(env, atoms::value)};
   ERL_NIF_TERM map_kv_values[] = {key_schema, value_schema};
   // only fail if there are duplicated keys
   // so we don't need to check the return value
@@ -194,19 +189,19 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema *schema,
                                    uint64_t level, ERL_NIF_TERM &element_schema,
                                    ERL_NIF_TERM &error) {
   if (schema->children == nullptr) {
-    return erlang::nif::error(
+    return encode_error(
         env, "invalid ArrowSchema (list), schema->children == nullptr");
   }
   if (schema->n_children != 1) {
-    return erlang::nif::error(
-        env, "invalid ArrowSchema (list), schema->n_children != 1");
+    return encode_error(env,
+                        "invalid ArrowSchema (list), schema->n_children != 1");
   }
 
   struct ArrowSchema *items_schema = schema->children[0];
   if (!(strcmp("item", items_schema->name) == 0 ||
         strcmp("l", items_schema->name) == 0)) {
-    return erlang::nif::error(env, "invalid ArrowSchema (list), its single "
-                                   "child is not named 'item' or 'l'");
+    return encode_error(env, "invalid ArrowSchema (list), its single "
+                             "child is not named 'item' or 'l'");
   }
 
   std::vector<ERL_NIF_TERM> childrens;
@@ -220,8 +215,9 @@ static int get_list_element_schema(ErlNifEnv *env, struct ArrowSchema *schema,
   // Always use "item" as the canonical name for list elements, regardless of
   // what the driver provides; using "item" appears to be conventional but
   // duckdb uses "l"
-  element_schema = make_adbc_field(env, erlang::nif::make_binary(env, "item"),
-                                   child_type, child_metadata);
+  element_schema =
+      make_adbc_field(env, fine::encode(env, std::string_view("item")),
+                      child_type, child_metadata);
   return 0;
 }
 
@@ -235,19 +231,56 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                   type_term, metadata, error);
 }
 
+inline const std::map<std::string, std::vector<fine::Atom>>
+    primitiveFormatMapping = {
+        {"n", {atoms::nil}},
+        {"b", {atoms::boolean}},
+        {"c", {atoms::s8}},
+        {"C", {atoms::u8}},
+        {"s", {atoms::s16}},
+        {"S", {atoms::u16}},
+        {"i", {atoms::s32}},
+        {"I", {atoms::u32}},
+        {"l", {atoms::s64}},
+        {"L", {atoms::u64}},
+        {"e", {atoms::f16}},
+        {"f", {atoms::f32}},
+        {"g", {atoms::f64}},
+        {"z", {atoms::binary}},
+        {"Z", {atoms::large_binary}},
+        {"vz", {atoms::binary_view}},
+        {"u", {atoms::string}},
+        {"U", {atoms::large_string}},
+        {"vu", {atoms::string_view}},
+        {"tdD", {atoms::date32}},
+        {"tdm", {atoms::date64}},
+        {"tts", {atoms::time32, atoms::seconds}},
+        {"ttm", {atoms::time32, atoms::milliseconds}},
+        {"ttu", {atoms::time64, atoms::microseconds}},
+        {"ttn", {atoms::time64, atoms::nanoseconds}},
+        {"tDs", {atoms::duration, atoms::seconds}},
+        {"tDm", {atoms::duration, atoms::milliseconds}},
+        {"tDu", {atoms::duration, atoms::microseconds}},
+        {"tDn", {atoms::duration, atoms::nanoseconds}},
+        {"tiM", {atoms::interval, atoms::month}},
+        {"tiD", {atoms::interval, atoms::day_time}},
+        {"tin", {atoms::interval, atoms::month_day_nano}},
+};
+
 static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
                                     struct ArrowArray *array, uint64_t level,
                                     std::vector<ERL_NIF_TERM> &out_terms,
                                     ERL_NIF_TERM &type_term,
                                     ERL_NIF_TERM &metadata,
                                     ERL_NIF_TERM &error) {
+
   if (schema == nullptr) {
-    error = erlang::nif::error(
-        env, "invalid ArrowSchema (nullptr) when invoking next");
+    error =
+        encode_error(env, "invalid ArrowSchema (nullptr) when invoking next");
     return 1;
   }
   if (level == 0 && array == nullptr) {
-    error = erlang::nif::error(
+    error = encode_error(
         env, "invalid ArrowArray (nullptr) is nullptr at top-level entry");
     return 1;
   }
@@ -257,7 +290,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   ERL_NIF_TERM children_term{};
   size_t format_len = strlen(format);
 
-  type_term = kAtomNil;
+  type_term = fine::encode(env, atoms::nil);
   std::vector<ERL_NIF_TERM> children;
   NANOARROW_RETURN_NOT_OK(
       arrow_metadata_to_nif_term(env, schema->metadata, &metadata));
@@ -272,7 +305,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     // The same holds for ArrowArray structure: while the parent
     // structure points to the index data, the ArrowArray.dictionary
     // points to the dictionary values array.
-    type_term = kAdbcColumnTypeDictionary;
+    type_term = fine::encode(env, atoms::dictionary);
 
     // Get the value type from schema->dictionary
     std::vector<ERL_NIF_TERM> childrens;
@@ -291,17 +324,18 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
     ERL_NIF_TERM key_type_term;
     if (key_iter != primitiveFormatMapping.end() &&
         key_iter->second.size() == 1) {
-      key_type_term = key_iter->second[0];
+      key_type_term = fine::encode(env, key_iter->second[0]);
     } else {
-      key_type_term = kAdbcColumnTypeS32; // default to s32 for index
+      key_type_term = fine::encode(env, atoms::s32); // default to s32 for index
     }
-    ERL_NIF_TERM key_field = make_adbc_field(
-        env, erlang::nif::make_binary(env, "key"), key_type_term, kAtomNil);
+    ERL_NIF_TERM key_field =
+        make_adbc_field(env, fine::encode(env, std::string_view("key")),
+                        key_type_term, fine::encode(env, atoms::nil));
     ERL_NIF_TERM value_field =
         make_adbc_field(env, schema->dictionary, value_type, value_metadata);
 
-    type_term = enif_make_tuple3(env, kAdbcColumnTypeDictionary, key_field,
-                                 value_field);
+    type_term = enif_make_tuple3(env, fine::encode(env, atoms::dictionary),
+                                 key_field, value_field);
     children_term = make_adbc_column(env, schema, type_term, metadata);
     return 0;
   }
@@ -309,10 +343,13 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   auto iter = primitiveFormatMapping.find(format);
   if (iter != primitiveFormatMapping.end()) {
     if (iter->second.size() == 1) {
-      type_term = iter->second[0];
+      type_term = fine::encode(env, iter->second[0]);
     } else {
-      type_term = enif_make_tuple_from_array(env, iter->second.data(),
-                                             (unsigned)iter->second.size());
+      std::vector<ERL_NIF_TERM> atom_terms;
+      for (const auto &a : iter->second)
+        atom_terms.push_back(fine::encode(env, a));
+      type_term = enif_make_tuple_from_array(env, atom_terms.data(),
+                                             (unsigned)atom_terms.size());
     }
     children_term = make_adbc_column(env, schema, type_term, metadata);
   }
@@ -334,7 +371,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           env, fields.data(), (unsigned)fields.size());
       children_term = enif_make_list_from_array(env, children.data(),
                                                 (unsigned)children.size());
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeStruct, fields_term);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::struct_), fields_term);
     } else if (strncmp("+r", format, 2) == 0) {
       // NANOARROW_TYPE_RUN_END_ENCODED (maybe in nanoarrow v0.6.0)
       // https://github.com/apache/arrow-nanoarrow/pull/507
@@ -353,7 +391,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeMap, map_kv_schema);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::map), map_kv_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("+l", format, 2) == 0) {
       // NANOARROW_TYPE_LIST
@@ -363,7 +402,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeList, elem_schema);
+      type_term =
+          enif_make_tuple2(env, fine::encode(env, atoms::list), elem_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("+L", format, 2) == 0) {
       // NANOARROW_TYPE_LARGE_LIST
@@ -373,7 +413,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         return 1;
       }
 
-      type_term = enif_make_tuple2(env, kAdbcColumnTypeLargeList, elem_schema);
+      type_term = enif_make_tuple2(env, fine::encode(env, atoms::large_list),
+                                   elem_schema);
       children_term = make_adbc_column(env, schema, type_term, metadata);
     } else if (strncmp("vu", format, 2) == 0 || strncmp("vz", format, 2) == 0) {
       // NANOARROW_TYPE_STRING_VIEW
@@ -407,19 +448,19 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         // it should be in the format like `tsu:timezone`
         // NANOARROW_TYPE_TIMESTAMP
         ERL_NIF_TERM term_unit;
-        ERL_NIF_TERM term_timezone = kAtomNil;
+        ERL_NIF_TERM term_timezone = fine::encode(env, atoms::nil);
         switch (format[2]) {
         case 's': // seconds
-          term_unit = kAtomSeconds;
+          term_unit = fine::encode(env, atoms::seconds);
           break;
         case 'm': // milliseconds
-          term_unit = kAtomMilliseconds;
+          term_unit = fine::encode(env, atoms::milliseconds);
           break;
         case 'u': // microseconds
-          term_unit = kAtomMicroseconds;
+          term_unit = fine::encode(env, atoms::microseconds);
           break;
         case 'n': // nanoseconds
-          term_unit = kAtomNanoseconds;
+          term_unit = fine::encode(env, atoms::nanoseconds);
           break;
         default:
           format_processed = false;
@@ -428,10 +469,10 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         if (format_processed) {
           if (format_len > 4 && format[3] == ':') {
             std::string timezone(&format[4]);
-            term_timezone = erlang::nif::make_binary(env, timezone);
+            term_timezone = fine::encode(env, timezone);
           }
-          type_term =
-              enif_make_tuple3(env, kAtomTimestamp, term_unit, term_timezone);
+          type_term = enif_make_tuple3(env, fine::encode(env, atoms::timestamp),
+                                       term_unit, term_timezone);
           children_term = make_adbc_column(env, schema, type_term, metadata);
         }
       } else {
@@ -446,7 +487,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term = enif_make_tuple2(env, kAdbcColumnTypeListView, elem_schema);
+        type_term = enif_make_tuple2(env, fine::encode(env, atoms::list_view),
+                                     elem_schema);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len == 3 && strncmp("+vL", format, 3) == 0) {
         // NANOARROW_TYPE_LARGE_LIST(VIEW)
@@ -456,8 +498,8 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term =
-            enif_make_tuple2(env, kAdbcColumnTypeLargeListView, elem_schema);
+        type_term = enif_make_tuple2(
+            env, fine::encode(env, atoms::large_list_view), elem_schema);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("+w:", format, 3) == 0) {
         // NANOARROW_TYPE_FIXED_SIZE_LIST
@@ -471,7 +513,9 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
           return 1;
         }
 
-        type_term = kAdbcColumnTypeFixedSizeList(elem_schema, n_items);
+        type_term =
+            enif_make_tuple3(env, fine::encode(env, atoms::fixed_size_list),
+                             elem_schema, enif_make_int64(env, n_items));
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("w:", format, 2) == 0) {
         // NANOARROW_TYPE_FIXED_SIZE_BINARY
@@ -483,11 +527,11 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len > 4 && (strncmp("+ud:", format, 4) == 0)) {
         // NANOARROW_TYPE_DENSE_UNION
-        type_term = kAdbcColumnTypeDenseUnion;
+        type_term = fine::encode(env, atoms::dense_union);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (format_len > 4 && (strncmp("+us:", format, 4) == 0)) {
         // NANOARROW_TYPE_SPARSE_UNION
-        type_term = kAdbcColumnTypeSparseUnion;
+        type_term = fine::encode(env, atoms::sparse_union);
         children_term = make_adbc_column(env, schema, type_term, metadata);
       } else if (strncmp("d:", format, 2) == 0) {
         // NANOARROW_TYPE_DECIMAL128
@@ -534,7 +578,7 @@ static int arrow_schema_to_nif_term(ErlNifEnv *env, struct ArrowSchema *schema,
   if (!format_processed) {
     snprintf(err_msg_buf, sizeof(err_msg_buf) / sizeof(err_msg_buf[0]),
              "not yet implemented for format: `%s`", schema->format);
-    error = erlang::nif::error(env, erlang::nif::make_binary(env, err_msg_buf));
+    error = encode_error(env, err_msg_buf);
     return 1;
     // printf("not implemented for format: `%s`\r\n", schema->format);
     // printf("length: %lld\r\n", values->length);

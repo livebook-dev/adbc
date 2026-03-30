@@ -45,13 +45,13 @@ if(WIN32)
     string(REPLACE "\\" "/" NANOARROW_SRC "${NANOARROW_SRC}")
 endif()
 set(SOURCE_FILES
-    "${C_SRC}/nif_utils.cpp"
     "${C_SRC}/adbc_nif.cpp"
 )
 
 include_directories("${ERTS_INCLUDE_DIR}")
 include_directories("${ADBC_SRC}/c/include")
 include_directories("${NANOARROW_SRC}")
+include_directories("$ENV{FINE_INCLUDE_DIR}")
 
 add_library(adbc_nif SHARED
     "${NANOARROW_SRC}/nanoarrow.c"
@@ -98,7 +98,7 @@ endif()
 if(WIN32)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /wd4996 /wd4267 /wd4068")
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -fvisibility=hidden")
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -g3")
     else()
