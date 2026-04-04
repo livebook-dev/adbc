@@ -49,25 +49,8 @@ defmodule Adbc.Column do
   @epoch_days Date.to_gregorian_days(~D[1970-01-01])
   @epoch_seconds :calendar.datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}})
 
-  @doc """
-  Converts a column's data from reference type to regular Elixir terms.
-
-  The `size` field is `nil` for unmaterialized columns and is set to the
-  number of elements after materialization (or when built from Elixir).
-  You can use `size` to check whether a column has been materialized.
-  """
+  @deprecated "Adbc.Column.materialize/1 is no longer necessary, it is a noop."
   @spec materialize(t()) :: t()
-  def materialize(%Adbc.Column{field: field, data: data_ref} = column)
-      when is_reference(data_ref) do
-    case Adbc.Nif.adbc_column_materialize(data_ref) do
-      {:ok, {data, size}} ->
-        %{column | data: data, size: size}
-
-      {:error, reason} ->
-        raise ArgumentError, "could not materialize column #{inspect(field.name)}: #{reason}"
-    end
-  end
-
   def materialize(%Adbc.Column{} = column), do: column
 
   @doc """
@@ -1586,14 +1569,8 @@ defmodule Adbc.Column do
   Returns whether the column contains a validity bitmap (which would
   indicate the presence of nils).
 
-  The column must be materialized. Raises `ArgumentError` if the
-  column data is still a NIF reference.
   """
   @spec has_validity?(t()) :: boolean()
-  def has_validity?(%Adbc.Column{data: ref}) when is_reference(ref) do
-    raise ArgumentError, "column has not been materialized"
-  end
-
   def has_validity?(%Adbc.Column{
         field: %{type: {:dictionary, key_field, value_field}},
         data: %Adbc.DictionaryData{key: key, value: value}
@@ -1635,12 +1612,10 @@ defmodule Adbc.Column do
     * `{:fixed_size_binary, n}` - `n` raw bytes per element
     * `{:dictionary, key_type, _}` - returns the key binary in the key's format
 
-  Raises `ArgumentError` for other data types or unmaterialized columns.
+  Raises `ArgumentError` for other data types.
   """
   @spec to_binary(t()) :: binary()
-  def to_binary(%Adbc.Column{data: ref}) when is_reference(ref) do
-    raise ArgumentError, "column has not been materialized"
-  end
+  def to_binary(column)
 
   def to_binary(%Adbc.Column{data: %Adbc.BufferData{data: binary}}), do: binary
 
@@ -1673,9 +1648,7 @@ defmodule Adbc.Column do
 
   """
   @spec to_list(t()) :: [term()]
-  def to_list(%Adbc.Column{data: ref}) when is_reference(ref) do
-    raise ArgumentError, "column has not been materialized"
-  end
+  def to_list(column)
 
   def to_list(%Adbc.Column{
         field: %{type: {:dictionary, key_field, value_field}},
@@ -1743,6 +1716,16 @@ defmodule Adbc.Column do
     else
       Enum.to_list(rows)
     end
+  end
+
+  def to_list(%Adbc.Column{
+        field: %{type: {:map, key_field, value_field}},
+        data: %Adbc.MapData{} = batch
+      }) do
+    keys = to_list(%Adbc.Column{field: key_field, data: batch.keys})
+    values = to_list(%Adbc.Column{field: value_field, data: batch.values})
+    <<first::signed-integer-native-32, rest::binary>> = batch.offsets
+    decode_map_32(rest, batch.validity, batch.bit_offset, keys, values, first, 0)
   end
 
   def to_list(%Adbc.Column{field: %{type: {:list, inner_field}}, data: %Adbc.ListData{} = batch}) do
@@ -2054,6 +2037,28 @@ defmodule Adbc.Column do
       value = if bitmap_valid?(validity, index, bit_offset), do: :nan
       [value | unquote(name)(rest, validity, bit_offset, index + 1)]
     end
+  end
+
+  defp decode_map_32(<<>>, _validity, _bit_offset, _keys, _values, _prev, _index), do: []
+
+  defp decode_map_32(
+         <<next::signed-integer-little-32, rest::binary>>,
+         validity,
+         bit_offset,
+         keys,
+         values,
+         prev,
+         index
+       ) do
+    size = next - prev
+    {key_chunk, keys} = Enum.split(keys, size)
+    {val_chunk, values} = Enum.split(values, size)
+
+    element =
+      if bitmap_valid?(validity, index, bit_offset),
+        do: Map.new(Enum.zip(key_chunk, val_chunk))
+
+    [element | decode_map_32(rest, validity, bit_offset, keys, values, next, index + 1)]
   end
 
   for {name, specifier} <- [

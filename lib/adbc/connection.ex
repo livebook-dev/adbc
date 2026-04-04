@@ -159,23 +159,22 @@ defmodule Adbc.Connection do
   Runs the given `query` with `params` and `statement_options`.
 
   It returns an ok-tuple with `Adbc.Result` or an error-tuple.
-  You often want to call `Adbc.Result.materialize/1` or
-  `Adbc.Result.to_map/1` on the results to consume it.
+  You often want to call `Adbc.Result.to_map/1` on the result
+  to consume it.
   """
   @spec query(t(), binary | reference, [term], Keyword.t()) ::
           {:ok, Adbc.Result.t()} | {:error, Exception.t()}
   def query(conn, query, params \\ [], statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and
              is_list(statement_options) do
-    stream(conn, {:query, query, params, statement_options}, &stream_results/3)
+    stream(conn, {:query, query, params_to_columns(params), statement_options}, &stream_results/3)
   end
 
   @doc """
   Same as `query/4` but raises an exception on error.
 
   It returns an `Adbc.Result` struct. You often want to call
-  `Adbc.Result.materialize/1` or `Adbc.Result.to_map/1` on the
-  results to consume it.
+  `Adbc.Result.to_map/1` on the result to consume it.
   """
   @spec query!(t(), binary | reference, [term], Keyword.t()) :: Adbc.Result.t()
   def query!(conn, query, params \\ [], statement_options \\ [])
@@ -203,7 +202,7 @@ defmodule Adbc.Connection do
   def execute(conn, query, params \\ [], statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and
              is_list(statement_options) do
-    command(conn, {:execute, query, params, statement_options})
+    command(conn, {:execute, query, params_to_columns(params), statement_options})
   end
 
   @doc """
@@ -551,6 +550,13 @@ defmodule Adbc.Connection do
     end)
   end
 
+  defp params_to_columns(params) when is_list(params) do
+    Enum.map(params, fn
+      %Adbc.Column{} = col -> col
+      param -> Adbc.Column.new([param])
+    end)
+  end
+
   @doc """
   Runs the given `query` with `params` and
   pass the `Adbc.StreamResult` to the given function.
@@ -565,7 +571,9 @@ defmodule Adbc.Connection do
   def query_pointer(conn, query, params \\ [], fun, statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and is_function(fun) and
              is_list(statement_options) do
-    stream(conn, {:query, query, params, statement_options}, fn conn, stream_ref, rows_affected ->
+    stream(conn, {:query, query, params_to_columns(params), statement_options}, fn conn,
+                                                                                   stream_ref,
+                                                                                   rows_affected ->
       pointer = Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref)
 
       if is_function(fun, 2) do
@@ -872,11 +880,11 @@ defmodule Adbc.Connection do
 
   defp do_stream_results(reference, acc, num_rows) do
     case Adbc.Nif.adbc_arrow_array_stream_next(reference) do
+      {:ok, :end_of_series} ->
+        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
+
       {:ok, columns} ->
         do_stream_results(reference, [columns | acc], num_rows)
-
-      :end_of_series ->
-        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
 
       {:error, reason} ->
         {:error, error_to_exception(reason)}

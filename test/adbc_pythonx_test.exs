@@ -5,7 +5,7 @@ defmodule Adbc.PythonxTest do
   defp eval!(code) do
     {py_table, %{}} = Pythonx.eval(code, %{})
     {:ok, result} = Result.from_py(py_table)
-    Result.materialize(result)
+    result
   end
 
   describe "from_py" do
@@ -314,6 +314,79 @@ defmodule Adbc.PythonxTest do
 
       assert Adbc.Column.to_list(hd(hd(result.data))) ==
                ["foo", "foo", "foo", "bar", "bar", "baz", "baz"]
+    end
+  end
+
+  describe "map" do
+    test "materializes map column" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array(
+          [[("x", 1), ("y", 2)], [("z", 3)], None, [("a", 4), ("b", 5)]],
+          type=pyarrow.map_(pyarrow.string(), pyarrow.int32())
+        )
+        pyarrow.Table.from_arrays([data], names=["maps"])
+        """)
+
+      assert %Adbc.Result{
+               data: [
+                 [
+                   %Adbc.Column{
+                     field: %Adbc.Field{
+                       name: "maps",
+                       type:
+                         {:map, %Adbc.Field{name: "key", type: :string},
+                          %Adbc.Field{name: "value", type: :s32}}
+                     },
+                     data: %Adbc.MapData{}
+                   } = col
+                 ]
+               ]
+             } = result
+
+      assert Adbc.Column.to_list(col) == [
+               %{"x" => 1, "y" => 2},
+               %{"z" => 3},
+               nil,
+               %{"a" => 4, "b" => 5}
+             ]
+    end
+
+    test "materializes map column with integer keys" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array(
+          [[(1, "a"), (2, "b")], [(3, "c")], None],
+          type=pyarrow.map_(pyarrow.int32(), pyarrow.string())
+        )
+        pyarrow.Table.from_arrays([data], names=["maps"])
+        """)
+
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [
+               %{1 => "a", 2 => "b"},
+               %{3 => "c"},
+               nil
+             ]
+    end
+
+    test "materializes map column with nulls in values" do
+      result =
+        eval!("""
+        import pyarrow
+        data = pyarrow.array(
+          [[("x", 1), ("y", None)], None, [("z", 3)]],
+          type=pyarrow.map_(pyarrow.string(), pyarrow.int32())
+        )
+        pyarrow.Table.from_arrays([data], names=["maps"])
+        """)
+
+      assert Adbc.Column.to_list(hd(hd(result.data))) == [
+               %{"x" => 1, "y" => nil},
+               nil,
+               %{"z" => 3}
+             ]
     end
   end
 

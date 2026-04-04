@@ -45,7 +45,8 @@ defmodule Adbc.ConnectionTest do
 
       assert {
                :ok,
-               results = %Adbc.Result{
+               %Adbc.Result{
+                 num_rows: nil,
                  data: [
                    [
                      %Adbc.Column{
@@ -54,52 +55,29 @@ defmodule Adbc.ConnectionTest do
                          type: :u32,
                          metadata: nil
                        }
-                     },
+                     } = info_name_col,
                      %Adbc.Column{
                        field: %{
                          name: "info_value",
                          type: :dense_union,
                          metadata: nil
-                       }
+                       },
+                       data: [
+                         %{"string_value" => _},
+                         # "3.43.2"
+                         %{"string_value" => _},
+                         %{"string_value" => _},
+                         # "(unknown)"
+                         %{"string_value" => _},
+                         # "0.4.0"
+                         %{"string_value" => _},
+                         %{"int64_value" => _}
+                       ]
                      }
                    ]
-                 ],
-                 num_rows: nil
+                 ]
                }
              } = Connection.get_info(conn)
-
-      assert %Adbc.Result{
-               num_rows: nil,
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_name",
-                       type: :u32,
-                       metadata: nil
-                     }
-                   } = info_name_col,
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_value",
-                       type: :dense_union,
-                       metadata: nil
-                     },
-                     data: [
-                       %{"string_value" => _},
-                       # "3.43.2"
-                       %{"string_value" => _},
-                       %{"string_value" => _},
-                       # "(unknown)"
-                       %{"string_value" => _},
-                       # "0.4.0"
-                       %{"string_value" => _},
-                       %{"int64_value" => _}
-                     ]
-                   }
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(info_name_col) == [0, 1, 100, 101, 102, 103]
     end
@@ -108,7 +86,7 @@ defmodule Adbc.ConnectionTest do
       conn = start_supervised!({Connection, database: db})
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -117,40 +95,19 @@ defmodule Adbc.ConnectionTest do
                         type: :u32,
                         metadata: nil
                       }
-                    },
+                    } = info_name_col,
                     %Adbc.Column{
                       field: %{
                         name: "info_value",
                         type: :dense_union,
                         metadata: nil
-                      }
+                      },
+                      data: [%{"string_value" => _}]
                     }
                   ]
                 ],
                 num_rows: nil
               }} = Connection.get_info(conn, [0])
-
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_name",
-                       type: :u32,
-                       metadata: nil
-                     }
-                   } = info_name_col,
-                   %Adbc.Column{
-                     field: %{
-                       name: "info_value",
-                       type: :dense_union,
-                       metadata: nil
-                     },
-                     data: [%{"string_value" => _}]
-                   }
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(info_name_col) == [0]
     end
@@ -175,19 +132,8 @@ defmodule Adbc.ConnectionTest do
     test "get all objects from a connection", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
-      assert {:ok,
-              results = %Adbc.Result{
-                num_rows: nil,
-                data: _
-              }} = Connection.get_objects(conn, 0)
-
-      assert results =
-               %Adbc.Result{
-                 num_rows: nil,
-                 data: []
-               } = Adbc.Result.materialize(results)
-
-      assert %{} == Adbc.Result.to_map(results)
+      assert {:ok, %Adbc.Result{num_rows: nil, data: [_ | _]}} =
+               Connection.get_objects(conn, 0)
     end
   end
 
@@ -196,7 +142,7 @@ defmodule Adbc.ConnectionTest do
       conn = start_supervised!({Connection, database: db})
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 num_rows: nil,
                 data: [
                   [
@@ -205,27 +151,12 @@ defmodule Adbc.ConnectionTest do
                         name: "table_type",
                         type: :string,
                         metadata: nil
-                      }
+                      },
+                      data: _
                     }
                   ]
                 ]
-              }} = Connection.get_table_types(conn)
-
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "table_type",
-                         type: :string,
-                         metadata: nil
-                       },
-                       data: _
-                     }
-                   ]
-                 ]
-               } = Adbc.Result.materialize(results)
+              } = results} = Connection.get_table_types(conn)
 
       assert %{"table_type" => ["table", "view"]} = Adbc.Result.to_map(results)
     end
@@ -236,7 +167,7 @@ defmodule Adbc.ConnectionTest do
       conn = start_supervised!({Connection, database: db})
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -254,27 +185,13 @@ defmodule Adbc.ConnectionTest do
       # Ensure matching struct fields
       assert map_size(column) == map_size(Adbc.Column.s64([]))
 
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = column
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
-
       assert Adbc.Column.to_list(column) == [123]
 
       # Ensure matching struct fields
       assert map_size(column) == map_size(Adbc.Column.s64([]))
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -283,39 +200,18 @@ defmodule Adbc.ConnectionTest do
                         type: :s64,
                         metadata: nil
                       }
-                    },
+                    } = num_col,
                     %Adbc.Column{
                       field: %{
                         name: "bool",
                         type: :s64,
                         metadata: nil
                       }
-                    }
+                    } = bool_col
                   ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, "SELECT 123 as num, true as bool")
-
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = num_col,
-                   %Adbc.Column{
-                     field: %{
-                       name: "bool",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = bool_col
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(num_col) == [123]
       assert Adbc.Column.to_list(bool_col) == [1]
@@ -325,7 +221,7 @@ defmodule Adbc.ConnectionTest do
       conn = start_supervised!({Connection, database: db})
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -334,25 +230,11 @@ defmodule Adbc.ConnectionTest do
                         type: :s64,
                         metadata: nil
                       }
-                    }
+                    } = num_col
                   ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, "SELECT 123 + ? as num", [456])
-
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = num_col
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(num_col) == [579]
     end
@@ -362,7 +244,7 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, ref} = Connection.prepare(conn, "SELECT 123 + ? as num")
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -371,25 +253,11 @@ defmodule Adbc.ConnectionTest do
                         type: :s64,
                         metadata: nil
                       }
-                    }
+                    } = num_col
                   ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref, [456])
-
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = num_col
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(num_col) == [579]
     end
@@ -400,7 +268,7 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, ref_b} = Connection.prepare(conn, "SELECT 1000 + ? as num")
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -409,30 +277,16 @@ defmodule Adbc.ConnectionTest do
                         type: :s64,
                         metadata: nil
                       }
-                    }
+                    } = num_col
                   ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref_a, [456])
 
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = num_col
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
-
       assert Adbc.Column.to_list(num_col) == [579]
 
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 data: [
                   [
                     %Adbc.Column{
@@ -441,25 +295,11 @@ defmodule Adbc.ConnectionTest do
                         type: :s64,
                         metadata: nil
                       }
-                    }
+                    } = num_col
                   ]
                 ],
                 num_rows: nil
               }} = Connection.query(conn, ref_b, [456])
-
-      assert %Adbc.Result{
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %{
-                       name: "num",
-                       type: :s64,
-                       metadata: nil
-                     }
-                   } = num_col
-                 ]
-               ]
-             } = Adbc.Result.materialize(results)
 
       assert Adbc.Column.to_list(num_col) == [1456]
     end
@@ -475,22 +315,6 @@ defmodule Adbc.ConnectionTest do
     test "select", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "num",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     }
-                   ]
-                 ],
-                 num_rows: nil
-               } = Connection.query!(conn, "SELECT 123 as num")
-
       assert %Adbc.Result{
                data: [
                  [
@@ -502,33 +326,11 @@ defmodule Adbc.ConnectionTest do
                      }
                    } = num_col
                  ]
-               ]
-             } = Adbc.Result.materialize(results)
+               ],
+               num_rows: nil
+             } = Connection.query!(conn, "SELECT 123 as num")
 
       assert Adbc.Column.to_list(num_col) == [123]
-
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "num",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     },
-                     %Adbc.Column{
-                       field: %{
-                         name: "bool",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     }
-                   ]
-                 ],
-                 num_rows: nil
-               } = Connection.query!(conn, "SELECT 123 as num, true as bool")
 
       assert %Adbc.Result{
                data: [
@@ -548,8 +350,9 @@ defmodule Adbc.ConnectionTest do
                      }
                    } = bool_col
                  ]
-               ]
-             } = Adbc.Result.materialize(results)
+               ],
+               num_rows: nil
+             } = Connection.query!(conn, "SELECT 123 as num, true as bool")
 
       assert Adbc.Column.to_list(num_col) == [123]
       assert Adbc.Column.to_list(bool_col) == [1]
@@ -557,22 +360,6 @@ defmodule Adbc.ConnectionTest do
 
     test "select with parameters", %{db: db} do
       conn = start_supervised!({Connection, database: db})
-
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "num",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     }
-                   ]
-                 ],
-                 num_rows: nil
-               } = Connection.query!(conn, "SELECT 123 + ? as num", [456])
 
       assert %Adbc.Result{
                data: [
@@ -585,8 +372,9 @@ defmodule Adbc.ConnectionTest do
                      }
                    } = num_col
                  ]
-               ]
-             } = Adbc.Result.materialize(results)
+               ],
+               num_rows: nil
+             } = Connection.query!(conn, "SELECT 123 + ? as num", [456])
 
       assert Adbc.Column.to_list(num_col) == [579]
     end
@@ -604,32 +392,6 @@ defmodule Adbc.ConnectionTest do
     test "without parameters", %{db: db} do
       conn = start_supervised!({Connection, database: db})
 
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "num",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     },
-                     %Adbc.Column{
-                       field: %{
-                         name: "bool",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     }
-                   ]
-                 ],
-                 num_rows: nil
-               } =
-               Connection.query!(conn, "SELECT 123 as num, true as bool", [],
-                 "adbc.sqlite.query.batch_rows": 1
-               )
-
       assert %Adbc.Result{
                data: [
                  [
@@ -648,8 +410,12 @@ defmodule Adbc.ConnectionTest do
                      }
                    } = bool_col
                  ]
-               ]
-             } = Adbc.Result.materialize(results)
+               ],
+               num_rows: nil
+             } =
+               Connection.query!(conn, "SELECT 123 as num, true as bool", [],
+                 "adbc.sqlite.query.batch_rows": 1
+               )
 
       assert Adbc.Column.to_list(num_col) == [123]
       assert Adbc.Column.to_list(bool_col) == [1]
@@ -657,25 +423,6 @@ defmodule Adbc.ConnectionTest do
 
     test "with parameters", %{db: db} do
       conn = start_supervised!({Connection, database: db})
-
-      assert results =
-               %Adbc.Result{
-                 data: [
-                   [
-                     %Adbc.Column{
-                       field: %{
-                         name: "num",
-                         type: :s64,
-                         metadata: nil
-                       }
-                     }
-                   ]
-                 ],
-                 num_rows: nil
-               } =
-               Connection.query!(conn, "SELECT 123 + ? as num", [456],
-                 "adbc.sqlite.query.batch_rows": 10
-               )
 
       assert %Adbc.Result{
                data: [
@@ -688,8 +435,12 @@ defmodule Adbc.ConnectionTest do
                      }
                    } = num_col
                  ]
-               ]
-             } = Adbc.Result.materialize(results)
+               ],
+               num_rows: nil
+             } =
+               Connection.query!(conn, "SELECT 123 + ? as num", [456],
+                 "adbc.sqlite.query.batch_rows": 10
+               )
 
       assert Adbc.Column.to_list(num_col) == [579]
     end
@@ -834,7 +585,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify the data was inserted
       {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2, 3]
@@ -863,7 +613,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify all data
       {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2, 3, 4]
@@ -891,7 +640,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify only new data exists
       {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [10, 20]
@@ -911,7 +659,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify data was inserted
       {:ok, result} = Connection.query(conn, "SELECT * FROM new_users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2]
@@ -941,7 +688,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify all data
       {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2, 3, 4]
@@ -962,7 +708,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify the data was inserted into the temp table
       {:ok, result} = Connection.query(conn, "SELECT * FROM temp_users ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2, 3]
@@ -980,17 +725,15 @@ defmodule Adbc.ConnectionTest do
 
       assert {:ok, 3} = Connection.bulk_insert(conn, initial_columns, table: "source_table")
 
-      # Query and materialize the data
+      # Query the data
       {:ok, result} = Connection.query(conn, "SELECT * FROM source_table")
-      materialized_result = Adbc.Result.materialize(result)
 
-      # Materialized data should work
+      # Data should work
       assert {:ok, 3} =
-               Connection.bulk_insert(conn, hd(materialized_result.data), table: "target_table")
+               Connection.bulk_insert(conn, hd(result.data), table: "target_table")
 
       # Verify the data was inserted correctly
       {:ok, verify} = Connection.query(conn, "SELECT * FROM target_table ORDER BY id")
-      verify = Adbc.Result.materialize(verify)
       map = Adbc.Result.to_map(verify)
 
       assert map["id"] == [1, 2, 3]
@@ -1009,7 +752,6 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, 3} = Connection.bulk_insert(conn, columns, table: "nullable_test")
 
       {:ok, result} = Connection.query(conn, "SELECT * FROM nullable_test ORDER BY id")
-      result = Adbc.Result.materialize(result)
       map = Adbc.Result.to_map(result)
 
       assert map["id"] == [nil, 1, 3]
@@ -1036,7 +778,7 @@ defmodule Adbc.ConnectionTest do
       {:ok, verify} =
         Connection.query(conn, "SELECT * FROM py_animals ORDER BY n_legs")
 
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
       assert map["n_legs"] == [2, 4, 5, 100]
       assert map["animals"] == ["Flamingo", "Horse", "Brittle stars", "Centipede"]
     end
@@ -1064,7 +806,6 @@ defmodule Adbc.ConnectionTest do
 
       # Verify the data in destination
       {:ok, verify} = Connection.query(dest_conn, "SELECT * FROM dest_table ORDER BY id")
-      verify = Adbc.Result.materialize(verify)
       map = Adbc.Result.to_map(verify)
 
       assert map["id"] == [10, 20, 30]
@@ -1083,7 +824,7 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, 2} = Connection.bulk_insert(conn, columns, table: "mixed")
 
       {:ok, result} = Connection.query(conn, "SELECT * FROM mixed ORDER BY id")
-      map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2]
       assert map["col2"] == ["Alice", "Bob"]
@@ -1194,32 +935,6 @@ defmodule Adbc.ConnectionTest do
       assert error.message =~ "has no column named"
     end
 
-    test "error: unmaterialized columns are rejected", %{db: db} do
-      conn = start_supervised!({Connection, database: db})
-
-      # Create initial data
-      initial_columns = [
-        Adbc.Column.s64([1, 2, 3], name: "id"),
-        Adbc.Column.string(["Alice", "Bob", "Charlie"], name: "name")
-      ]
-
-      assert {:ok, 3} = Connection.bulk_insert(conn, initial_columns, table: "source_table")
-
-      # Query the data (returns unmaterialized columns)
-      {:ok, result} = Connection.query(conn, "SELECT * FROM source_table")
-
-      # Verify data is unmaterialized (contains references)
-      assert is_reference(hd(hd(result.data)).data)
-
-      # Try to use unmaterialized columns in bulk_insert - should fail with clear ArgumentError
-      assert {:error, %ArgumentError{} = error} =
-               Connection.bulk_insert(conn, hd(result.data), table: "target_table")
-
-      error_message = Exception.message(error)
-      assert error_message =~ "Cannot use unmaterialized"
-      assert error_message =~ "materialize"
-    end
-
     test "bulk inserts from IPC stream", %{db: db} do
       conn = start_supervised!({Connection, database: db})
       Connection.query!(conn, "CREATE TABLE ipc_source (id BIGINT, name VARCHAR)")
@@ -1238,7 +953,7 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, 3} = Connection.bulk_insert(conn, reloaded, table: "ipc_users")
 
       {:ok, verify} = Connection.query(conn, "SELECT * FROM ipc_users ORDER BY id")
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
 
       assert map["id"] == [1, 2, 3]
       assert map["name"] == ["Alice", "Bob", "Charlie"]
@@ -1270,7 +985,7 @@ defmodule Adbc.ConnectionTest do
                )
 
       {:ok, result} = Connection.query(conn, "SELECT * FROM users ORDER BY id")
-      map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(result)
 
       assert map["id"] == [1, 2, 3]
       assert map["name"] == ["Alice", "Bob", "Charlie"]
@@ -1298,7 +1013,6 @@ defmodule Adbc.ConnectionTest do
       {:ok, query_result} =
         Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
 
-      query_result = Adbc.Result.materialize(query_result)
       map = Adbc.Result.to_map(query_result)
 
       assert map["id"] == [1, 2, 3]
@@ -1337,7 +1051,10 @@ defmodule Adbc.ConnectionTest do
       :erlang.garbage_collect(self())
 
       # Wait for the connection to receive the :execute_on_gc message
-      assert_receive {:trace, ^conn_pid, :receive, {:execute_on_gc, "DROP TABLE IF EXISTS " <> ^table_name}}, 1000
+      assert_receive {:trace, ^conn_pid, :receive,
+                      {:execute_on_gc, "DROP TABLE IF EXISTS " <> ^table_name}},
+                     1000
+
       :erlang.trace(conn_pid, false, [:receive])
 
       # Ensure the delete command has been processed by making a synchronous call
@@ -1373,7 +1090,7 @@ defmodule Adbc.ConnectionTest do
       {:ok, verify} =
         Connection.query(dest_conn, "SELECT * FROM #{ingest_result.table} ORDER BY id")
 
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
       assert map["id"] == [10, 20, 30]
       assert map["code"] == ["X", "Y", "Z"]
     end
@@ -1400,7 +1117,7 @@ defmodule Adbc.ConnectionTest do
       {:ok, verify} =
         Connection.query(conn, "SELECT * FROM #{ingest_result.table} ORDER BY id")
 
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
       assert map["id"] == [10, 20, 30]
       assert map["code"] == ["X", "Y", "Z"]
     end
@@ -1439,7 +1156,7 @@ defmodule Adbc.ConnectionTest do
       {:ok, verify} =
         Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY n_legs")
 
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
       assert map["n_legs"] == [2, 4, 5, 100]
       assert map["animals"] == ["Flamingo", "Horse", "Brittle stars", "Centipede"]
     end
@@ -1465,7 +1182,7 @@ defmodule Adbc.ConnectionTest do
       assert {:ok, %Adbc.IngestResult{} = result} = Connection.ingest(conn, columns)
 
       {:ok, verify} = Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
-      map = verify |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(verify)
 
       assert map["id"] == [1, 2]
       assert map["col2"] == ["Alice", "Bob"]
@@ -1484,7 +1201,7 @@ defmodule Adbc.ConnectionTest do
       {:ok, query_result} =
         Connection.query(conn, "SELECT * FROM #{result.table} ORDER BY id")
 
-      map = query_result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+      map = Adbc.Result.to_map(query_result)
 
       assert map["id"] == [1, 2, 3]
       assert map["name"] == ["Alice", "Bob", "Charlie"]

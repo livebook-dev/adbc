@@ -73,6 +73,7 @@ defmodule Adbc.Field do
           | {:large_list_view, t()}
           | {:fixed_size_list, t(), integer()}
           | {:struct, [t()]}
+          | {:map, t(), t()}
           | {:dictionary, t(), t()}
           | {:run_end_encoded, t(), t()}
 
