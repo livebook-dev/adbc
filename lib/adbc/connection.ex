@@ -571,27 +571,26 @@ defmodule Adbc.Connection do
   def query_pointer(conn, query, params \\ [], fun, statement_options \\ [])
       when (is_binary(query) or is_reference(query)) and is_list(params) and is_function(fun) and
              is_list(statement_options) do
-    stream(conn, {:query, query, params_to_columns(params), statement_options}, fn conn,
-                                                                                   stream_ref,
-                                                                                   rows_affected ->
-      pointer = Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref)
+    stream(conn, {:query, query, params_to_columns(params), statement_options}, fn
+      conn, stream_ref, rows_affected ->
+        pointer = Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref)
 
-      if is_function(fun, 2) do
-        IO.warn(
-          "query_pointer/5 callback should be 1-arity (receiving %Adbc.StreamResult{}), 2-arity is deprecated"
-        )
+        if is_function(fun, 2) do
+          IO.warn(
+            "query_pointer/5 callback should be 1-arity (receiving %Adbc.StreamResult{}), 2-arity is deprecated"
+          )
 
-        {:ok, fun.(pointer, rows_affected)}
-      else
-        stream_result = %Adbc.StreamResult{
-          conn: conn,
-          ref: stream_ref,
-          pointer: pointer,
-          num_rows: normalize_rows(rows_affected)
-        }
+          {:ok, fun.(pointer, rows_affected)}
+        else
+          stream_result = %Adbc.StreamResult{
+            conn: conn,
+            ref: stream_ref,
+            pointer: pointer,
+            num_rows: normalize_rows(rows_affected)
+          }
 
-        {:ok, fun.(stream_result)}
-      end
+          {:ok, fun.(stream_result)}
+        end
     end)
   end
 
