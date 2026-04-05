@@ -433,16 +433,6 @@ defmodule Adbc.ColumnTest do
                )
              )
     end
-
-    test "raises for unmaterialized column" do
-      assert_raise ArgumentError, "column has not been materialized", fn ->
-        {:ok, result} =
-          Adbc.Result.from_ipc_stream(File.read!(Path.join("test", "iris/iris.ipc_stream")))
-
-        [col | _] = hd(result.data)
-        Adbc.Column.has_validity?(col)
-      end
-    end
   end
 
   describe "to_binary/1" do
@@ -471,16 +461,6 @@ defmodule Adbc.ColumnTest do
     test "raises for string column" do
       assert_raise ArgumentError, ~r/cannot convert/, fn ->
         Adbc.Column.to_binary(Adbc.Column.string(["a", "b"]))
-      end
-    end
-
-    test "raises for unmaterialized column" do
-      assert_raise ArgumentError, "column has not been materialized", fn ->
-        {:ok, result} =
-          Adbc.Result.from_ipc_stream(File.read!(Path.join("test", "iris/iris.ipc_stream")))
-
-        [col | _] = hd(result.data)
-        Adbc.Column.to_binary(col)
       end
     end
   end

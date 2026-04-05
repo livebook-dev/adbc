@@ -51,7 +51,7 @@ defmodule Adbc.DuckDBTest do
              ]
            } = Adbc.Result.to_columns(result)
 
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["id"] == [1, 2, 3]
 
@@ -72,7 +72,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "decimals")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM decimals")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["dec_col"] == [Decimal.new("1.23"), Decimal.new("-4.56"), nil]
   end
@@ -91,7 +91,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "lists")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM lists ORDER BY id")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["id"] == [1, 2, 3]
     assert map["nums"] == [[10, 20], [30], [40, 50, 60]]
@@ -114,7 +114,6 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "list_dates")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM list_dates ORDER BY id")
-    result = Adbc.Result.materialize(result)
     assert [[id_col, dates_col]] = result.data
     assert Adbc.Column.to_list(id_col) == [1, 2, 3]
 
@@ -137,7 +136,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "dicts")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM dicts")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     [values] = Map.values(map)
     assert values == ["foo", "bar", "foo", "baz", "bar"]
@@ -157,7 +156,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "floats")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM floats")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["f32_col"] == [1.0, 2.5, :nan, :infinity, :neg_infinity, nil]
     assert map["f64_col"] == [10.0, 20.5, :nan, :infinity, :neg_infinity, nil]
@@ -175,7 +174,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "integers")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM integers")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["s8_col"] == [1, -1, nil]
     assert map["s16_col"] == [100, -100, nil]
@@ -193,7 +192,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "strings")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM strings")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["str_col"] == ["hello", "world", nil]
     assert map["bin_col"] == [<<1, 2, 3>>, <<4, 5>>, nil]
@@ -235,7 +234,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "temporal")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM temporal")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["date_col"] == [~D[2024-01-15], ~D[2024-01-15], nil]
 
@@ -256,7 +255,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "booleans")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM booleans")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["bool_col"] == [true, false, nil]
   end
@@ -269,7 +268,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "durations")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM durations")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     # DuckDB converts durations to month_day_nano intervals (microseconds → nanoseconds)
     assert map["dur_col"] == [{0, 0, 1_000_000_000}, {0, 0, -500_000_000}, nil]
@@ -286,7 +285,7 @@ defmodule Adbc.DuckDBTest do
     assert {:ok, _} = Connection.bulk_insert(conn, columns, table: "intervals")
 
     {:ok, result} = Connection.query(conn, "SELECT * FROM intervals")
-    map = result |> Adbc.Result.materialize() |> Adbc.Result.to_map()
+    map = Adbc.Result.to_map(result)
 
     assert map["iv_col"] == [{14, 3, 1_000_000_000}, {0, 0, 0}, nil]
   end

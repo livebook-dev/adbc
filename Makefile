@@ -88,7 +88,7 @@ adbc: priv_dir
 		cmake --build . --target install -j ; \
 	fi
 
-$(NIF_SO_REL): priv_dir adbc $(C_SRC_REL)/adbc_nif.cpp $(C_SRC_REL)/nif_utils.hpp
+$(NIF_SO_REL): priv_dir adbc $(C_SRC_REL)/adbc_nif.cpp
 	@ mkdir -p "$(CMAKE_ADBC_NIF_BUILD_DIR)" && \
 	cd "$(CMAKE_ADBC_NIF_BUILD_DIR)" && \
 	cmake --no-warn-unused-cli \

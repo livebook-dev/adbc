@@ -5,12 +5,8 @@ defmodule Adbc.Helper do
     ArgumentError.exception(string)
   end
 
-  def error_to_exception(list) when is_list(list) do
-    ArgumentError.exception(List.to_string(list))
-  end
-
-  def error_to_exception({:adbc_error, message, vendor_code, state}) do
-    Adbc.Error.exception(message: message, vendor_code: vendor_code, state: state)
+  def error_to_exception(%ArgumentError{} = exception) do
+    exception
   end
 
   def error_to_exception(%Adbc.Error{} = exception) do

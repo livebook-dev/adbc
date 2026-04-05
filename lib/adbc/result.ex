@@ -44,7 +44,7 @@ defmodule Adbc.StreamResult do
       {:error, reason} ->
         {:error, Adbc.Helper.error_to_exception(reason)}
 
-      stream_ref when is_reference(stream_ref) ->
+      {:ok, stream_ref} when is_reference(stream_ref) ->
         pointer = Adbc.Nif.adbc_arrow_array_stream_get_pointer(stream_ref)
 
         {:ok,
@@ -146,7 +146,7 @@ defmodule Adbc.Result do
       {:error, reason} ->
         {:error, error_to_exception(reason)}
 
-      stream_ref when is_reference(stream_ref) ->
+      {:ok, stream_ref} when is_reference(stream_ref) ->
         try do
           stream_results(stream_ref, nil)
         after
@@ -166,17 +166,10 @@ defmodule Adbc.Result do
     end
   end
 
-  @doc """
-  `materialize/1` converts the result set's data from reference type to regular Elixir terms.
-  """
+  @deprecated "Adbc.Result.materialize/1 is no longer necessary, it is a noop."
   @spec materialize(%Adbc.Result{} | {:ok, %Adbc.Result{}} | {:error, String.t()}) ::
           %Adbc.Result{} | {:ok, %Adbc.Result{}} | {:error, String.t()}
-  def materialize(%Adbc.Result{data: batches} = result) when is_list(batches) do
-    %{
-      result
-      | data: Enum.map(batches, fn columns -> Enum.map(columns, &Adbc.Column.materialize/1) end)
-    }
-  end
+  def materialize(%Adbc.Result{} = result), do: result
 
   @doc """
   Returns a map of columns as `Adbc.Column` without materializing them.
@@ -198,14 +191,14 @@ defmodule Adbc.Result do
   """
   def to_map(%Adbc.Result{data: [batch]}) do
     Map.new(batch, fn %{field: %{name: name}} = col ->
-      {name, col |> Adbc.Column.materialize() |> Adbc.Column.to_list()}
+      {name, Adbc.Column.to_list(col)}
     end)
   end
 
   def to_map(%Adbc.Result{data: batches}) do
     batches
     |> Enum.zip_with(fn [%{field: %{name: name}} | _] = columns ->
-      {name, Enum.flat_map(columns, &(&1 |> Adbc.Column.materialize() |> Adbc.Column.to_list()))}
+      {name, Enum.flat_map(columns, &Adbc.Column.to_list/1)}
     end)
     |> Map.new()
   end
@@ -218,8 +211,8 @@ defmodule Adbc.Result do
   ones from Pandas and Polars.
 
   It returns an ok-tuple with `Adbc.Result` or an error-tuple.
-  You often want to call `Adbc.Result.materialize/1` or
-  `Adbc.Result.to_map/1` on the results to consume it.
+  You often want to call `Adbc.Result.to_map/1` on the result
+  to consume it.
   """
   def from_py(py_object) do
     case Adbc.Helper.from_py(py_object) do
@@ -247,11 +240,11 @@ defmodule Adbc.Result do
 
   defp stream_results(reference, acc, num_rows) do
     case Adbc.Nif.adbc_arrow_array_stream_next(reference) do
+      {:ok, :end_of_series} ->
+        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
+
       {:ok, columns} ->
         stream_results(reference, [columns | acc], num_rows)
-
-      :end_of_series ->
-        {:ok, %Adbc.Result{data: Enum.reverse(acc), num_rows: num_rows}}
 
       {:error, reason} ->
         {:error, error_to_exception(reason)}
@@ -261,7 +254,7 @@ end
 
 defimpl Table.Reader, for: Adbc.Result do
   def init(%Adbc.Result{data: batches, num_rows: num_rows}) do
-    # Group columns across batches by position, materialize and concatenate
+    # Group columns across batches by position and concatenate
     names =
       case batches do
         [first_batch | _] -> Enum.map(first_batch, & &1.field.name)
@@ -271,7 +264,7 @@ defimpl Table.Reader, for: Adbc.Result do
     data =
       Enum.zip_with(batches, fn columns_at_pos ->
         Enum.flat_map(columns_at_pos, fn column ->
-          column |> Adbc.Column.materialize() |> Adbc.Column.to_list()
+          Adbc.Column.to_list(column)
         end)
       end)
 

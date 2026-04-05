@@ -95,71 +95,28 @@ defmodule Adbc.ResultTest do
 
     test "loads ipc stream from in-memory data" do
       assert {:ok,
-              results = %Adbc.Result{
+              %Adbc.Result{
                 num_rows: nil,
                 data: [
                   [
                     %Adbc.Column{
-                      field: %Adbc.Field{
-                        name: "sepal_length",
-                        type: :f64,
-                        metadata: nil
-                      }
+                      field: %Adbc.Field{name: "sepal_length", type: :f64}
                     },
                     %Adbc.Column{
-                      field: %Adbc.Field{
-                        name: "sepal_width",
-                        type: :f64,
-                        metadata: nil
-                      }
+                      field: %Adbc.Field{name: "sepal_width", type: :f64}
                     },
                     %Adbc.Column{
-                      field: %Adbc.Field{
-                        name: "petal_length",
-                        type: :f64,
-                        metadata: nil
-                      }
+                      field: %Adbc.Field{name: "petal_length", type: :f64}
                     },
                     %Adbc.Column{
-                      field: %Adbc.Field{
-                        name: "petal_width",
-                        type: :f64,
-                        metadata: nil
-                      }
+                      field: %Adbc.Field{name: "petal_width", type: :f64}
                     },
                     %Adbc.Column{
-                      field: %Adbc.Field{
-                        name: "species",
-                        type: :large_string,
-                        metadata: nil
-                      }
+                      field: %Adbc.Field{name: "species", type: :large_string}
                     }
-                  ]
+                  ] = data
                 ]
               }} = Result.from_ipc_stream(@iris_ipc_stream)
-
-      assert %Adbc.Result{
-               num_rows: nil,
-               data: [
-                 [
-                   %Adbc.Column{
-                     field: %Adbc.Field{name: "sepal_length", type: :f64}
-                   },
-                   %Adbc.Column{
-                     field: %Adbc.Field{name: "sepal_width", type: :f64}
-                   },
-                   %Adbc.Column{
-                     field: %Adbc.Field{name: "petal_length", type: :f64}
-                   },
-                   %Adbc.Column{
-                     field: %Adbc.Field{name: "petal_width", type: :f64}
-                   },
-                   %Adbc.Column{
-                     field: %Adbc.Field{name: "species", type: :large_string}
-                   }
-                 ] = data
-               ]
-             } = Adbc.Result.materialize(results)
 
       for column <- data do
         expected =

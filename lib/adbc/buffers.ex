@@ -13,6 +13,11 @@ defmodule Adbc.ListViewData do
   defstruct [:offsets, :sizes, :validity, :values, :bit_offset]
 end
 
+defmodule Adbc.MapData do
+  @moduledoc false
+  defstruct [:offsets, :validity, :keys, :values, :bit_offset]
+end
+
 defmodule Adbc.ListData do
   @moduledoc false
   defstruct [:offsets, :validity, :values, :bit_offset]

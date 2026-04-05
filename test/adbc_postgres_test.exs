@@ -17,22 +17,21 @@ defmodule Adbc.PostgresTest do
   end
 
   test "runs queries", %{conn: conn} do
-    assert {:ok, results} = Connection.query(conn, "SELECT 123 as num")
-
-    assert %Adbc.Result{
-             data: [
-               [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "num",
-                     type: :s32,
-                     metadata: nil
-                   },
-                   data: _
-                 } = num_col
-               ]
-             ]
-           } = Adbc.Result.materialize(results)
+    assert {:ok,
+            %Adbc.Result{
+              data: [
+                [
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "num",
+                      type: :s32,
+                      metadata: nil
+                    },
+                    data: _
+                  } = num_col
+                ]
+              ]
+            }} = Connection.query(conn, "SELECT 123 as num")
 
     assert Adbc.Column.to_list(num_col) == [123]
   end
@@ -47,7 +46,6 @@ defmodule Adbc.PostgresTest do
                [Adbc.Column.list([Adbc.Column.string(ids)], Adbc.Field.new(:string))]
              )
 
-    result = result |> Adbc.Result.materialize()
     assert [[col]] = result.data
 
     assert col.field.type ==
@@ -57,21 +55,19 @@ defmodule Adbc.PostgresTest do
   end
 
   test "list of ints", %{conn: conn} do
-    assert {:ok, results} = Connection.query(conn, "SELECT ARRAY[1, 2, 3, null, 5] as num")
-    result = Adbc.Result.materialize(results)
+    assert {:ok, result} = Connection.query(conn, "SELECT ARRAY[1, 2, 3, null, 5] as num")
     assert [[col]] = result.data
     assert col.field.name == "num"
     assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5]]
   end
 
   test "nested lists", %{conn: conn} do
-    assert {:ok, results} =
+    assert {:ok, result} =
              Connection.query(
                conn,
                "SELECT ARRAY[ARRAY[1, 2, 3, null, 5], ARRAY[6, null, 7, null, 9]] as num"
              )
 
-    result = Adbc.Result.materialize(results)
     assert [[col]] = result.data
     assert Adbc.Column.to_list(col) == [[1, 2, 3, nil, 5, 6, nil, 7, nil, 9]]
   end
@@ -88,70 +84,69 @@ defmodule Adbc.PostgresTest do
       '10:23:45.123456'::time as time_usec
     """
 
-    assert {:ok, results} = Connection.query(conn, query)
-
-    assert %Adbc.Result{
-             data: [
-               [
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "datetime",
-                     type: {:timestamp, :microseconds, nil},
-                     metadata: nil
-                   },
-                   data: _
-                 } = datetime_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "datetime_usec",
-                     type: {:timestamp, :microseconds, nil},
-                     metadata: nil
-                   },
-                   data: _
-                 } = datetime_usec_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "datetime_tz_8601",
-                     type: {:timestamp, :microseconds, "UTC"},
-                     metadata: nil
-                   },
-                   data: _
-                 } = datetime_tz_8601_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "datetime_tz_offset",
-                     type: {:timestamp, :microseconds, "UTC"},
-                     metadata: nil
-                   },
-                   data: _
-                 } = datetime_tz_offset_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "date",
-                     type: :date32,
-                     metadata: nil
-                   },
-                   data: _
-                 } = date_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "time",
-                     type: {:time64, :microseconds},
-                     metadata: nil
-                   },
-                   data: _
-                 } = time_col,
-                 %Adbc.Column{
-                   field: %Adbc.Field{
-                     name: "time_usec",
-                     type: {:time64, :microseconds},
-                     metadata: nil
-                   },
-                   data: _
-                 } = time_usec_col
-               ]
-             ]
-           } = Adbc.Result.materialize(results)
+    assert {:ok,
+            %Adbc.Result{
+              data: [
+                [
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "datetime",
+                      type: {:timestamp, :microseconds, nil},
+                      metadata: nil
+                    },
+                    data: _
+                  } = datetime_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "datetime_usec",
+                      type: {:timestamp, :microseconds, nil},
+                      metadata: nil
+                    },
+                    data: _
+                  } = datetime_usec_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "datetime_tz_8601",
+                      type: {:timestamp, :microseconds, "UTC"},
+                      metadata: nil
+                    },
+                    data: _
+                  } = datetime_tz_8601_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "datetime_tz_offset",
+                      type: {:timestamp, :microseconds, "UTC"},
+                      metadata: nil
+                    },
+                    data: _
+                  } = datetime_tz_offset_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "date",
+                      type: :date32,
+                      metadata: nil
+                    },
+                    data: _
+                  } = date_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "time",
+                      type: {:time64, :microseconds},
+                      metadata: nil
+                    },
+                    data: _
+                  } = time_col,
+                  %Adbc.Column{
+                    field: %Adbc.Field{
+                      name: "time_usec",
+                      type: {:time64, :microseconds},
+                      metadata: nil
+                    },
+                    data: _
+                  } = time_usec_col
+                ]
+              ]
+            }} = Connection.query(conn, query)
 
     assert Adbc.Column.to_list(datetime_col) == [~N[2023-03-01 10:23:45.000000]]
     assert Adbc.Column.to_list(datetime_usec_col) == [~N[2023-03-01 10:23:45.123456]]
@@ -169,8 +164,7 @@ defmodule Adbc.PostgresTest do
                "SELECT ARRAY['infinity'::NUMERIC, '-infinity'::NUMERIC, 4.2::NUMERIC, 'nan'::NUMERIC];"
              )
 
-    result = Adbc.Result.materialize(results)
-    assert [[col]] = result.data
+    assert [[col]] = results.data
     assert Adbc.Column.to_list(col) == [["inf", "-inf", "4.2", "nan"]]
   end
 
@@ -195,8 +189,7 @@ defmodule Adbc.PostgresTest do
                ]
              } = Connection.query!(conn, query)
 
-    materialized = Adbc.Result.materialize(results)
-    cols = Enum.map(materialized.data, fn [col] -> col end)
+    cols = Enum.map(results.data, fn [col] -> col end)
     assert length(cols) > 1
     total = cols |> Enum.flat_map(&Adbc.Column.to_list/1) |> length()
     assert total == 3_506_641
@@ -209,8 +202,6 @@ defmodule Adbc.PostgresTest do
                "SELECT $1 as x",
                [Adbc.Column.s32([1, 2, 3])]
              )
-
-    result = result |> Adbc.Result.materialize()
 
     assert %Adbc.Result{
              data: [
@@ -245,8 +236,6 @@ defmodule Adbc.PostgresTest do
                  ]
                )
 
-      result = result |> Adbc.Result.materialize()
-
       assert %Adbc.Result{
                data: [
                  [
@@ -276,8 +265,6 @@ defmodule Adbc.PostgresTest do
                  Adbc.Column.s32([not_in_values])
                ]
              )
-
-    result = result |> Adbc.Result.materialize()
 
     assert %Adbc.Result{
              data: [
