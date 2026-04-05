@@ -35,7 +35,7 @@ defmodule Adbc.Column do
   @type precision128 :: 1..38
   @type precision256 :: 1..76
   @type interval_month :: s32()
-  @type interval_day_xime :: {s32(), s32()}
+  @type interval_day_time :: {s32(), s32()}
   @type interval_month_day_nano :: {s32(), s32(), s64()}
 
   @time_unit_multiplier %{
@@ -96,6 +96,12 @@ defmodule Adbc.Column do
     case infer_type(data, nil) do
       {:struct, keys} ->
         encode_struct(keys, data, opts)
+
+      {:decimal, coef_len, scale} when coef_len + scale <= 38 ->
+        decimal128(data, coef_len + scale, scale, opts)
+
+      {:decimal, coef_len, scale} ->
+        decimal256(data, coef_len + scale, scale, opts)
 
       type ->
         %Adbc.Column{
@@ -241,6 +247,23 @@ defmodule Adbc.Column do
       _ ->
         raise ArgumentError,
               "mixed types in column: got NaiveDateTime but previously saw #{inspect(type)}"
+    end
+  end
+
+  defp infer_type([%Decimal{} = decimal | rest], type) do
+    coef_len = coef_length(decimal.coef)
+    scale = max(-decimal.exp, 0)
+
+    case type do
+      nil ->
+        infer_type(rest, {:decimal, coef_len, scale})
+
+      {:decimal, prev_coef_len, prev_scale} ->
+        infer_type(rest, {:decimal, max(prev_coef_len, coef_len), max(prev_scale, scale)})
+
+      _ ->
+        raise ArgumentError,
+              "mixed types in column: got Decimal but previously saw #{inspect(type)}"
     end
   end
 
@@ -1095,7 +1118,7 @@ defmodule Adbc.Column do
   * `:metadata` - A map of metadata
   """
   @spec interval(
-          [interval_month() | interval_day_xime() | interval_month_day_nano() | nil],
+          [interval_month() | interval_day_time() | interval_month_day_nano() | nil],
           Adbc.Field.interval_unit(),
           Keyword.t()
         ) ::

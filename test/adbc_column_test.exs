@@ -158,11 +158,21 @@ defmodule Adbc.ColumnTest do
       end
     end
 
-    test "unsupported types raise" do
-      assert_raise ArgumentError, ~r"cannot infer type", fn ->
-        Adbc.Column.new([Decimal.new("1.23")])
-      end
+    test "decimals infer decimal128" do
+      col = Adbc.Column.new([Decimal.new("1.23"), nil, Decimal.new("4.5")])
+      assert col.field.type == {:decimal128, 5, 2}
+      assert Adbc.Column.to_list(col) == [Decimal.new("1.23"), nil, Decimal.new("4.50")]
+    end
 
+    test "decimals infer decimal256" do
+      large = Decimal.new("123456789012345678901234567890123456789.99")
+      col = Adbc.Column.new([large, nil, Decimal.new("1.00")])
+      assert {:decimal256, _, 2} = col.field.type
+      one = Decimal.new("1.00")
+      assert [^large, nil, ^one] = Adbc.Column.to_list(col)
+    end
+
+    test "unsupported types raise" do
       assert_raise ArgumentError, ~r"cannot infer type", fn ->
         Adbc.Column.new([[1, 2]])
       end
