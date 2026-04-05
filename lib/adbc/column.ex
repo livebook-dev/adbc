@@ -2051,15 +2051,19 @@ defmodule Adbc.Column do
          index
        ) do
     size = next - prev
-    {key_chunk, keys} = Enum.split(keys, size)
-    {val_chunk, values} = Enum.split(values, size)
+    {pairs, keys, values} = split_and_zip(keys, values, size, [])
 
     element =
       if bitmap_valid?(validity, index, bit_offset),
-        do: Map.new(Enum.zip(key_chunk, val_chunk))
+        do: Map.new(pairs)
 
     [element | decode_map_32(rest, validity, bit_offset, keys, values, next, index + 1)]
   end
+
+  defp split_and_zip(keys, values, 0, acc), do: {acc, keys, values}
+
+  defp split_and_zip([k | keys], [v | values], n, acc),
+    do: split_and_zip(keys, values, n - 1, [{k, v} | acc])
 
   for {name, specifier} <- [
         decode_list_32: quote(do: signed - integer - little - 32),
