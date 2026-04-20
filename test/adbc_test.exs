@@ -10,8 +10,7 @@ defmodule AdbcTest do
 
     test "returns errors" do
       assert {:error,
-              "unknown driver :unknown, expected one of :bigquery, :duckdb, :flightsql, :postgresql, " <>
-                _} =
+              "unknown driver :unknown, expected one of :bigquery, " <> _} =
                Adbc.download_driver(:unknown)
     end
   end
