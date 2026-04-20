@@ -11,15 +11,26 @@ defmodule Update do
   @adbc_tag "apache-arrow-adbc-22"
   @adbc_drivers ~w(sqlite postgresql flightsql snowflake bigquery)a
 
+  # To update foundry (community) drivers, bump versions here
+  # https://docs.adbc-drivers.org / https://github.com/adbc-drivers
+  @foundry_drivers [
+    databricks: "0.1.2",
+    mysql: "0.3.1",
+    trino: "0.3.1",
+    exasol: "0.7.0"
+  ]
+
   def versions do
     Map.new(@adbc_drivers, &{&1, @adbc_driver_version})
     |> Map.merge(%{duckdb: @duckdb_version})
+    |> Map.merge(Map.new(@foundry_drivers))
   end
 
   def mappings do
     %{}
     |> Map.merge(adbc_mappings(@adbc_driver_version, @adbc_tag))
     |> Map.merge(duckdb_mappings(@duckdb_version))
+    |> Map.merge(foundry_mappings())
   end
 
   defp duckdb_mappings(duckdb_version) do
@@ -92,6 +103,45 @@ defmodule Update do
       {driver, data}
     end
   end
+
+  defp foundry_mappings do
+    for {driver, version} <- @foundry_drivers, into: %{} do
+      IO.puts("Generating #{driver} (foundry)")
+      name = Atom.to_string(driver)
+      tag = "#{foundry_tag_prefix(driver)}%2Fv#{version}"
+
+      assets =
+        fetch_assets!("https://api.github.com/repos/adbc-drivers/#{name}/releases/tags/#{tag}")
+
+      tarballs =
+        Enum.filter(assets, fn %{"name" => n} ->
+          String.starts_with?(n, "#{name}_") and String.ends_with?(n, ".tar.gz")
+        end)
+
+      {aarch64_apple_darwin, tarballs} = data_for(tarballs, ["macos", "arm64"])
+      {aarch64_linux_gnu, tarballs} = data_for(tarballs, ["linux", "arm64"])
+      {x86_64_linux_gnu, tarballs} = data_for(tarballs, ["linux", "amd64"])
+      {x86_64_windows_msvc, tarballs} = data_for(tarballs, ["windows", "amd64"])
+
+      if tarballs != [] do
+        IO.puts(
+          "The following tarballs for #{driver} are not being used:\n\n#{inspect(tarballs)}"
+        )
+      end
+
+      data = %{
+        "aarch64-apple-darwin" => aarch64_apple_darwin,
+        "aarch64-linux-gnu" => aarch64_linux_gnu,
+        "x86_64-linux-gnu" => x86_64_linux_gnu,
+        "x86_64-windows-msvc" => x86_64_windows_msvc
+      }
+
+      {driver, data}
+    end
+  end
+
+  defp foundry_tag_prefix(:exasol), do: "src"
+  defp foundry_tag_prefix(_), do: "go"
 
   defp data_for(wheels, parts) do
     case Enum.split_with(wheels, fn %{"name" => name} -> Enum.all?(parts, &(name =~ &1)) end) do
