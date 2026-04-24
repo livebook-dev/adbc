@@ -111,7 +111,7 @@ defmodule Adbc.MixProject do
     [
       name: "adbc",
       files:
-        ~w(3rd_party/apache-arrow-adbc c_src lib mix.exs README* LICENSE* CMakeLists.txt Makefile Makefile.win checksum.exs),
+        ~w(3rd_party/apache-arrow-adbc 3rd_party/nanoarrow c_src lib mix.exs README* LICENSE* CMakeLists.txt Makefile Makefile.win checksum.exs),
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @github_url}
     ]
