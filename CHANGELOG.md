@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.12.0
+
+#### Enhancements
+
+* Add ADBC Driver Foundry community drivers (databricks, mysql, trino, exasol)
+* Support decimals in `Adbc.Column.new`
+* Improve reliability and resource management by using FINE
+
 ## v0.11.0
 
 #### Enhancements
