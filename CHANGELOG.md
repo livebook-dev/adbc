@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.12.1
+
+#### Enhancements
+
+* Relax decimal requirement
+
 ## v0.12.0
 
 #### Enhancements

@@ -7,7 +7,7 @@
 defmodule Adbc.MixProject do
   use Mix.Project
 
-  @version "0.12.1-dev"
+  @version "0.12.1"
   @github_url "https://github.com/elixir-explorer/adbc"
 
   def project do
@@ -83,7 +83,7 @@ defmodule Adbc.MixProject do
       {:fine, "~> 0.1.0", runtime: false},
 
       # runtime
-      {:decimal, "~> 2.1"},
+      {:decimal, "~> 2.1 or ~> 3.0"},
       {:table, "~> 0.1.2"},
       {:pythonx, "~> 0.4.0", optional: true},
 
